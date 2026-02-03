@@ -224,7 +224,10 @@ export function RaceSelector() {
       {/* Race List */}
       <Card>
         <CardHeader>
-          <CardTitle>Select Race</CardTitle>
+          <CardTitle className="flex items-center gap-2">
+            <Users className="w-5 h-5 text-emerald-400" />
+            Select Race
+          </CardTitle>
           <CardDescription>
             Choose your character's race. Each race has unique traits and abilities.
           </CardDescription>
