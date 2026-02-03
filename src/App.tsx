@@ -5,9 +5,12 @@ import { CharacterPage } from '@/pages/CharacterPage'
 import { EncounterPage } from '@/pages/EncounterPage'
 import { CombatPage } from '@/pages/CombatPage'
 
+// Use basename for GitHub Pages deployment (matches vite.config.ts base)
+const basename = import.meta.env.BASE_URL
+
 function App() {
   return (
-    <BrowserRouter>
+    <BrowserRouter basename={basename}>
       <Routes>
         <Route path="/" element={<Layout />}>
           <Route index element={<HomePage />} />
