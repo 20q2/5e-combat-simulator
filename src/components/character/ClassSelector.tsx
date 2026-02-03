@@ -239,51 +239,6 @@ export function ClassSelector() {
         </CardContent>
       </Card>
 
-      {/* Subclass Selector - show when class has subclasses */}
-      {selectedClass && selectedClass.subclasses.length > 0 && (
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-lg">{selectedClass.name} Subclass</CardTitle>
-            <CardDescription>
-              Choose your specialization within the {selectedClass.name} class
-              {draft.level < selectedClass.subclassLevel && (
-                <span className="text-amber-500 ml-1">
-                  (features unlock at level {selectedClass.subclassLevel})
-                </span>
-              )}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
-              {selectedClass.subclasses.map((subclass) => (
-                <button
-                  key={subclass.id}
-                  onClick={() => setSubclass(subclass.id)}
-                  className={cn(
-                    'p-3 rounded-lg border-2 transition-all text-left hover:border-primary/50',
-                    draft.subclassId === subclass.id
-                      ? 'border-primary bg-primary/10'
-                      : 'border-border'
-                  )}
-                >
-                  <div className="font-medium text-sm">{subclass.name}</div>
-                  {subclass.features.length > 0 && (
-                    <div className="text-xs text-muted-foreground mt-1 line-clamp-2">
-                      {subclass.features[0].name}
-                    </div>
-                  )}
-                </button>
-              ))}
-            </div>
-            {draft.subclassId && draft.level < selectedClass.subclassLevel && (
-              <p className="text-xs text-amber-500 mt-3 text-center">
-                Subclass features will activate at level {selectedClass.subclassLevel}
-              </p>
-            )}
-          </CardContent>
-        </Card>
-      )}
-
       <div className="grid md:grid-cols-2 gap-6">
         {/* Class List */}
         <Card>
@@ -324,6 +279,41 @@ export function ClassSelector() {
           )}
         </div>
       </div>
+
+      {/* Subclass Selector - show when level >= 3 and class has subclasses */}
+      {draft.level >= 3 && selectedClass && selectedClass.subclasses.length > 0 && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-lg">{selectedClass.name} Subclass</CardTitle>
+            <CardDescription>
+              Choose your specialization within the {selectedClass.name} class
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
+              {selectedClass.subclasses.map((subclass) => (
+                <button
+                  key={subclass.id}
+                  onClick={() => setSubclass(subclass.id)}
+                  className={cn(
+                    'p-3 rounded-lg border-2 transition-all text-left hover:border-primary/50',
+                    draft.subclassId === subclass.id
+                      ? 'border-primary bg-primary/10'
+                      : 'border-border'
+                  )}
+                >
+                  <div className="font-medium text-sm">{subclass.name}</div>
+                  {subclass.features.length > 0 && (
+                    <div className="text-xs text-muted-foreground mt-1 line-clamp-2">
+                      {subclass.features[0].name}
+                    </div>
+                  )}
+                </button>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   )
 }
