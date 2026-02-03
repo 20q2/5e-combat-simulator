@@ -1,6 +1,6 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
-import { Input } from '@/components/ui/input'
+import { Button } from '@/components/ui/button'
 import {
   Select,
   SelectContent,
@@ -12,6 +12,7 @@ import { cn } from '@/lib/utils'
 import { getAllClasses, getClassById, getClassFeaturesByLevel, getSubclassFeaturesByLevel } from '@/data'
 import { useCharacterStore } from '@/stores/characterStore'
 import type { CharacterClass, ClassFeature } from '@/types'
+import { Minus, Plus } from 'lucide-react'
 
 const ABILITY_LABELS: Record<string, string> = {
   strength: 'STR',
@@ -170,21 +171,76 @@ export function ClassSelector() {
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-lg">Character Level</CardTitle>
+          <CardDescription>
+            Set your character's level to unlock class features and increase power
+          </CardDescription>
         </CardHeader>
-        <CardContent>
-          <div className="flex items-center gap-4">
-            <Label htmlFor="level">Level</Label>
-            <Input
-              id="level"
-              type="number"
-              min={1}
-              max={20}
-              value={draft.level}
-              onChange={(e) => setLevel(parseInt(e.target.value, 10) || 1)}
-              className="w-20"
-            />
-            <span className="text-sm text-muted-foreground">
-              (1-20)
+        <CardContent className="space-y-4">
+          {/* Main level control */}
+          <div className="flex items-center justify-center gap-4">
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-12 w-12 rounded-full"
+              onClick={() => setLevel(Math.max(1, draft.level - 1))}
+              disabled={draft.level <= 1}
+            >
+              <Minus className="h-5 w-5" />
+            </Button>
+            <div className="flex flex-col items-center">
+              <div className="text-5xl font-bold tabular-nums w-20 text-center">
+                {draft.level}
+              </div>
+              <span className="text-xs text-muted-foreground uppercase tracking-wider">
+                Level
+              </span>
+            </div>
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-12 w-12 rounded-full"
+              onClick={() => setLevel(Math.min(20, draft.level + 1))}
+              disabled={draft.level >= 20}
+            >
+              <Plus className="h-5 w-5" />
+            </Button>
+          </div>
+
+          {/* Quick select buttons */}
+          <div className="space-y-2">
+            <Label className="text-xs text-muted-foreground">Quick Select</Label>
+            <div className="flex flex-wrap gap-2 justify-center">
+              {[1, 3, 5, 8, 10, 12, 15, 17, 20].map((lvl) => (
+                <Button
+                  key={lvl}
+                  variant={draft.level === lvl ? 'default' : 'outline'}
+                  size="sm"
+                  className={cn(
+                    'w-10 h-10 p-0 font-semibold',
+                    draft.level === lvl && 'ring-2 ring-primary ring-offset-2 ring-offset-background'
+                  )}
+                  onClick={() => setLevel(lvl)}
+                >
+                  {lvl}
+                </Button>
+              ))}
+            </div>
+          </div>
+
+          {/* Tier indicator */}
+          <div className="text-center text-sm">
+            <span className="text-muted-foreground">Tier: </span>
+            <span className={cn(
+              'font-medium',
+              draft.level <= 4 && 'text-emerald-500',
+              draft.level >= 5 && draft.level <= 10 && 'text-blue-500',
+              draft.level >= 11 && draft.level <= 16 && 'text-purple-500',
+              draft.level >= 17 && 'text-amber-500'
+            )}>
+              {draft.level <= 4 && 'Local Heroes (1-4)'}
+              {draft.level >= 5 && draft.level <= 10 && 'Heroes of the Realm (5-10)'}
+              {draft.level >= 11 && draft.level <= 16 && 'Masters of the Realm (11-16)'}
+              {draft.level >= 17 && 'Masters of the World (17-20)'}
             </span>
           </div>
         </CardContent>
