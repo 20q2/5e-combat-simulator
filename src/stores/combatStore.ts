@@ -1,0 +1,1796 @@
+import { create } from 'zustand'
+import type {
+  CombatState,
+  Combatant,
+  Grid,
+  GridCell,
+  Position,
+  CombatLogEntry,
+  Character,
+  Monster,
+  Weapon,
+  MonsterAction,
+  Spell,
+  TerrainDefinition,
+  DamagePopup,
+  DamageType,
+  CombatPopupType,
+} from '@/types'
+import { rollInitiative } from '@/engine/dice'
+import { getAbilityModifier } from '@/types'
+import { resolveAttack, canAttackTarget, getSpellSaveDC, getSpellAttackBonus, rollCombatantSavingThrow, rollDeathSave, selectWeaponForTarget, type AttackResult } from '@/engine/combat'
+import { rollAttack, rollDamage } from '@/engine/dice'
+import { getNextAIAction } from '@/engine/ai'
+// Movement calculations now handled by pathfinding module
+import { findPath, getReachablePositions as getReachableFromPathfinding, blocksMovement, calculatePathCost } from '@/lib/pathfinding'
+import {
+  initializeRacialAbilityUses,
+  checkRelentlessEndurance,
+  applyRelentlessEndurance,
+  useRacialAbility as decrementRacialAbilityUse,
+} from '@/engine/racialAbilities'
+import {
+  initializeClassFeatureUses,
+  getSecondWindFeature,
+  canUseSecondWind,
+  rollSecondWind,
+  getActionSurgeFeature,
+  canUseActionSurge,
+  useClassFeature,
+  canUseCunningAction,
+  getMaxAttacksPerAction,
+} from '@/engine/classAbilities'
+
+// Simplified input type for adding combatants
+type AddCombatantInput = {
+  name: string
+  type: 'character' | 'monster'
+  data: Character | Monster
+  position: Position
+}
+
+interface CombatStore extends CombatState {
+  // Setup actions
+  initializeGrid: (width: number, height: number) => void
+  initializeGridWithTerrain: (width: number, height: number, terrain: TerrainDefinition[]) => void
+  addCombatant: (input: AddCombatantInput) => void
+  removeCombatant: (id: string) => void
+  placeCombatant: (id: string, position: Position) => void
+
+  // Combat flow
+  startCombat: () => void
+  rollAllInitiative: () => void
+  nextTurn: () => void
+  endCombat: () => void
+
+  // Selection
+  selectCombatant: (id: string | undefined) => void
+  setSelectedAction: (action: CombatState['selectedAction']) => void
+  setHoveredTarget: (id: string | undefined) => void
+  setRangeHighlight: (highlight: CombatState['rangeHighlight']) => void
+
+  // Movement
+  moveCombatant: (id: string, to: Position) => void
+  canMoveTo: (combatantId: string, to: Position) => boolean
+  getReachablePositions: (combatantId: string) => Position[]
+  useDisengage: () => void
+
+  // Combat actions
+  dealDamage: (targetId: string, amount: number, source?: string) => void
+  healDamage: (targetId: string, amount: number, source?: string) => void
+  performAttack: (attackerId: string, targetId: string, weapon?: Weapon, monsterAction?: MonsterAction, rangedWeapon?: Weapon) => AttackResult | null
+  performOpportunityAttack: (attackerId: string, targetId: string) => AttackResult | null
+  useDash: () => void
+  useDodge: () => void
+  getValidTargets: (attackerId: string, weapon?: Weapon, monsterAction?: MonsterAction, rangedWeapon?: Weapon) => Combatant[]
+  castSpell: (casterId: string, spell: Spell, targetId?: string) => boolean
+  getAvailableSpells: (combatantId: string) => Spell[]
+  makeDeathSave: (combatantId: string) => void
+  stabilize: (combatantId: string) => void
+  getThreateningEnemies: (combatantId: string) => Combatant[]
+
+  // Racial abilities
+  useRacialAbility: (combatantId: string, abilityId: string) => void
+
+  // Class abilities
+  useSecondWind: (combatantId: string) => void
+  useActionSurge: (combatantId: string) => void
+  useCunningDash: () => void
+  useCunningDisengage: () => void
+  useCunningHide: () => void
+
+  // Turn management
+  useAction: () => void
+  useBonusAction: () => void
+  useReaction: () => void
+  endTurn: () => void
+
+  // AI
+  executeAITurn: () => Promise<void>
+  isAITurn: () => boolean
+
+  // Logging
+  addLogEntry: (entry: Omit<CombatLogEntry, 'id' | 'timestamp' | 'round'>) => void
+
+  // Combat popups
+  addDamagePopup: (targetId: string, amount: number, damageType: DamageType, isCritical?: boolean) => void
+  addCombatPopup: (targetId: string, popupType: CombatPopupType, text?: string) => void
+  addHealPopup: (targetId: string, amount: number) => void
+  removeDamagePopup: (id: string) => void
+
+  // Reset
+  resetCombat: () => void
+}
+
+function createEmptyGrid(width: number, height: number): Grid {
+  const cells: GridCell[][] = []
+  for (let y = 0; y < height; y++) {
+    cells[y] = []
+    for (let x = 0; x < width; x++) {
+      cells[y][x] = { x, y, elevation: 0 }
+    }
+  }
+  return { width, height, cells }
+}
+
+function createGridWithTerrain(width: number, height: number, terrain: TerrainDefinition[]): Grid {
+  const grid = createEmptyGrid(width, height)
+
+  // Apply terrain definitions
+  for (const def of terrain) {
+    const cell = grid.cells[def.y]?.[def.x]
+    if (cell) {
+      if (def.terrain) cell.terrain = def.terrain
+      if (def.obstacle) cell.obstacle = def.obstacle
+      if (def.elevation !== undefined) cell.elevation = def.elevation
+      if (def.stairConnection) cell.stairConnection = def.stairConnection
+    }
+  }
+
+  return grid
+}
+
+function generateId(): string {
+  return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+}
+
+const initialState: CombatState = {
+  grid: createEmptyGrid(20, 15),
+  combatants: [],
+  turnOrder: [],
+  currentTurnIndex: 0,
+  round: 0,
+  phase: 'setup',
+  log: [],
+  selectedCombatantId: undefined,
+  selectedAction: undefined,
+  targetingMode: undefined,
+  hoveredTargetId: undefined,
+  damagePopups: [],
+}
+
+export const useCombatStore = create<CombatStore>((set, get) => ({
+  ...initialState,
+
+  initializeGrid: (width, height) => {
+    set({ grid: createEmptyGrid(width, height) })
+  },
+
+  initializeGridWithTerrain: (width, height, terrain) => {
+    set({ grid: createGridWithTerrain(width, height, terrain) })
+  },
+
+  addCombatant: (input) => {
+    // Extract HP from the data based on type
+    let maxHp: number
+    let currentHp: number
+
+    if (input.type === 'character') {
+      const char = input.data as Character
+      maxHp = char.maxHp
+      currentHp = char.currentHp
+    } else {
+      const monster = input.data as Monster
+      maxHp = monster.hp
+      currentHp = monster.hp
+    }
+
+    const combatant: Combatant = {
+      id: generateId(),
+      name: input.name,
+      type: input.type,
+      data: input.data,
+      position: input.position,
+      initiative: 0,
+      currentHp,
+      maxHp,
+      temporaryHp: 0,
+      conditions: [],
+      hasActed: false,
+      hasBonusActed: false,
+      hasReacted: false,
+      movementUsed: 0,
+      deathSaves: { successes: 0, failures: 0 },
+      isStable: false,
+      racialAbilityUses: {},
+      classFeatureUses: {},
+      usedSneakAttackThisTurn: false,
+      attacksMadeThisTurn: 0,
+    }
+
+    // Initialize racial and class ability uses for characters
+    if (input.type === 'character') {
+      combatant.racialAbilityUses = initializeRacialAbilityUses(combatant)
+      combatant.classFeatureUses = initializeClassFeatureUses(combatant)
+    }
+
+    set((state) => ({
+      combatants: [...state.combatants, combatant],
+    }))
+
+    // Update grid cell occupancy
+    const { grid } = get()
+    const { x, y } = combatant.position
+    if (x >= 0 && x < grid.width && y >= 0 && y < grid.height) {
+      grid.cells[y][x].occupiedBy = combatant.id
+    }
+  },
+
+  removeCombatant: (id) => {
+    const { combatants, grid } = get()
+    const combatant = combatants.find((c) => c.id === id)
+
+    if (combatant) {
+      // Clear grid cell
+      const { x, y } = combatant.position
+      if (grid.cells[y]?.[x]) {
+        grid.cells[y][x].occupiedBy = undefined
+      }
+    }
+
+    set((state) => ({
+      combatants: state.combatants.filter((c) => c.id !== id),
+      turnOrder: state.turnOrder.filter((tid) => tid !== id),
+      selectedCombatantId: state.selectedCombatantId === id ? undefined : state.selectedCombatantId,
+    }))
+  },
+
+  placeCombatant: (id, position) => {
+    const { combatants, grid } = get()
+    const combatant = combatants.find((c) => c.id === id)
+
+    if (!combatant) return
+
+    // Check if position is valid and unoccupied
+    if (
+      position.x < 0 ||
+      position.x >= grid.width ||
+      position.y < 0 ||
+      position.y >= grid.height
+    ) {
+      return
+    }
+
+    const targetCell = grid.cells[position.y][position.x]
+
+    // Check if blocked by obstacle
+    if (blocksMovement(targetCell)) {
+      return
+    }
+
+    if (targetCell.occupiedBy && targetCell.occupiedBy !== id) {
+      return // Cell is occupied by another combatant
+    }
+
+    // Clear old position
+    const oldCell = grid.cells[combatant.position.y]?.[combatant.position.x]
+    if (oldCell) {
+      oldCell.occupiedBy = undefined
+    }
+
+    // Set new position
+    targetCell.occupiedBy = id
+
+    set((state) => ({
+      combatants: state.combatants.map((c) =>
+        c.id === id ? { ...c, position } : c
+      ),
+    }))
+  },
+
+  startCombat: () => {
+    const { combatants } = get()
+    if (combatants.length < 2) return
+
+    get().rollAllInitiative()
+
+    set({
+      phase: 'combat',
+      round: 1,
+      currentTurnIndex: 0,
+    })
+
+    get().addLogEntry({
+      type: 'other',
+      actorName: 'System',
+      message: 'Combat has begun!',
+    })
+  },
+
+  rollAllInitiative: () => {
+    const { combatants } = get()
+
+    const updatedCombatants = combatants.map((c) => {
+      const dexMod = getAbilityModifier(
+        c.type === 'character'
+          ? (c.data as Character).abilityScores.dexterity
+          : (c.data as Monster).abilityScores.dexterity
+      )
+      const roll = rollInitiative(dexMod)
+
+      get().addLogEntry({
+        type: 'initiative',
+        actorId: c.id,
+        actorName: c.name,
+        message: `rolls initiative: ${roll.breakdown}`,
+      })
+
+      return { ...c, initiative: roll.total }
+    })
+
+    // Sort by initiative (highest first)
+    const sorted = [...updatedCombatants].sort((a, b) => b.initiative - a.initiative)
+    const turnOrder = sorted.map((c) => c.id)
+
+    set({
+      combatants: updatedCombatants,
+      turnOrder,
+      phase: 'initiative',
+    })
+  },
+
+  nextTurn: () => {
+    const { turnOrder, currentTurnIndex, combatants } = get()
+
+    // Reset current combatant's turn state
+    const currentId = turnOrder[currentTurnIndex]
+    const updatedCombatants = combatants.map((c) =>
+      c.id === currentId
+        ? { ...c, hasActed: false, hasBonusActed: false, movementUsed: 0, usedSneakAttackThisTurn: false, attacksMadeThisTurn: 0 }
+        : c
+    )
+
+    let nextIndex = currentTurnIndex + 1
+    let newRound = get().round
+
+    // Check if we've completed a round
+    if (nextIndex >= turnOrder.length) {
+      nextIndex = 0
+      newRound += 1
+
+      get().addLogEntry({
+        type: 'other',
+        actorName: 'System',
+        message: `Round ${newRound} begins`,
+      })
+    }
+
+    set({
+      combatants: updatedCombatants,
+      currentTurnIndex: nextIndex,
+      round: newRound,
+      selectedAction: undefined,
+      targetingMode: undefined,
+    })
+
+    // Auto-skip dead combatants (monsters at 0 HP or characters who have died)
+    const nextCombatant = updatedCombatants.find((c) => c.id === turnOrder[nextIndex])
+    if (nextCombatant) {
+      const isDead = nextCombatant.currentHp <= 0 && (
+        nextCombatant.type === 'monster' || // Monsters are dead at 0 HP
+        nextCombatant.deathSaves.failures >= 3 // Characters are dead at 3 failures
+      )
+      if (isDead) {
+        // Recursively skip to next turn
+        get().nextTurn()
+      }
+    }
+  },
+
+  endCombat: () => {
+    set({
+      phase: 'setup',
+      round: 0,
+      currentTurnIndex: 0,
+      turnOrder: [],
+      selectedAction: undefined,
+      targetingMode: undefined,
+    })
+  },
+
+  selectCombatant: (id) => {
+    set({ selectedCombatantId: id })
+  },
+
+  setSelectedAction: (action) => {
+    set({ selectedAction: action })
+  },
+
+  setHoveredTarget: (id) => {
+    set({ hoveredTargetId: id })
+  },
+
+  setRangeHighlight: (highlight) => {
+    set({ rangeHighlight: highlight })
+  },
+
+  moveCombatant: (id, to) => {
+    const { combatants, grid, phase } = get()
+    const combatant = combatants.find((c) => c.id === id)
+
+    if (!combatant) return
+
+    // Get occupied positions for pathfinding
+    const occupiedPositions = new Set(
+      combatants
+        .filter((c) => c.id !== id && c.position.x >= 0)
+        .map((c) => `${c.position.x},${c.position.y}`)
+    )
+
+    // Find path using A* pathfinding
+    const path = findPath(grid, combatant.position, to, occupiedPositions)
+    if (!path) return
+
+    // Calculate actual path cost (accounts for terrain)
+    const pathCost = calculatePathCost(grid, path)
+
+    // Get speed based on combatant type
+    const speed =
+      combatant.type === 'character'
+        ? (combatant.data as Character).speed
+        : (combatant.data as Monster).speed.walk
+
+    const remainingMovement = speed - combatant.movementUsed
+
+    if (pathCost > remainingMovement) return
+
+    // Check if target is valid (redundant but safe)
+    if (!get().canMoveTo(id, to)) return
+
+    // Check for opportunity attacks (only during combat, not setup)
+    if (phase === 'combat') {
+      // Check if combatant has disengaging condition
+      const isDisengaging = combatant.conditions.some((c) => c.condition === 'disengaging' as any)
+
+      if (!isDisengaging) {
+        // Find all enemies currently threatening this combatant
+        const threateningEnemies = get().getThreateningEnemies(id)
+
+        // For each threatening enemy, check if we're leaving their reach
+        for (const enemy of threateningEnemies) {
+          const enemyDx = Math.abs(to.x - enemy.position.x)
+          const enemyDy = Math.abs(to.y - enemy.position.y)
+          const newDistanceToEnemy = Math.max(enemyDx, enemyDy)
+
+          // If we're moving out of reach (distance > 1), trigger opportunity attack
+          if (newDistanceToEnemy > 1) {
+            // Enemy makes opportunity attack
+            get().performOpportunityAttack(enemy.id, id)
+
+            // Re-fetch combatant in case they were damaged/killed
+            const updatedCombatant = get().combatants.find((c) => c.id === id)
+            if (!updatedCombatant || updatedCombatant.currentHp <= 0) {
+              // Combatant was killed by opportunity attack, cancel movement
+              return
+            }
+          }
+        }
+      }
+    }
+
+    // Clear old position
+    const oldCell = grid.cells[combatant.position.y][combatant.position.x]
+    oldCell.occupiedBy = undefined
+
+    // Set new position
+    grid.cells[to.y][to.x].occupiedBy = id
+
+    set((state) => ({
+      combatants: state.combatants.map((c) =>
+        c.id === id
+          ? { ...c, position: to, movementUsed: c.movementUsed + pathCost }
+          : c
+      ),
+    }))
+
+    get().addLogEntry({
+      type: 'movement',
+      actorId: id,
+      actorName: combatant.name,
+      message: `moves ${pathCost} ft`,
+    })
+  },
+
+  canMoveTo: (combatantId, to) => {
+    const { grid, combatants } = get()
+    const combatant = combatants.find((c) => c.id === combatantId)
+
+    if (!combatant) return false
+
+    // Check bounds
+    if (to.x < 0 || to.x >= grid.width || to.y < 0 || to.y >= grid.height) {
+      return false
+    }
+
+    const targetCell = grid.cells[to.y][to.x]
+
+    // Check if blocked by obstacle
+    if (blocksMovement(targetCell)) {
+      return false
+    }
+
+    // Check if occupied by another combatant
+    if (targetCell.occupiedBy && targetCell.occupiedBy !== combatantId) {
+      return false
+    }
+
+    // Get occupied positions for pathfinding
+    const occupiedPositions = new Set(
+      combatants
+        .filter((c) => c.id !== combatantId && c.position.x >= 0)
+        .map((c) => `${c.position.x},${c.position.y}`)
+    )
+
+    // Find path using A* pathfinding
+    const path = findPath(grid, combatant.position, to, occupiedPositions)
+    if (!path) return false
+
+    // Calculate actual path cost
+    const pathCost = calculatePathCost(grid, path)
+
+    const speed =
+      combatant.type === 'character'
+        ? (combatant.data as Character).speed
+        : (combatant.data as Monster).speed.walk
+
+    const remainingMovement = speed - combatant.movementUsed
+
+    return pathCost <= remainingMovement
+  },
+
+  getReachablePositions: (combatantId) => {
+    const { grid, combatants } = get()
+    const combatant = combatants.find((c) => c.id === combatantId)
+
+    if (!combatant) return []
+
+    const speed =
+      combatant.type === 'character'
+        ? (combatant.data as Character).speed
+        : (combatant.data as Monster).speed.walk
+
+    const remainingMovement = speed - combatant.movementUsed
+
+    // Get occupied positions (excluding self)
+    const occupiedPositions = new Set(
+      combatants
+        .filter((c) => c.id !== combatantId && c.position.x >= 0)
+        .map((c) => `${c.position.x},${c.position.y}`)
+    )
+
+    // Use pathfinding-based reachability
+    const reachableMap = getReachableFromPathfinding(
+      grid,
+      combatant.position,
+      remainingMovement,
+      occupiedPositions
+    )
+
+    // Convert map to array of positions
+    const reachable: Position[] = []
+    for (const key of reachableMap.keys()) {
+      const [x, y] = key.split(',').map(Number)
+      reachable.push({ x, y })
+    }
+
+    return reachable
+  },
+
+  dealDamage: (targetId, amount, source) => {
+    set((state) => {
+      const target = state.combatants.find((c) => c.id === targetId)
+      if (!target) return state
+
+      let newHp = Math.max(0, target.currentHp - amount)
+      let updatedRacialAbilityUses = target.racialAbilityUses
+
+      get().addLogEntry({
+        type: 'damage',
+        actorName: source ?? 'Unknown',
+        targetId,
+        targetName: target.name,
+        message: `deals ${amount} damage to ${target.name}`,
+        details: `${target.currentHp} → ${newHp} HP`,
+      })
+
+      // Check for Relentless Endurance when dropping to 0 HP (characters only)
+      const wasConscious = target.currentHp > 0
+      if (newHp === 0 && wasConscious && target.type === 'character') {
+        const relentlessCheck = checkRelentlessEndurance(target, target.racialAbilityUses)
+        if (relentlessCheck.canUse && relentlessCheck.ability) {
+          // Use Relentless Endurance
+          newHp = applyRelentlessEndurance(relentlessCheck.ability)
+          const result = decrementRacialAbilityUse(
+            target,
+            relentlessCheck.ability.id,
+            target.racialAbilityUses
+          )
+          updatedRacialAbilityUses = result.newUses
+
+          get().addLogEntry({
+            type: 'other',
+            actorId: targetId,
+            actorName: target.name,
+            message: `${target.name} uses Relentless Endurance and drops to ${newHp} HP instead of falling unconscious!`,
+          })
+        }
+      }
+
+      // Check for falling unconscious (characters) or dying (monsters)
+      if (newHp === 0 && wasConscious) {
+        if (target.type === 'monster') {
+          // Monsters die immediately at 0 HP
+          get().addLogEntry({
+            type: 'death',
+            actorId: targetId,
+            actorName: target.name,
+            message: `${target.name} has been slain!`,
+          })
+          // Clear grid occupancy for dead monsters
+          const { grid } = get()
+          const { x, y } = target.position
+          if (x >= 0 && y >= 0 && grid.cells[y]?.[x]) {
+            grid.cells[y][x].occupiedBy = undefined
+          }
+        } else {
+          // Characters fall unconscious
+          get().addLogEntry({
+            type: 'death',
+            actorId: targetId,
+            actorName: target.name,
+            message: `${target.name} falls unconscious!`,
+          })
+        }
+      }
+
+      // If already unconscious and takes damage, add death save failure
+      if (target.currentHp === 0 && !target.isStable && target.type === 'character') {
+        const newFailures = target.deathSaves.failures + 1
+        if (newFailures >= 3) {
+          get().addLogEntry({
+            type: 'death',
+            actorId: targetId,
+            actorName: target.name,
+            message: `${target.name} has died from damage while unconscious!`,
+          })
+        } else {
+          get().addLogEntry({
+            type: 'other',
+            actorId: targetId,
+            actorName: target.name,
+            message: `${target.name} takes damage while unconscious - death save failure! (${newFailures}/3)`,
+          })
+        }
+        return {
+          combatants: state.combatants.map((c) =>
+            c.id === targetId
+              ? { ...c, deathSaves: { ...c.deathSaves, failures: newFailures } }
+              : c
+          ),
+        }
+      }
+
+      return {
+        combatants: state.combatants.map((c) =>
+          c.id === targetId
+            ? {
+                ...c,
+                currentHp: newHp,
+                racialAbilityUses: updatedRacialAbilityUses,
+                // Only add unconscious condition for characters, not monsters (they're dead)
+                conditions: newHp === 0 && wasConscious && c.type === 'character'
+                  ? [...c.conditions, { condition: 'unconscious' as const, duration: -1 }]
+                  : c.conditions,
+              }
+            : c
+        ),
+      }
+    })
+  },
+
+  healDamage: (targetId, amount, source) => {
+    set((state) => {
+      const target = state.combatants.find((c) => c.id === targetId)
+      if (!target) return state
+
+      const wasUnconscious = target.currentHp === 0
+      const newHp = Math.min(target.maxHp, target.currentHp + amount)
+
+      // Show heal popup
+      get().addHealPopup(targetId, amount)
+
+      get().addLogEntry({
+        type: 'heal',
+        actorName: source ?? 'Unknown',
+        targetId,
+        targetName: target.name,
+        message: `heals ${target.name} for ${amount} HP`,
+        details: `${target.currentHp} → ${newHp} HP`,
+      })
+
+      // If was unconscious and now has HP, they regain consciousness
+      if (wasUnconscious && newHp > 0) {
+        get().addLogEntry({
+          type: 'other',
+          actorId: targetId,
+          actorName: target.name,
+          message: `${target.name} regains consciousness!`,
+        })
+      }
+
+      return {
+        combatants: state.combatants.map((c) =>
+          c.id === targetId
+            ? {
+                ...c,
+                currentHp: newHp,
+                // Reset death saves and remove unconscious when healed
+                deathSaves: newHp > 0 ? { successes: 0, failures: 0 } : c.deathSaves,
+                isStable: newHp > 0 ? false : c.isStable,
+                conditions: newHp > 0
+                  ? c.conditions.filter((cond) => cond.condition !== 'unconscious')
+                  : c.conditions,
+              }
+            : c
+        ),
+      }
+    })
+  },
+
+  performAttack: (attackerId, targetId, weapon, monsterAction, rangedWeapon) => {
+    const { combatants, grid } = get()
+    const attacker = combatants.find((c) => c.id === attackerId)
+    const target = combatants.find((c) => c.id === targetId)
+
+    if (!attacker || !target) return null
+
+    // Check if attacker can attack (Extra Attack allows multiple attacks per action)
+    const maxAttacks = getMaxAttacksPerAction(attacker)
+    if (attacker.attacksMadeThisTurn >= maxAttacks) return null
+
+    // Auto-select weapon based on distance if character has both melee and ranged
+    let selectedWeapon = weapon
+    if (attacker.type === 'character' && (weapon || rangedWeapon)) {
+      selectedWeapon = selectWeaponForTarget(attacker, target, grid, weapon, rangedWeapon)
+    }
+
+    // Check range and line of sight
+    const attackCheck = canAttackTarget(attacker, target, grid, selectedWeapon, monsterAction)
+    if (!attackCheck.canAttack) {
+      const message = attackCheck.reason === 'no_line_of_sight'
+        ? `${attacker.name}'s ranged attack on ${target.name} fails - no line of sight!`
+        : `${attacker.name}'s attack on ${target.name} fails - out of range!`
+      get().addLogEntry({
+        type: 'attack',
+        actorId: attackerId,
+        actorName: attacker.name,
+        targetId,
+        targetName: target.name,
+        message,
+      })
+      return null
+    }
+
+    // Resolve the attack (pass all combatants for Sneak Attack check)
+    const result = resolveAttack({
+      attacker,
+      target,
+      weapon: selectedWeapon,
+      monsterAction,
+      allCombatants: combatants,
+      usedSneakAttackThisTurn: attacker.usedSneakAttackThisTurn,
+    })
+
+    // Log the attack
+    if (result.criticalMiss) {
+      get().addLogEntry({
+        type: 'attack',
+        actorId: attackerId,
+        actorName: attacker.name,
+        targetId,
+        targetName: target.name,
+        message: `${attacker.name} rolls a critical miss against ${target.name}!`,
+        details: result.attackRoll.breakdown,
+      })
+    } else if (result.critical) {
+      get().addLogEntry({
+        type: 'attack',
+        actorId: attackerId,
+        actorName: attacker.name,
+        targetId,
+        targetName: target.name,
+        message: `${attacker.name} scores a CRITICAL HIT on ${target.name}!`,
+        details: `${result.attackRoll.breakdown} vs AC ${result.targetAC}`,
+      })
+    } else if (result.hit) {
+      get().addLogEntry({
+        type: 'attack',
+        actorId: attackerId,
+        actorName: attacker.name,
+        targetId,
+        targetName: target.name,
+        message: `${attacker.name} hits ${target.name}`,
+        details: `${result.attackRoll.breakdown} vs AC ${result.targetAC}`,
+      })
+    } else {
+      get().addLogEntry({
+        type: 'attack',
+        actorId: attackerId,
+        actorName: attacker.name,
+        targetId,
+        targetName: target.name,
+        message: `${attacker.name} misses ${target.name}`,
+        details: `${result.attackRoll.breakdown} vs AC ${result.targetAC}`,
+      })
+      // Show miss popup on target
+      get().addCombatPopup(targetId, 'miss')
+    }
+
+    // Apply damage if hit
+    if (result.hit && result.damage) {
+      // Calculate total damage including Savage Attacks and Sneak Attack bonus
+      let totalDamage = result.damage.total
+      const bonusDamageDetails: string[] = []
+
+      if (result.savageAttacksDamage) {
+        totalDamage += result.savageAttacksDamage.total
+        bonusDamageDetails.push(`Savage Attacks [${result.savageAttacksDamage.rolls.join(', ')}]`)
+      }
+
+      if (result.sneakAttackDamage) {
+        totalDamage += result.sneakAttackDamage.total
+        bonusDamageDetails.push(`Sneak Attack [${result.sneakAttackDamage.rolls.join(', ')}]`)
+      }
+
+      get().dealDamage(targetId, totalDamage, attacker.name)
+      get().addDamagePopup(targetId, totalDamage, (result.damageType ?? 'bludgeoning') as DamageType, result.critical)
+
+      const damageDetails = bonusDamageDetails.length > 0
+        ? `${result.damage.breakdown} + ${bonusDamageDetails.join(' + ')}`
+        : result.damage.breakdown
+
+      get().addLogEntry({
+        type: 'damage',
+        actorId: attackerId,
+        actorName: attacker.name,
+        targetId,
+        targetName: target.name,
+        message: `${totalDamage} ${result.damageType} damage`,
+        details: damageDetails,
+      })
+
+      // Log Sneak Attack if used
+      if (result.sneakAttackUsed) {
+        get().addLogEntry({
+          type: 'other',
+          actorId: attackerId,
+          actorName: attacker.name,
+          message: `${attacker.name} deals Sneak Attack damage! (+${result.sneakAttackDamage?.total})`,
+        })
+      }
+    }
+
+    // Update attacker state: increment attacks made, mark sneak attack if used
+    const newAttacksMade = attacker.attacksMadeThisTurn + 1
+    const maxAttacksForAttacker = getMaxAttacksPerAction(attacker)
+    const allAttacksUsed = newAttacksMade >= maxAttacksForAttacker
+
+    set((state) => ({
+      combatants: state.combatants.map((c) =>
+        c.id === attackerId
+          ? {
+              ...c,
+              attacksMadeThisTurn: newAttacksMade,
+              hasActed: allAttacksUsed,
+              usedSneakAttackThisTurn: c.usedSneakAttackThisTurn || (result.sneakAttackUsed ?? false),
+            }
+          : c
+      ),
+    }))
+
+    // Clear targeting mode
+    set({ selectedAction: undefined, targetingMode: undefined })
+
+    return result
+  },
+
+  useDash: () => {
+    const { turnOrder, currentTurnIndex, combatants } = get()
+    const currentId = turnOrder[currentTurnIndex]
+    const combatant = combatants.find((c) => c.id === currentId)
+
+    if (!combatant || combatant.hasActed) return
+
+    // Dash doubles remaining movement for this turn
+    const speed = combatant.type === 'character'
+      ? (combatant.data as Character).speed
+      : (combatant.data as Monster).speed.walk
+
+    // Reset movement used to give full speed again
+    set((state) => ({
+      combatants: state.combatants.map((c) =>
+        c.id === currentId
+          ? { ...c, hasActed: true, movementUsed: Math.max(0, c.movementUsed - speed) }
+          : c
+      ),
+      selectedAction: undefined,
+    }))
+
+    get().addLogEntry({
+      type: 'other',
+      actorId: currentId,
+      actorName: combatant.name,
+      message: `${combatant.name} takes the Dash action (+${speed} ft movement)`,
+    })
+  },
+
+  useDodge: () => {
+    const { turnOrder, currentTurnIndex, combatants } = get()
+    const currentId = turnOrder[currentTurnIndex]
+    const combatant = combatants.find((c) => c.id === currentId)
+
+    if (!combatant || combatant.hasActed) return
+
+    // Add dodging condition (we'll track this via a special condition)
+    set((state) => ({
+      combatants: state.combatants.map((c) =>
+        c.id === currentId
+          ? {
+              ...c,
+              hasActed: true,
+              conditions: [...c.conditions, { condition: 'dodging' as any, duration: 1 }],
+            }
+          : c
+      ),
+      selectedAction: undefined,
+    }))
+
+    get().addLogEntry({
+      type: 'other',
+      actorId: currentId,
+      actorName: combatant.name,
+      message: `${combatant.name} takes the Dodge action (attacks have disadvantage)`,
+    })
+  },
+
+  useDisengage: () => {
+    const { turnOrder, currentTurnIndex, combatants } = get()
+    const currentId = turnOrder[currentTurnIndex]
+    const combatant = combatants.find((c) => c.id === currentId)
+
+    if (!combatant || combatant.hasActed) return
+
+    // Add disengaging condition to prevent opportunity attacks this turn
+    set((state) => ({
+      combatants: state.combatants.map((c) =>
+        c.id === currentId
+          ? {
+              ...c,
+              hasActed: true,
+              conditions: [...c.conditions, { condition: 'disengaging' as any, duration: 1 }],
+            }
+          : c
+      ),
+      selectedAction: undefined,
+    }))
+
+    get().addLogEntry({
+      type: 'other',
+      actorId: currentId,
+      actorName: combatant.name,
+      message: `${combatant.name} takes the Disengage action (no opportunity attacks this turn)`,
+    })
+  },
+
+  getThreateningEnemies: (combatantId) => {
+    const { combatants } = get()
+    const combatant = combatants.find((c) => c.id === combatantId)
+
+    if (!combatant || combatant.position.x < 0) return []
+
+    return combatants.filter((c) => {
+      // Must be a different combatant
+      if (c.id === combatantId) return false
+      // Must be opposite type (enemy)
+      if (c.type === combatant.type) return false
+      // Must be alive
+      if (c.currentHp <= 0) return false
+      // Must have reaction available
+      if (c.hasReacted) return false
+      // Must be in melee range (within 5ft = 1 square diagonal)
+      const dx = Math.abs(c.position.x - combatant.position.x)
+      const dy = Math.abs(c.position.y - combatant.position.y)
+      const distance = Math.max(dx, dy)
+      return distance <= 1
+    })
+  },
+
+  performOpportunityAttack: (attackerId, targetId) => {
+    const { combatants } = get()
+    const attacker = combatants.find((c) => c.id === attackerId)
+    const target = combatants.find((c) => c.id === targetId)
+
+    if (!attacker || !target) return null
+
+    // Check if attacker has reaction available
+    if (attacker.hasReacted) return null
+
+    get().addLogEntry({
+      type: 'other',
+      actorId: attackerId,
+      actorName: attacker.name,
+      message: `${attacker.name} makes an opportunity attack against ${target.name}!`,
+    })
+
+    // Get weapon or monster action for the attack
+    let weapon: Weapon | undefined
+    let monsterAction: MonsterAction | undefined
+
+    if (attacker.type === 'character') {
+      const character = attacker.data as Character
+      // Use melee weapon for opportunity attacks
+      weapon = character.equipment?.meleeWeapon
+    } else {
+      const monster = attacker.data as Monster
+      // Use first melee action
+      monsterAction = monster.actions.find((a) => a.reach !== undefined || (a.attackBonus !== undefined && !a.range))
+    }
+
+    // Resolve the attack
+    const result = resolveAttack({
+      attacker,
+      target,
+      weapon,
+      monsterAction,
+    })
+
+    // Log the attack result
+    if (result.hit) {
+      get().addLogEntry({
+        type: 'attack',
+        actorId: attackerId,
+        actorName: attacker.name,
+        targetId,
+        targetName: target.name,
+        message: result.critical
+          ? `${attacker.name} CRITICALLY HITS with opportunity attack!`
+          : `${attacker.name} hits with opportunity attack`,
+        details: `${result.attackRoll.breakdown} vs AC ${result.targetAC}`,
+      })
+
+      if (result.damage) {
+        get().dealDamage(targetId, result.damage.total, attacker.name)
+        get().addDamagePopup(targetId, result.damage.total, (result.damageType ?? 'bludgeoning') as DamageType, result.critical)
+        get().addLogEntry({
+          type: 'damage',
+          actorId: attackerId,
+          actorName: attacker.name,
+          targetId,
+          targetName: target.name,
+          message: `${result.damage.total} ${result.damageType} damage`,
+          details: result.damage.breakdown,
+        })
+      }
+    } else {
+      get().addLogEntry({
+        type: 'attack',
+        actorId: attackerId,
+        actorName: attacker.name,
+        targetId,
+        targetName: target.name,
+        message: `${attacker.name} misses with opportunity attack`,
+        details: `${result.attackRoll.breakdown} vs AC ${result.targetAC}`,
+      })
+      // Show miss popup on target
+      get().addCombatPopup(targetId, 'miss')
+    }
+
+    // Use the attacker's reaction
+    set((state) => ({
+      combatants: state.combatants.map((c) =>
+        c.id === attackerId ? { ...c, hasReacted: true } : c
+      ),
+    }))
+
+    return result
+  },
+
+  getValidTargets: (attackerId, weapon, monsterAction, rangedWeapon) => {
+    const { combatants, grid } = get()
+    const attacker = combatants.find((c) => c.id === attackerId)
+
+    if (!attacker) return []
+
+    return combatants.filter((c) => {
+      // Can't target self
+      if (c.id === attackerId) return false
+
+      // Can't target dead combatants
+      if (c.currentHp <= 0) return false
+
+      // Check range and line of sight for melee weapon
+      const meleeCheck = canAttackTarget(attacker, c, grid, weapon, monsterAction)
+      if (meleeCheck.canAttack) return true
+
+      // If ranged weapon provided, also check if ranged can reach
+      if (rangedWeapon) {
+        const rangedCheck = canAttackTarget(attacker, c, grid, rangedWeapon, undefined)
+        if (rangedCheck.canAttack) return true
+      }
+
+      return false
+    })
+  },
+
+  castSpell: (casterId, spell, targetId) => {
+    const { combatants } = get()
+    const caster = combatants.find((c) => c.id === casterId)
+
+    if (!caster || caster.hasActed) return false
+    if (caster.type !== 'character') return false // Only characters can cast spells for now
+
+    const character = caster.data as Character
+
+    // Log spell cast
+    get().addLogEntry({
+      type: 'spell',
+      actorId: casterId,
+      actorName: caster.name,
+      message: `${caster.name} casts ${spell.name}!`,
+    })
+
+    // Handle damage spells
+    if (spell.damage && targetId) {
+      const target = combatants.find((c) => c.id === targetId)
+      if (!target) return false
+
+      // Spell attack or saving throw?
+      if (spell.attackType) {
+        // Spell attack roll
+        const spellAttackBonus = getSpellAttackBonus(character)
+        const attackRoll = rollAttack(spellAttackBonus)
+        const targetAC = target.type === 'character'
+          ? (target.data as Character).ac
+          : (target.data as Monster).ac
+
+        if (attackRoll.isNatural1) {
+          get().addLogEntry({
+            type: 'attack',
+            actorId: casterId,
+            actorName: caster.name,
+            targetId,
+            targetName: target.name,
+            message: `${caster.name} misses with ${spell.name} (natural 1)`,
+            details: attackRoll.breakdown,
+          })
+        } else if (attackRoll.isNatural20 || attackRoll.total >= targetAC) {
+          const isCrit = attackRoll.isNatural20
+          const damage = rollDamage(spell.damage.dice, isCrit)
+
+          get().addLogEntry({
+            type: 'attack',
+            actorId: casterId,
+            actorName: caster.name,
+            targetId,
+            targetName: target.name,
+            message: isCrit
+              ? `${caster.name} CRITICALLY HITS ${target.name} with ${spell.name}!`
+              : `${caster.name} hits ${target.name} with ${spell.name}`,
+            details: `${attackRoll.breakdown} vs AC ${targetAC}`,
+          })
+
+          get().dealDamage(targetId, damage.total, caster.name)
+          get().addDamagePopup(targetId, damage.total, spell.damage.type, isCrit)
+          get().addLogEntry({
+            type: 'damage',
+            actorId: casterId,
+            actorName: caster.name,
+            targetId,
+            targetName: target.name,
+            message: `${damage.total} ${spell.damage.type} damage`,
+            details: damage.breakdown,
+          })
+        } else {
+          get().addLogEntry({
+            type: 'attack',
+            actorId: casterId,
+            actorName: caster.name,
+            targetId,
+            targetName: target.name,
+            message: `${caster.name} misses ${target.name} with ${spell.name}`,
+            details: `${attackRoll.breakdown} vs AC ${targetAC}`,
+          })
+        }
+      } else if (spell.savingThrow) {
+        // Saving throw spell
+        const dc = getSpellSaveDC(character)
+        const saveResult = rollCombatantSavingThrow(target, spell.savingThrow, dc)
+
+        if (saveResult.success) {
+          // Usually half damage on save for damaging spells
+          const damage = rollDamage(spell.damage.dice, false)
+          const halfDamage = Math.floor(damage.total / 2)
+
+          get().addLogEntry({
+            type: 'spell',
+            actorId: casterId,
+            actorName: caster.name,
+            targetId,
+            targetName: target.name,
+            message: `${target.name} saves against ${spell.name} (DC ${dc})`,
+            details: `${saveResult.roll.breakdown} - half damage`,
+          })
+
+          // Show saved popup
+          get().addCombatPopup(targetId, 'saved')
+
+          if (halfDamage > 0) {
+            get().dealDamage(targetId, halfDamage, caster.name)
+            get().addDamagePopup(targetId, halfDamage, spell.damage.type, false)
+          }
+        } else {
+          const damage = rollDamage(spell.damage.dice, false)
+
+          get().addLogEntry({
+            type: 'spell',
+            actorId: casterId,
+            actorName: caster.name,
+            targetId,
+            targetName: target.name,
+            message: `${target.name} fails save against ${spell.name} (DC ${dc})`,
+            details: saveResult.roll.breakdown,
+          })
+
+          get().dealDamage(targetId, damage.total, caster.name)
+          get().addDamagePopup(targetId, damage.total, spell.damage.type, false)
+          get().addLogEntry({
+            type: 'damage',
+            actorId: casterId,
+            actorName: caster.name,
+            targetId,
+            targetName: target.name,
+            message: `${damage.total} ${spell.damage.type} damage`,
+            details: damage.breakdown,
+          })
+        }
+      }
+    }
+
+    // Mark action as used (cantrips are still actions)
+    if (spell.level === 0 || spell.castingTime === '1 action') {
+      get().useAction()
+    }
+
+    set({ selectedAction: undefined })
+    return true
+  },
+
+  getAvailableSpells: (combatantId) => {
+    const { combatants } = get()
+    const combatant = combatants.find((c) => c.id === combatantId)
+
+    if (!combatant || combatant.type !== 'character') return []
+
+    const character = combatant.data as Character
+    return character.knownSpells ?? []
+  },
+
+  makeDeathSave: (combatantId) => {
+    const { combatants } = get()
+    const combatant = combatants.find((c) => c.id === combatantId)
+
+    if (!combatant || combatant.currentHp > 0 || combatant.isStable) return
+
+    const result = rollDeathSave()
+
+    // Handle critical success (nat 20) - regain 1 HP
+    if (result.criticalSuccess) {
+      get().addLogEntry({
+        type: 'other',
+        actorId: combatantId,
+        actorName: combatant.name,
+        message: `${combatant.name} rolls a NATURAL 20 on death save and regains 1 HP!`,
+        details: result.roll.breakdown,
+      })
+
+      set((state) => ({
+        combatants: state.combatants.map((c) =>
+          c.id === combatantId
+            ? {
+                ...c,
+                currentHp: 1,
+                deathSaves: { successes: 0, failures: 0 },
+                conditions: c.conditions.filter((cond) => cond.condition !== 'unconscious'),
+              }
+            : c
+        ),
+      }))
+      return
+    }
+
+    // Handle critical failure (nat 1) - 2 failures
+    const failuresToAdd = result.criticalFailure ? 2 : (result.success ? 0 : 1)
+    const successesToAdd = result.success ? 1 : 0
+
+    const newFailures = combatant.deathSaves.failures + failuresToAdd
+    const newSuccesses = combatant.deathSaves.successes + successesToAdd
+
+    get().addLogEntry({
+      type: 'other',
+      actorId: combatantId,
+      actorName: combatant.name,
+      message: result.success
+        ? `${combatant.name} succeeds on death save (${newSuccesses}/3)`
+        : result.criticalFailure
+          ? `${combatant.name} rolls a NATURAL 1 - 2 death save failures! (${newFailures}/3)`
+          : `${combatant.name} fails death save (${newFailures}/3)`,
+      details: result.roll.breakdown,
+    })
+
+    // Check for death (3 failures)
+    if (newFailures >= 3) {
+      get().addLogEntry({
+        type: 'death',
+        actorId: combatantId,
+        actorName: combatant.name,
+        message: `${combatant.name} has died!`,
+      })
+    }
+
+    // Check for stabilization (3 successes)
+    if (newSuccesses >= 3) {
+      get().addLogEntry({
+        type: 'other',
+        actorId: combatantId,
+        actorName: combatant.name,
+        message: `${combatant.name} has stabilized!`,
+      })
+    }
+
+    set((state) => ({
+      combatants: state.combatants.map((c) =>
+        c.id === combatantId
+          ? {
+              ...c,
+              deathSaves: { successes: newSuccesses, failures: newFailures },
+              isStable: newSuccesses >= 3,
+            }
+          : c
+      ),
+    }))
+  },
+
+  stabilize: (combatantId) => {
+    set((state) => ({
+      combatants: state.combatants.map((c) =>
+        c.id === combatantId
+          ? { ...c, isStable: true, deathSaves: { successes: 0, failures: 0 } }
+          : c
+      ),
+    }))
+
+    const combatant = get().combatants.find((c) => c.id === combatantId)
+    if (combatant) {
+      get().addLogEntry({
+        type: 'other',
+        actorId: combatantId,
+        actorName: combatant.name,
+        message: `${combatant.name} has been stabilized`,
+      })
+    }
+  },
+
+  useRacialAbility: (combatantId, abilityId) => {
+    const { combatants } = get()
+    const combatant = combatants.find((c) => c.id === combatantId)
+
+    if (!combatant) return
+
+    const result = decrementRacialAbilityUse(combatant, abilityId, combatant.racialAbilityUses)
+
+    set((state) => ({
+      combatants: state.combatants.map((c) =>
+        c.id === combatantId
+          ? { ...c, racialAbilityUses: result.newUses }
+          : c
+      ),
+    }))
+  },
+
+  useSecondWind: (combatantId) => {
+    const { combatants } = get()
+    const combatant = combatants.find((c) => c.id === combatantId)
+
+    if (!combatant) return
+    if (combatant.type !== 'character') return
+
+    // Check if can use Second Wind
+    const feature = getSecondWindFeature(combatant)
+    if (!feature) return
+    if (!canUseSecondWind(combatant, combatant.classFeatureUses)) return
+
+    // Roll healing
+    const healResult = rollSecondWind(combatant)
+    const character = combatant.data as Character
+
+    // Use the ability (decrement uses)
+    const useResult = useClassFeature(combatant, feature.id, combatant.classFeatureUses)
+
+    // Calculate new HP (capped at max)
+    const newHp = Math.min(combatant.maxHp, combatant.currentHp + healResult.total)
+
+    get().addLogEntry({
+      type: 'heal',
+      actorId: combatantId,
+      actorName: combatant.name,
+      targetId: combatantId,
+      targetName: combatant.name,
+      message: `${combatant.name} uses Second Wind and heals ${healResult.total} HP!`,
+      details: `1d10 [${healResult.rolls.join(', ')}] + ${character.level} (level)`,
+    })
+
+    set((state) => ({
+      combatants: state.combatants.map((c) =>
+        c.id === combatantId
+          ? {
+              ...c,
+              currentHp: newHp,
+              hasBonusActed: true,
+              classFeatureUses: useResult.newUses,
+            }
+          : c
+      ),
+    }))
+  },
+
+  useActionSurge: (combatantId) => {
+    const { combatants } = get()
+    const combatant = combatants.find((c) => c.id === combatantId)
+
+    if (!combatant) return
+    if (combatant.type !== 'character') return
+
+    // Check if can use Action Surge
+    const feature = getActionSurgeFeature(combatant)
+    if (!feature) return
+    if (!canUseActionSurge(combatant, combatant.classFeatureUses)) return
+
+    // Use the ability (decrement uses)
+    const useResult = useClassFeature(combatant, feature.id, combatant.classFeatureUses)
+
+    get().addLogEntry({
+      type: 'other',
+      actorId: combatantId,
+      actorName: combatant.name,
+      message: `${combatant.name} uses Action Surge! They can take another action this turn.`,
+    })
+
+    // Reset hasActed to allow another action
+    set((state) => ({
+      combatants: state.combatants.map((c) =>
+        c.id === combatantId
+          ? {
+              ...c,
+              hasActed: false,
+              classFeatureUses: useResult.newUses,
+            }
+          : c
+      ),
+    }))
+  },
+
+  useCunningDash: () => {
+    const { turnOrder, currentTurnIndex, combatants } = get()
+    const currentId = turnOrder[currentTurnIndex]
+    const combatant = combatants.find((c) => c.id === currentId)
+
+    if (!combatant || combatant.hasBonusActed) return
+    if (!canUseCunningAction(combatant, 'dash')) return
+
+    // Cunning Action Dash: doubles remaining movement for this turn
+    const speed = combatant.type === 'character'
+      ? (combatant.data as Character).speed
+      : (combatant.data as Monster).speed.walk
+
+    get().addLogEntry({
+      type: 'other',
+      actorId: currentId,
+      actorName: combatant.name,
+      message: `${combatant.name} uses Cunning Action to Dash!`,
+    })
+
+    // Grant extra movement (same as regular Dash but uses bonus action)
+    set((state) => ({
+      combatants: state.combatants.map((c) =>
+        c.id === currentId
+          ? {
+              ...c,
+              hasBonusActed: true,
+              movementUsed: Math.max(0, c.movementUsed - speed), // Grant extra speed
+            }
+          : c
+      ),
+      selectedAction: undefined,
+    }))
+  },
+
+  useCunningDisengage: () => {
+    const { turnOrder, currentTurnIndex, combatants } = get()
+    const currentId = turnOrder[currentTurnIndex]
+    const combatant = combatants.find((c) => c.id === currentId)
+
+    if (!combatant || combatant.hasBonusActed) return
+    if (!canUseCunningAction(combatant, 'disengage')) return
+
+    get().addLogEntry({
+      type: 'other',
+      actorId: currentId,
+      actorName: combatant.name,
+      message: `${combatant.name} uses Cunning Action to Disengage!`,
+    })
+
+    // Add disengaging condition to prevent opportunity attacks this turn
+    set((state) => ({
+      combatants: state.combatants.map((c) =>
+        c.id === currentId
+          ? {
+              ...c,
+              hasBonusActed: true,
+              conditions: [...c.conditions, { condition: 'disengaging' as any, duration: 1 }],
+            }
+          : c
+      ),
+      selectedAction: undefined,
+    }))
+  },
+
+  useCunningHide: () => {
+    const { turnOrder, currentTurnIndex, combatants } = get()
+    const currentId = turnOrder[currentTurnIndex]
+    const combatant = combatants.find((c) => c.id === currentId)
+
+    if (!combatant || combatant.hasBonusActed) return
+    if (!canUseCunningAction(combatant, 'hide')) return
+
+    get().addLogEntry({
+      type: 'other',
+      actorId: currentId,
+      actorName: combatant.name,
+      message: `${combatant.name} uses Cunning Action to Hide!`,
+    })
+
+    // Add hidden condition (grants advantage on next attack, enemies have disadvantage attacking)
+    set((state) => ({
+      combatants: state.combatants.map((c) =>
+        c.id === currentId
+          ? {
+              ...c,
+              hasBonusActed: true,
+              conditions: [...c.conditions, { condition: 'hidden' as any, duration: 1 }],
+            }
+          : c
+      ),
+      selectedAction: undefined,
+    }))
+  },
+
+  useAction: () => {
+    const { turnOrder, currentTurnIndex } = get()
+    const currentId = turnOrder[currentTurnIndex]
+
+    set((state) => ({
+      combatants: state.combatants.map((c) =>
+        c.id === currentId ? { ...c, hasActed: true } : c
+      ),
+    }))
+  },
+
+  useBonusAction: () => {
+    const { turnOrder, currentTurnIndex } = get()
+    const currentId = turnOrder[currentTurnIndex]
+
+    set((state) => ({
+      combatants: state.combatants.map((c) =>
+        c.id === currentId ? { ...c, hasBonusActed: true } : c
+      ),
+    }))
+  },
+
+  useReaction: () => {
+    const { turnOrder, currentTurnIndex } = get()
+    const currentId = turnOrder[currentTurnIndex]
+
+    set((state) => ({
+      combatants: state.combatants.map((c) =>
+        c.id === currentId ? { ...c, hasReacted: true } : c
+      ),
+    }))
+  },
+
+  endTurn: () => {
+    get().nextTurn()
+  },
+
+  isAITurn: () => {
+    const { turnOrder, currentTurnIndex, combatants, phase } = get()
+    if (phase !== 'combat') return false
+
+    const currentId = turnOrder[currentTurnIndex]
+    const current = combatants.find((c) => c.id === currentId)
+
+    return current?.type === 'monster' && current.currentHp > 0
+  },
+
+  executeAITurn: async () => {
+    const { turnOrder, currentTurnIndex, combatants, grid, phase } = get()
+    if (phase !== 'combat') return
+
+    const currentId = turnOrder[currentTurnIndex]
+    const current = combatants.find((c) => c.id === currentId)
+
+    if (!current || current.type !== 'character' || current.currentHp <= 0) {
+      // This is a monster turn - execute AI
+      if (current && current.type === 'monster' && current.currentHp > 0) {
+        // Add small delay for visual feedback
+        await new Promise((resolve) => setTimeout(resolve, 500))
+
+        // Get AI action
+        const action = getNextAIAction(current, combatants, grid)
+
+        if (action.type === 'move' && action.targetPosition) {
+          get().moveCombatant(current.id, action.targetPosition)
+          // Small delay after move
+          await new Promise((resolve) => setTimeout(resolve, 300))
+
+          // Get next action after move
+          const updatedCombatants = get().combatants
+          const updatedCurrent = updatedCombatants.find((c) => c.id === currentId)
+          if (updatedCurrent) {
+            const updatedGrid = get().grid
+            const nextAction = getNextAIAction(updatedCurrent, updatedCombatants, updatedGrid)
+            if (nextAction.type === 'attack' && nextAction.targetId && nextAction.action) {
+              get().performAttack(current.id, nextAction.targetId, undefined, nextAction.action)
+            }
+          }
+        } else if (action.type === 'attack' && action.targetId && action.action) {
+          get().performAttack(current.id, action.targetId, undefined, action.action)
+        }
+
+        // End the monster's turn
+        await new Promise((resolve) => setTimeout(resolve, 500))
+        get().endTurn()
+      }
+    }
+  },
+
+  addLogEntry: (entry) => {
+    const logEntry: CombatLogEntry = {
+      ...entry,
+      id: generateId(),
+      timestamp: Date.now(),
+      round: get().round,
+    }
+
+    set((state) => ({
+      log: [...state.log, logEntry],
+    }))
+  },
+
+  addDamagePopup: (targetId, amount, damageType, isCritical = false) => {
+    const { combatants } = get()
+    const target = combatants.find((c) => c.id === targetId)
+    if (!target || target.position.x < 0) return
+
+    const popup: DamagePopup = {
+      id: generateId(),
+      targetId,
+      position: { ...target.position },
+      amount,
+      damageType,
+      isCritical,
+      timestamp: Date.now(),
+      velocityX: (Math.random() - 0.5) * 2, // Random value between -1 and 1
+      popupType: 'damage',
+    }
+
+    set((state) => ({
+      damagePopups: [...state.damagePopups, popup],
+    }))
+
+    // Auto-remove popup after animation completes (1.2 seconds)
+    setTimeout(() => {
+      get().removeDamagePopup(popup.id)
+    }, 1200)
+  },
+
+  addCombatPopup: (targetId, popupType, text) => {
+    const { combatants } = get()
+    const target = combatants.find((c) => c.id === targetId)
+    if (!target || target.position.x < 0) return
+
+    const popup: DamagePopup = {
+      id: generateId(),
+      targetId,
+      position: { ...target.position },
+      isCritical: false,
+      timestamp: Date.now(),
+      velocityX: (Math.random() - 0.5) * 2,
+      popupType,
+      text,
+    }
+
+    set((state) => ({
+      damagePopups: [...state.damagePopups, popup],
+    }))
+
+    setTimeout(() => {
+      get().removeDamagePopup(popup.id)
+    }, 1200)
+  },
+
+  addHealPopup: (targetId, amount) => {
+    const { combatants } = get()
+    const target = combatants.find((c) => c.id === targetId)
+    if (!target || target.position.x < 0) return
+
+    const popup: DamagePopup = {
+      id: generateId(),
+      targetId,
+      position: { ...target.position },
+      amount,
+      isCritical: false,
+      timestamp: Date.now(),
+      velocityX: (Math.random() - 0.5) * 2,
+      popupType: 'heal',
+    }
+
+    set((state) => ({
+      damagePopups: [...state.damagePopups, popup],
+    }))
+
+    setTimeout(() => {
+      get().removeDamagePopup(popup.id)
+    }, 1200)
+  },
+
+  removeDamagePopup: (id) => {
+    set((state) => ({
+      damagePopups: state.damagePopups.filter((p) => p.id !== id),
+    }))
+  },
+
+  resetCombat: () => {
+    set(initialState)
+  },
+}))
+
+// Selector helpers
+export function getCurrentCombatant(state: CombatState): Combatant | undefined {
+  return state.combatants.find(
+    (c) => c.id === state.turnOrder[state.currentTurnIndex]
+  )
+}
+
+export function isCurrentTurn(state: CombatState, combatantId: string): boolean {
+  return state.turnOrder[state.currentTurnIndex] === combatantId
+}

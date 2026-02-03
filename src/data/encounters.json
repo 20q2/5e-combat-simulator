@@ -1,0 +1,243 @@
+{
+  "encounters": [
+    {
+      "id": "goblin-ambush",
+      "name": "Goblin Ambush",
+      "description": "3 goblins spring from the bushes!",
+      "difficulty": "easy",
+      "monsters": [{ "id": "goblin", "count": 3 }],
+      "gridWidth": 14,
+      "gridHeight": 10,
+      "terrain": [
+        { "x": 3, "y": 2, "obstacle": { "type": "tree", "blocksMovement": true, "blocksLineOfSight": true } },
+        { "x": 6, "y": 1, "obstacle": { "type": "boulder", "blocksMovement": true, "blocksLineOfSight": true } },
+        { "x": 10, "y": 3, "obstacle": { "type": "tree", "blocksMovement": true, "blocksLineOfSight": true } },
+        { "x": 1, "y": 6, "obstacle": { "type": "tree", "blocksMovement": true, "blocksLineOfSight": true } },
+        { "x": 8, "y": 7, "obstacle": { "type": "boulder", "blocksMovement": true, "blocksLineOfSight": true } },
+        { "x": 12, "y": 8, "obstacle": { "type": "tree", "blocksMovement": true, "blocksLineOfSight": true } },
+        { "x": 4, "y": 5, "terrain": "difficult" },
+        { "x": 5, "y": 5, "terrain": "difficult" },
+        { "x": 4, "y": 6, "terrain": "difficult" }
+      ]
+    },
+    {
+      "id": "wolf-pack",
+      "name": "Wolf Pack",
+      "description": "A hungry pack of wolves surrounds you.",
+      "difficulty": "medium",
+      "monsters": [{ "id": "wolf", "count": 4 }],
+      "gridWidth": 14,
+      "gridHeight": 10,
+      "terrain": [
+        { "x": 2, "y": 1, "obstacle": { "type": "tree", "blocksMovement": true, "blocksLineOfSight": true } },
+        { "x": 7, "y": 0, "obstacle": { "type": "tree", "blocksMovement": true, "blocksLineOfSight": true } },
+        { "x": 11, "y": 2, "obstacle": { "type": "tree", "blocksMovement": true, "blocksLineOfSight": true } },
+        { "x": 0, "y": 5, "obstacle": { "type": "boulder", "blocksMovement": true, "blocksLineOfSight": true } },
+        { "x": 13, "y": 4, "obstacle": { "type": "tree", "blocksMovement": true, "blocksLineOfSight": true } },
+        { "x": 4, "y": 8, "obstacle": { "type": "tree", "blocksMovement": true, "blocksLineOfSight": true } },
+        { "x": 9, "y": 9, "obstacle": { "type": "boulder", "blocksMovement": true, "blocksLineOfSight": true } },
+        { "x": 5, "y": 4, "terrain": "difficult" },
+        { "x": 6, "y": 4, "terrain": "difficult" },
+        { "x": 5, "y": 5, "terrain": "difficult" },
+        { "x": 6, "y": 5, "terrain": "difficult" },
+        { "x": 8, "y": 6, "terrain": "difficult" },
+        { "x": 9, "y": 6, "terrain": "difficult" }
+      ]
+    },
+    {
+      "id": "skeleton-patrol",
+      "name": "Skeleton Patrol",
+      "description": "Undead guardians rise to defend their territory.",
+      "difficulty": "medium",
+      "monsters": [{ "id": "skeleton", "count": 3 }],
+      "gridWidth": 14,
+      "gridHeight": 10,
+      "terrain": [
+        { "x": 3, "y": 2, "obstacle": { "type": "pillar", "blocksMovement": true, "blocksLineOfSight": true } },
+        { "x": 3, "y": 7, "obstacle": { "type": "pillar", "blocksMovement": true, "blocksLineOfSight": true } },
+        { "x": 7, "y": 4, "obstacle": { "type": "pillar", "blocksMovement": true, "blocksLineOfSight": true } },
+        { "x": 10, "y": 2, "obstacle": { "type": "pillar", "blocksMovement": true, "blocksLineOfSight": true } },
+        { "x": 10, "y": 7, "obstacle": { "type": "pillar", "blocksMovement": true, "blocksLineOfSight": true } },
+        { "x": 0, "y": 4, "obstacle": { "type": "boulder", "blocksMovement": true, "blocksLineOfSight": true } },
+        { "x": 0, "y": 5, "obstacle": { "type": "boulder", "blocksMovement": true, "blocksLineOfSight": true } },
+        { "x": 13, "y": 4, "obstacle": { "type": "boulder", "blocksMovement": true, "blocksLineOfSight": true } },
+        { "x": 13, "y": 5, "obstacle": { "type": "boulder", "blocksMovement": true, "blocksLineOfSight": true } }
+      ]
+    },
+    {
+      "id": "orc-raiders",
+      "name": "Orc Raiders",
+      "description": "A band of orc raiders blocks your path.",
+      "difficulty": "hard",
+      "monsters": [{ "id": "orc", "count": 2 }],
+      "gridWidth": 14,
+      "gridHeight": 10,
+      "terrain": [
+        { "x": 2, "y": 3, "obstacle": { "type": "boulder", "blocksMovement": true, "blocksLineOfSight": true } },
+        { "x": 5, "y": 1, "obstacle": { "type": "tree", "blocksMovement": true, "blocksLineOfSight": true } },
+        { "x": 9, "y": 2, "obstacle": { "type": "boulder", "blocksMovement": true, "blocksLineOfSight": true } },
+        { "x": 12, "y": 4, "obstacle": { "type": "tree", "blocksMovement": true, "blocksLineOfSight": true } },
+        { "x": 3, "y": 7, "obstacle": { "type": "tree", "blocksMovement": true, "blocksLineOfSight": true } },
+        { "x": 7, "y": 8, "obstacle": { "type": "boulder", "blocksMovement": true, "blocksLineOfSight": true } },
+        { "x": 11, "y": 7, "obstacle": { "type": "tree", "blocksMovement": true, "blocksLineOfSight": true } },
+        { "x": 6, "y": 4, "terrain": "difficult" },
+        { "x": 7, "y": 4, "terrain": "difficult" },
+        { "x": 6, "y": 5, "terrain": "difficult" },
+        { "x": 7, "y": 5, "terrain": "difficult" }
+      ]
+    },
+    {
+      "id": "undead-horde",
+      "name": "Undead Horde",
+      "description": "Zombies shamble toward you from all directions.",
+      "difficulty": "hard",
+      "monsters": [{ "id": "zombie", "count": 5 }],
+      "gridWidth": 16,
+      "gridHeight": 12,
+      "terrain": [
+        { "x": 4, "y": 2, "obstacle": { "type": "furniture", "blocksMovement": true, "blocksLineOfSight": false } },
+        { "x": 5, "y": 2, "obstacle": { "type": "furniture", "blocksMovement": true, "blocksLineOfSight": false } },
+        { "x": 10, "y": 3, "obstacle": { "type": "pillar", "blocksMovement": true, "blocksLineOfSight": true } },
+        { "x": 2, "y": 6, "obstacle": { "type": "boulder", "blocksMovement": true, "blocksLineOfSight": true } },
+        { "x": 13, "y": 5, "obstacle": { "type": "pillar", "blocksMovement": true, "blocksLineOfSight": true } },
+        { "x": 7, "y": 8, "obstacle": { "type": "furniture", "blocksMovement": true, "blocksLineOfSight": false } },
+        { "x": 8, "y": 8, "obstacle": { "type": "furniture", "blocksMovement": true, "blocksLineOfSight": false } },
+        { "x": 4, "y": 10, "obstacle": { "type": "boulder", "blocksMovement": true, "blocksLineOfSight": true } },
+        { "x": 11, "y": 9, "obstacle": { "type": "pillar", "blocksMovement": true, "blocksLineOfSight": true } },
+        { "x": 6, "y": 5, "terrain": "hazard" },
+        { "x": 7, "y": 5, "terrain": "hazard" },
+        { "x": 6, "y": 6, "terrain": "hazard" },
+        { "x": 7, "y": 6, "terrain": "hazard" }
+      ]
+    },
+    {
+      "id": "bandit-camp",
+      "name": "Bandit Camp",
+      "description": "You stumble upon a bandit hideout.",
+      "difficulty": "medium",
+      "monsters": [
+        { "id": "goblin", "count": 2 },
+        { "id": "wolf", "count": 1 }
+      ],
+      "gridWidth": 14,
+      "gridHeight": 10,
+      "terrain": [
+        { "x": 9, "y": 3, "obstacle": { "type": "furniture", "blocksMovement": true, "blocksLineOfSight": false } },
+        { "x": 10, "y": 3, "obstacle": { "type": "furniture", "blocksMovement": true, "blocksLineOfSight": false } },
+        { "x": 9, "y": 4, "obstacle": { "type": "furniture", "blocksMovement": true, "blocksLineOfSight": false } },
+        { "x": 10, "y": 4, "obstacle": { "type": "furniture", "blocksMovement": true, "blocksLineOfSight": false } },
+        { "x": 2, "y": 1, "obstacle": { "type": "tree", "blocksMovement": true, "blocksLineOfSight": true } },
+        { "x": 1, "y": 8, "obstacle": { "type": "tree", "blocksMovement": true, "blocksLineOfSight": true } },
+        { "x": 5, "y": 6, "obstacle": { "type": "boulder", "blocksMovement": true, "blocksLineOfSight": true } },
+        { "x": 12, "y": 7, "obstacle": { "type": "tree", "blocksMovement": true, "blocksLineOfSight": true } },
+        { "x": 6, "y": 2, "terrain": "difficult" },
+        { "x": 7, "y": 2, "terrain": "difficult" },
+        { "x": 6, "y": 3, "terrain": "difficult" }
+      ]
+    },
+    {
+      "id": "pillared-hall",
+      "name": "Pillared Hall",
+      "description": "Stone pillars provide cover in this ancient hall.",
+      "difficulty": "medium",
+      "monsters": [{ "id": "skeleton", "count": 4 }],
+      "gridWidth": 15,
+      "gridHeight": 10,
+      "terrain": [
+        { "x": 4, "y": 2, "obstacle": { "type": "pillar", "blocksMovement": true, "blocksLineOfSight": true } },
+        { "x": 4, "y": 5, "obstacle": { "type": "pillar", "blocksMovement": true, "blocksLineOfSight": true } },
+        { "x": 4, "y": 8, "obstacle": { "type": "pillar", "blocksMovement": true, "blocksLineOfSight": true } },
+        { "x": 10, "y": 2, "obstacle": { "type": "pillar", "blocksMovement": true, "blocksLineOfSight": true } },
+        { "x": 10, "y": 5, "obstacle": { "type": "pillar", "blocksMovement": true, "blocksLineOfSight": true } },
+        { "x": 10, "y": 8, "obstacle": { "type": "pillar", "blocksMovement": true, "blocksLineOfSight": true } }
+      ]
+    },
+    {
+      "id": "throne-room",
+      "name": "Throne Room",
+      "description": "Orcs guard the raised throne platform.",
+      "difficulty": "hard",
+      "monsters": [{ "id": "orc", "count": 3 }],
+      "gridWidth": 15,
+      "gridHeight": 12,
+      "terrain": [
+        { "x": 10, "y": 4, "elevation": 1 },
+        { "x": 11, "y": 4, "elevation": 1 },
+        { "x": 12, "y": 4, "elevation": 1 },
+        { "x": 13, "y": 4, "elevation": 1 },
+        { "x": 10, "y": 5, "elevation": 1 },
+        { "x": 11, "y": 5, "elevation": 1 },
+        { "x": 12, "y": 5, "elevation": 1 },
+        { "x": 13, "y": 5, "elevation": 1 },
+        { "x": 10, "y": 6, "elevation": 1 },
+        { "x": 11, "y": 6, "elevation": 1 },
+        { "x": 12, "y": 6, "elevation": 1 },
+        { "x": 13, "y": 6, "elevation": 1 },
+        { "x": 10, "y": 7, "elevation": 1 },
+        { "x": 11, "y": 7, "elevation": 1 },
+        { "x": 12, "y": 7, "elevation": 1 },
+        { "x": 13, "y": 7, "elevation": 1 },
+        { "x": 9, "y": 5, "stairConnection": { "targetX": 10, "targetY": 5, "targetElevation": 1, "direction": "up" } },
+        { "x": 9, "y": 6, "stairConnection": { "targetX": 10, "targetY": 6, "targetElevation": 1, "direction": "up" } },
+        { "x": 3, "y": 3, "obstacle": { "type": "pillar", "blocksMovement": true, "blocksLineOfSight": true } },
+        { "x": 3, "y": 8, "obstacle": { "type": "pillar", "blocksMovement": true, "blocksLineOfSight": true } }
+      ]
+    },
+    {
+      "id": "forest-clearing",
+      "name": "Forest Clearing",
+      "description": "Wolves hunt among the trees and undergrowth.",
+      "difficulty": "medium",
+      "monsters": [{ "id": "wolf", "count": 5 }],
+      "gridWidth": 16,
+      "gridHeight": 12,
+      "terrain": [
+        { "x": 2, "y": 1, "obstacle": { "type": "tree", "blocksMovement": true, "blocksLineOfSight": true } },
+        { "x": 5, "y": 2, "obstacle": { "type": "tree", "blocksMovement": true, "blocksLineOfSight": true } },
+        { "x": 1, "y": 5, "obstacle": { "type": "tree", "blocksMovement": true, "blocksLineOfSight": true } },
+        { "x": 8, "y": 1, "obstacle": { "type": "tree", "blocksMovement": true, "blocksLineOfSight": true } },
+        { "x": 12, "y": 3, "obstacle": { "type": "tree", "blocksMovement": true, "blocksLineOfSight": true } },
+        { "x": 14, "y": 6, "obstacle": { "type": "tree", "blocksMovement": true, "blocksLineOfSight": true } },
+        { "x": 10, "y": 9, "obstacle": { "type": "tree", "blocksMovement": true, "blocksLineOfSight": true } },
+        { "x": 4, "y": 10, "obstacle": { "type": "tree", "blocksMovement": true, "blocksLineOfSight": true } },
+        { "x": 13, "y": 10, "obstacle": { "type": "tree", "blocksMovement": true, "blocksLineOfSight": true } },
+        { "x": 3, "y": 3, "terrain": "difficult" },
+        { "x": 4, "y": 3, "terrain": "difficult" },
+        { "x": 3, "y": 4, "terrain": "difficult" },
+        { "x": 7, "y": 7, "terrain": "difficult" },
+        { "x": 8, "y": 7, "terrain": "difficult" },
+        { "x": 7, "y": 8, "terrain": "difficult" },
+        { "x": 8, "y": 8, "terrain": "difficult" },
+        { "x": 11, "y": 5, "terrain": "difficult" },
+        { "x": 12, "y": 5, "terrain": "difficult" }
+      ]
+    },
+    {
+      "id": "ruined-chapel",
+      "name": "Ruined Chapel",
+      "description": "Zombies rise among the broken pews and rubble.",
+      "difficulty": "hard",
+      "monsters": [{ "id": "zombie", "count": 6 }],
+      "gridWidth": 14,
+      "gridHeight": 10,
+      "terrain": [
+        { "x": 0, "y": 3, "obstacle": { "type": "boulder", "blocksMovement": true, "blocksLineOfSight": true } },
+        { "x": 0, "y": 4, "obstacle": { "type": "boulder", "blocksMovement": true, "blocksLineOfSight": true } },
+        { "x": 13, "y": 5, "obstacle": { "type": "boulder", "blocksMovement": true, "blocksLineOfSight": true } },
+        { "x": 13, "y": 6, "obstacle": { "type": "boulder", "blocksMovement": true, "blocksLineOfSight": true } },
+        { "x": 4, "y": 2, "obstacle": { "type": "furniture", "blocksMovement": true, "blocksLineOfSight": false } },
+        { "x": 5, "y": 2, "obstacle": { "type": "furniture", "blocksMovement": true, "blocksLineOfSight": false } },
+        { "x": 4, "y": 4, "obstacle": { "type": "furniture", "blocksMovement": true, "blocksLineOfSight": false } },
+        { "x": 5, "y": 4, "obstacle": { "type": "furniture", "blocksMovement": true, "blocksLineOfSight": false } },
+        { "x": 8, "y": 2, "obstacle": { "type": "furniture", "blocksMovement": true, "blocksLineOfSight": false } },
+        { "x": 9, "y": 2, "obstacle": { "type": "furniture", "blocksMovement": true, "blocksLineOfSight": false } },
+        { "x": 8, "y": 4, "obstacle": { "type": "furniture", "blocksMovement": true, "blocksLineOfSight": false } },
+        { "x": 9, "y": 4, "obstacle": { "type": "furniture", "blocksMovement": true, "blocksLineOfSight": false } },
+        { "x": 6, "y": 7, "terrain": "hazard" },
+        { "x": 7, "y": 7, "terrain": "hazard" },
+        { "x": 6, "y": 8, "terrain": "hazard" },
+        { "x": 7, "y": 8, "terrain": "hazard" }
+      ]
+    }
+  ]
+}

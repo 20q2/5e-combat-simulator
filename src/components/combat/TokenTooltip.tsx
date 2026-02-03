@@ -1,0 +1,241 @@
+import { cn } from '@/lib/utils'
+import type { Combatant, Character, Monster } from '@/types'
+import {
+  Heart,
+  Shield,
+  Swords,
+  Zap,
+  Wind,
+  Footprints,
+  Brain,
+  Skull,
+  AlertTriangle,
+  Circle,
+  Triangle,
+  Square,
+} from 'lucide-react'
+
+interface TokenTooltipProps {
+  combatant: Combatant
+  isCurrentTurn: boolean
+}
+
+// Helper to format condition name
+function formatCondition(condition: string): string {
+  return condition.charAt(0).toUpperCase() + condition.slice(1)
+}
+
+export function TokenTooltip({ combatant, isCurrentTurn }: TokenTooltipProps) {
+  const data = combatant.data
+  const isCharacter = combatant.type === 'character'
+  const character = isCharacter ? (data as Character) : null
+  const monster = !isCharacter ? (data as Monster) : null
+
+  // Get AC
+  const ac = isCharacter ? character!.ac : monster!.ac
+
+  // Get speed
+  const speed = isCharacter ? character!.speed : monster!.speed.walk
+
+  // Calculate movement remaining
+  const movementRemaining = speed - combatant.movementUsed
+
+  // HP percentage for color coding
+  const hpPercent = (combatant.currentHp / combatant.maxHp) * 100
+
+  // Death save display (only when at 0 HP and is character)
+  const showDeathSaves = combatant.currentHp === 0 && isCharacter && !combatant.isStable
+
+  return (
+    <div className="bg-slate-800 border border-slate-600 rounded-lg shadow-xl p-3 min-w-[200px] max-w-[280px] text-sm">
+      {/* Header - Name and Type */}
+      <div className="flex items-center justify-between gap-2 mb-2 pb-2 border-b border-slate-700">
+        <span className="font-bold text-white truncate">{combatant.name}</span>
+        <span className={cn(
+          'text-xs px-1.5 py-0.5 rounded',
+          isCharacter ? 'bg-violet-600/50 text-violet-200' : 'bg-rose-600/50 text-rose-200'
+        )}>
+          {isCharacter ? `Lvl ${character!.level}` : `CR ${monster!.challengeRating}`}
+        </span>
+      </div>
+
+      {/* Core Stats Row */}
+      <div className="grid grid-cols-3 gap-2 mb-2">
+        {/* HP */}
+        <div className="flex flex-col items-center">
+          <div className="flex items-center gap-1 text-slate-400 text-xs mb-0.5">
+            <Heart className="w-3 h-3" />
+            <span>HP</span>
+          </div>
+          <span className={cn(
+            'font-semibold',
+            hpPercent > 50 ? 'text-emerald-400' :
+            hpPercent > 25 ? 'text-amber-400' : 'text-rose-400'
+          )}>
+            {combatant.currentHp}/{combatant.maxHp}
+          </span>
+          {combatant.temporaryHp > 0 && (
+            <span className="text-xs text-sky-400">+{combatant.temporaryHp} temp</span>
+          )}
+        </div>
+
+        {/* AC */}
+        <div className="flex flex-col items-center">
+          <div className="flex items-center gap-1 text-slate-400 text-xs mb-0.5">
+            <Shield className="w-3 h-3" />
+            <span>AC</span>
+          </div>
+          <span className="font-semibold text-slate-200">{ac}</span>
+        </div>
+
+        {/* Initiative */}
+        <div className="flex flex-col items-center">
+          <div className="flex items-center gap-1 text-slate-400 text-xs mb-0.5">
+            <Zap className="w-3 h-3" />
+            <span>Init</span>
+          </div>
+          <span className="font-semibold text-slate-200">{combatant.initiative}</span>
+        </div>
+      </div>
+
+      {/* Movement */}
+      <div className="flex items-center justify-between px-2 py-1.5 bg-slate-900/50 rounded mb-2">
+        <div className="flex items-center gap-1.5 text-slate-400">
+          <Footprints className="w-3.5 h-3.5" />
+          <span className="text-xs">Movement</span>
+        </div>
+        <span className={cn(
+          'text-xs font-medium',
+          movementRemaining > 0 ? 'text-emerald-400' : 'text-slate-500'
+        )}>
+          {movementRemaining} / {speed} ft
+        </span>
+      </div>
+
+      {/* Action Economy - Only show during combat when it's their turn */}
+      {isCurrentTurn && (
+        <div className="flex items-center justify-between gap-1 px-2 py-1.5 bg-amber-900/30 border border-amber-700/50 rounded mb-2">
+          <div className="flex items-center gap-1.5 text-amber-400">
+            <Swords className="w-3.5 h-3.5" />
+            <span className="text-xs font-medium">Actions</span>
+          </div>
+          <div className="flex gap-3 text-xs">
+            <span className={cn(
+              'flex items-center gap-1',
+              combatant.hasActed ? 'text-slate-500' : 'text-emerald-400'
+            )}>
+              <Circle className={cn(
+                'w-3 h-3',
+                combatant.hasActed ? 'fill-slate-500 text-slate-600' : 'fill-emerald-500 text-emerald-400'
+              )} />
+              <span className={combatant.hasActed ? 'line-through' : ''}>Action</span>
+            </span>
+            <span className={cn(
+              'flex items-center gap-1',
+              combatant.hasBonusActed ? 'text-slate-500' : 'text-amber-400'
+            )}>
+              <Triangle className={cn(
+                'w-3 h-3',
+                combatant.hasBonusActed ? 'fill-slate-500 text-slate-600' : 'fill-amber-500 text-amber-400'
+              )} />
+              <span className={combatant.hasBonusActed ? 'line-through' : ''}>Bonus</span>
+            </span>
+            <span className={cn(
+              'flex items-center gap-1',
+              combatant.hasReacted ? 'text-slate-500' : 'text-violet-400'
+            )}>
+              <Square className={cn(
+                'w-3 h-3',
+                combatant.hasReacted ? 'fill-slate-500 text-slate-600' : 'fill-violet-500 text-violet-400'
+              )} />
+              <span className={combatant.hasReacted ? 'line-through' : ''}>React</span>
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* Concentration */}
+      {combatant.concentratingOn && (
+        <div className="flex items-center gap-1.5 px-2 py-1.5 bg-purple-900/30 border border-purple-700/50 rounded mb-2">
+          <Brain className="w-3.5 h-3.5 text-purple-400" />
+          <span className="text-xs text-purple-300">
+            Concentrating: <span className="font-medium">{combatant.concentratingOn.name}</span>
+          </span>
+        </div>
+      )}
+
+      {/* Conditions */}
+      {combatant.conditions.length > 0 && (
+        <div className="px-2 py-1.5 bg-rose-900/30 border border-rose-700/50 rounded mb-2">
+          <div className="flex items-center gap-1.5 mb-1">
+            <AlertTriangle className="w-3.5 h-3.5 text-rose-400" />
+            <span className="text-xs text-rose-300 font-medium">Conditions</span>
+          </div>
+          <div className="flex flex-wrap gap-1">
+            {combatant.conditions.map((c, i) => (
+              <span
+                key={i}
+                className="text-xs px-1.5 py-0.5 bg-rose-800/50 text-rose-200 rounded"
+              >
+                {formatCondition(c.condition)}
+                {c.duration && <span className="text-rose-400 ml-1">({c.duration}r)</span>}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Death Saves */}
+      {showDeathSaves && (
+        <div className="px-2 py-1.5 bg-slate-900 border border-slate-600 rounded">
+          <div className="flex items-center gap-1.5 mb-1">
+            <Skull className="w-3.5 h-3.5 text-slate-400" />
+            <span className="text-xs text-slate-300 font-medium">Death Saves</span>
+          </div>
+          <div className="flex justify-between text-xs">
+            <div className="flex items-center gap-1">
+              <span className="text-emerald-400">Saves:</span>
+              <div className="flex gap-0.5">
+                {[0, 1, 2].map(i => (
+                  <div
+                    key={i}
+                    className={cn(
+                      'w-3 h-3 rounded-full border',
+                      i < combatant.deathSaves.successes
+                        ? 'bg-emerald-500 border-emerald-400'
+                        : 'border-slate-600'
+                    )}
+                  />
+                ))}
+              </div>
+            </div>
+            <div className="flex items-center gap-1">
+              <span className="text-rose-400">Fails:</span>
+              <div className="flex gap-0.5">
+                {[0, 1, 2].map(i => (
+                  <div
+                    key={i}
+                    className={cn(
+                      'w-3 h-3 rounded-full border',
+                      i < combatant.deathSaves.failures
+                        ? 'bg-rose-500 border-rose-400'
+                        : 'border-slate-600'
+                    )}
+                  />
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Stable indicator */}
+      {combatant.currentHp === 0 && combatant.isStable && (
+        <div className="flex items-center gap-1.5 px-2 py-1.5 bg-slate-900 border border-slate-600 rounded">
+          <Wind className="w-3.5 h-3.5 text-slate-400" />
+          <span className="text-xs text-slate-300">Stable (unconscious)</span>
+        </div>
+      )}
+    </div>
+  )
+}

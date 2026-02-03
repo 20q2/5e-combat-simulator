@@ -1,0 +1,27 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm create:*)",
+      "Bash(npx create-vite:*)",
+      "Bash(npm install)",
+      "Bash(npm install:*)",
+      "Bash(timeout 10 npm run dev:*)",
+      "Bash(npx tsc:*)",
+      "Bash(netstat:*)",
+      "Bash(findstr:*)",
+      "Bash(node node_modules/vite/bin/vite.js build:*)",
+      "Bash(npx vite build)",
+      "Bash(npx --yes npm install:*)",
+      "Bash(where:*)",
+      "Bash(node:*)",
+      "Bash(\"C:\\\\Program Files\\\\nodejs\\\\npm.cmd\" install -D vitest @testing-library/react @testing-library/jest-dom @testing-library/user-event jsdom @vitest/coverage-v8 --prefix \"a:\\\\Coding\\\\5e-combat-simulator\")",
+      "Bash(\"C:\\\\Program Files\\\\nodejs\\\\npx.cmd\" vitest run --reporter=verbose --prefix \"a:\\\\Coding\\\\5e-combat-simulator\")",
+      "Bash(\"C:\\\\Program Files\\\\nodejs\\\\npx.cmd\" vitest run --reporter=verbose)",
+      "Bash(\"C:\\\\Program Files\\\\nodejs\\\\npx.cmd\" tsc --noEmit)",
+      "Bash(\"C:\\\\Program Files\\\\nodejs\\\\npx.cmd\" vitest run)",
+      "Bash(git init:*)",
+      "Bash(git remote add:*)",
+      "Bash(git add:*)"
+    ]
+  }
+}
