@@ -131,7 +131,6 @@ export function CharacterCreator() {
   }
 
   const isFirstStep = actualCurrentStep === 0
-  const isLastStep = actualCurrentStep === visibleSteps.length - 1
   const isReviewStep = visibleSteps[actualCurrentStep]?.label === 'Review'
 
   // Validation for next button
@@ -155,16 +154,11 @@ export function CharacterCreator() {
         onStepClick={handleStepClick}
       />
 
-      <div className={cn(
-        'grid gap-6',
-        isReviewStep ? 'grid-cols-1 max-w-5xl mx-auto' : 'lg:grid-cols-[1fr,320px]'
-      )}>
-        {/* Main Content */}
-        <div>
+      {isReviewStep ? (
+        <div className="max-w-5xl mx-auto">
           <div className="mb-8">
             <CurrentStepComponent />
           </div>
-
           <div className="flex justify-between">
             <Button
               variant="outline"
@@ -174,23 +168,39 @@ export function CharacterCreator() {
               <ChevronLeft className="w-4 h-4 mr-1" />
               Previous
             </Button>
+          </div>
+        </div>
+      ) : (
+        <div className="grid md:grid-cols-[1fr,350px] gap-6">
+          {/* Main Content - Left Side */}
+          <div className="order-2 md:order-1">
+            <div className="mb-8">
+              <CurrentStepComponent />
+            </div>
 
-            {!isLastStep && (
+            <div className="flex justify-between">
+              <Button
+                variant="outline"
+                onClick={handlePrev}
+                disabled={isFirstStep}
+              >
+                <ChevronLeft className="w-4 h-4 mr-1" />
+                Previous
+              </Button>
+
               <Button onClick={handleNext} disabled={!canProceed()}>
                 Next
                 <ChevronRight className="w-4 h-4 ml-1" />
               </Button>
-            )}
+            </div>
           </div>
-        </div>
 
-        {/* Character Preview Sidebar */}
-        {!isReviewStep && (
-          <div className="hidden lg:block">
+          {/* Character Preview - Right Side */}
+          <div className="order-1 md:order-2">
             <CharacterPreview />
           </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   )
 }
