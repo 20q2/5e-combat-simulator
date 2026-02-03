@@ -1,13 +1,6 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { cn } from '@/lib/utils'
 import { getAllClasses, getClassById, getClassFeaturesByLevel, getSubclassFeaturesByLevel } from '@/data'
 import { useCharacterStore } from '@/stores/characterStore'
@@ -246,6 +239,51 @@ export function ClassSelector() {
         </CardContent>
       </Card>
 
+      {/* Subclass Selector - show when class has subclasses */}
+      {selectedClass && selectedClass.subclasses.length > 0 && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-lg">{selectedClass.name} Subclass</CardTitle>
+            <CardDescription>
+              Choose your specialization within the {selectedClass.name} class
+              {draft.level < selectedClass.subclassLevel && (
+                <span className="text-amber-500 ml-1">
+                  (features unlock at level {selectedClass.subclassLevel})
+                </span>
+              )}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
+              {selectedClass.subclasses.map((subclass) => (
+                <button
+                  key={subclass.id}
+                  onClick={() => setSubclass(subclass.id)}
+                  className={cn(
+                    'p-3 rounded-lg border-2 transition-all text-left hover:border-primary/50',
+                    draft.subclassId === subclass.id
+                      ? 'border-primary bg-primary/10'
+                      : 'border-border'
+                  )}
+                >
+                  <div className="font-medium text-sm">{subclass.name}</div>
+                  {subclass.features.length > 0 && (
+                    <div className="text-xs text-muted-foreground mt-1 line-clamp-2">
+                      {subclass.features[0].name}
+                    </div>
+                  )}
+                </button>
+              ))}
+            </div>
+            {draft.subclassId && draft.level < selectedClass.subclassLevel && (
+              <p className="text-xs text-amber-500 mt-3 text-center">
+                Subclass features will activate at level {selectedClass.subclassLevel}
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
       <div className="grid md:grid-cols-2 gap-6">
         {/* Class List */}
         <Card>
@@ -255,7 +293,7 @@ export function ClassSelector() {
               Choose your character's class. This determines your abilities, hit points, and features.
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent>
             <div className="space-y-2 max-h-[400px] overflow-y-auto pr-2">
               {classes.map((c) => (
                 <ClassCard
@@ -266,40 +304,6 @@ export function ClassSelector() {
                 />
               ))}
             </div>
-
-            {/* Subclass Selector - always show if class has subclasses */}
-            {selectedClass && selectedClass.subclasses.length > 0 && (
-              <div className="pt-4 border-t">
-                <Label className="mb-2 block">
-                  {selectedClass.name} Subclass
-                  {draft.level < selectedClass.subclassLevel && (
-                    <span className="text-xs text-muted-foreground ml-2">
-                      (features at level {selectedClass.subclassLevel})
-                    </span>
-                  )}
-                </Label>
-                <Select
-                  value={draft.subclassId ?? ''}
-                  onValueChange={(v) => setSubclass(v || null)}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select a subclass" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {selectedClass.subclasses.map((subclass) => (
-                      <SelectItem key={subclass.id} value={subclass.id}>
-                        {subclass.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {draft.subclassId && draft.level < selectedClass.subclassLevel && (
-                  <p className="text-xs text-amber-500 mt-2">
-                    Subclass features will activate at level {selectedClass.subclassLevel}
-                  </p>
-                )}
-              </div>
-            )}
           </CardContent>
         </Card>
 
