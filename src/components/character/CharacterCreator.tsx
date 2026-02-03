@@ -7,6 +7,7 @@ import { ClassSelector } from './ClassSelector'
 import { SpellSelector } from './SpellSelector'
 import { EquipmentSelector } from './EquipmentSelector'
 import { CharacterSheet } from './CharacterSheet'
+import { CharacterPreview } from './CharacterPreview'
 import { getClassById } from '@/data'
 import {
   Brain,
@@ -131,6 +132,7 @@ export function CharacterCreator() {
 
   const isFirstStep = actualCurrentStep === 0
   const isLastStep = actualCurrentStep === visibleSteps.length - 1
+  const isReviewStep = visibleSteps[actualCurrentStep]?.label === 'Review'
 
   // Validation for next button
   const canProceed = () => {
@@ -146,32 +148,47 @@ export function CharacterCreator() {
   }
 
   return (
-    <div className="max-w-5xl mx-auto">
+    <div className="max-w-7xl mx-auto">
       <StepIndicator
         steps={visibleSteps}
         currentStep={visibleSteps[actualCurrentStep]?.id ?? 0}
         onStepClick={handleStepClick}
       />
 
-      <div className="mb-8">
-        <CurrentStepComponent />
-      </div>
+      <div className={cn(
+        'grid gap-6',
+        isReviewStep ? 'grid-cols-1 max-w-5xl mx-auto' : 'lg:grid-cols-[1fr,320px]'
+      )}>
+        {/* Main Content */}
+        <div>
+          <div className="mb-8">
+            <CurrentStepComponent />
+          </div>
 
-      <div className="flex justify-between">
-        <Button
-          variant="outline"
-          onClick={handlePrev}
-          disabled={isFirstStep}
-        >
-          <ChevronLeft className="w-4 h-4 mr-1" />
-          Previous
-        </Button>
+          <div className="flex justify-between">
+            <Button
+              variant="outline"
+              onClick={handlePrev}
+              disabled={isFirstStep}
+            >
+              <ChevronLeft className="w-4 h-4 mr-1" />
+              Previous
+            </Button>
 
-        {!isLastStep && (
-          <Button onClick={handleNext} disabled={!canProceed()}>
-            Next
-            <ChevronRight className="w-4 h-4 ml-1" />
-          </Button>
+            {!isLastStep && (
+              <Button onClick={handleNext} disabled={!canProceed()}>
+                Next
+                <ChevronRight className="w-4 h-4 ml-1" />
+              </Button>
+            )}
+          </div>
+        </div>
+
+        {/* Character Preview Sidebar */}
+        {!isReviewStep && (
+          <div className="hidden lg:block">
+            <CharacterPreview />
+          </div>
         )}
       </div>
     </div>
