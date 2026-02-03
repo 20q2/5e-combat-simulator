@@ -21,7 +21,11 @@
       "Bash(\"C:\\\\Program Files\\\\nodejs\\\\npx.cmd\" vitest run)",
       "Bash(git init:*)",
       "Bash(git remote add:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nInitial commit: D&D 5e Combat Simulator\n\nReact + TypeScript + Vite tactical combat simulator with:\n- Character creation with 12 classes and 11 races\n- Turn-based combat with AI opponents\n- Tactical grid with A* pathfinding\n- Class features \\(Action Surge, Cunning Action, Extra Attack, etc.\\)\n- Spellcasting with concentration tracking\n- Condition effects and death saves\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(git branch:*)",
+      "Bash(git push:*)",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nAdd GitHub Pages deployment workflow\n\n- Add GitHub Actions workflow for automatic deployment\n- Set Vite base path for GitHub Pages subdirectory\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")"
     ]
   }
 }
