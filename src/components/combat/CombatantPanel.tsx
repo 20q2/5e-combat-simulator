@@ -55,11 +55,6 @@ function ConditionBadge({ condition }: { condition: string }) {
 }
 
 function ActionEconomyIndicator({ combatant }: { combatant: Combatant }) {
-  const character = combatant.type === 'character' ? combatant.data as Character : null
-  const monster = combatant.type === 'monster' ? combatant.data as Monster : null
-  const speed = character?.speed ?? monster?.speed.walk ?? 30
-  const remainingMovement = speed - combatant.movementUsed
-
   return (
     <div className="flex gap-3 justify-center py-2 border-y border-slate-700">
       <div className="flex items-center gap-1.5">
@@ -87,20 +82,6 @@ function ActionEconomyIndicator({ combatant }: { combatant: Combatant }) {
         )} />
         <span className={cn('text-xs', combatant.hasReacted ? 'text-slate-500' : 'text-violet-400')}>
           Reaction
-        </span>
-      </div>
-      <div className="flex items-center gap-1.5">
-        <div className={cn(
-          'w-6 h-3 rounded border',
-          remainingMovement > 0 ? 'bg-sky-500/30 border-sky-400' : 'bg-slate-600 border-slate-500'
-        )}>
-          <div
-            className="h-full bg-sky-500 rounded-l"
-            style={{ width: `${(remainingMovement / speed) * 100}%` }}
-          />
-        </div>
-        <span className={cn('text-xs', remainingMovement > 0 ? 'text-sky-400' : 'text-slate-500')}>
-          {remainingMovement}ft
         </span>
       </div>
     </div>

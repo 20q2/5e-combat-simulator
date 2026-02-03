@@ -6,6 +6,7 @@ import type {
   AbilityName,
   CharacterClass,
   Armor,
+  DragonAncestry,
 } from '@/types'
 import { getAbilityModifier } from '@/types'
 
@@ -21,6 +22,9 @@ export interface CharacterDraft {
   abilityBonusPlus1: AbilityName | null
   abilityBonusPlus1Trio: AbilityName[]
   raceId: string | null
+  // Racial choices
+  dragonbornAncestry: DragonAncestry | null
+  highElfCantrip: string | null
   classId: string | null
   subclassId: string | null
   level: number
@@ -48,6 +52,8 @@ interface CharacterState {
   setBaseAbilityScore: (ability: keyof AbilityScores, value: number) => void
   setBaseAbilityScores: (scores: AbilityScores) => void
   setRace: (raceId: string | null) => void
+  setDragonbornAncestry: (ancestry: DragonAncestry | null) => void
+  setHighElfCantrip: (spellId: string | null) => void
   setClass: (classId: string | null) => void
   setSubclass: (subclassId: string | null) => void
   setLevel: (level: number) => void
@@ -61,6 +67,7 @@ interface CharacterState {
   setAbilityBonusPlus1: (ability: AbilityName | null) => void
   setAbilityBonusMode: (mode: AbilityBonusMode) => void
   toggleAbilityBonusPlus1Trio: (ability: AbilityName) => void
+  setAbilityBonusPlus1Trio: (abilities: AbilityName[]) => void
   setCurrentStep: (step: number) => void
   nextStep: () => void
   prevStep: () => void
@@ -88,6 +95,8 @@ const initialDraft: CharacterDraft = {
   abilityBonusPlus1: null,
   abilityBonusPlus1Trio: [],
   raceId: null,
+  dragonbornAncestry: null,
+  highElfCantrip: null,
   classId: null,
   subclassId: null,
   level: 1,
@@ -157,7 +166,23 @@ export const useCharacterStore = create<CharacterState>()(
 
       setRace: (raceId) =>
         set((state) => ({
-          draft: { ...state.draft, raceId },
+          draft: {
+            ...state.draft,
+            raceId,
+            // Reset racial choices when race changes
+            dragonbornAncestry: null,
+            highElfCantrip: null,
+          },
+        })),
+
+      setDragonbornAncestry: (ancestry) =>
+        set((state) => ({
+          draft: { ...state.draft, dragonbornAncestry: ancestry },
+        })),
+
+      setHighElfCantrip: (spellId) =>
+        set((state) => ({
+          draft: { ...state.draft, highElfCantrip: spellId },
         })),
 
       setClass: (classId) =>
@@ -279,6 +304,14 @@ export const useCharacterStore = create<CharacterState>()(
             },
           }
         }),
+
+      setAbilityBonusPlus1Trio: (abilities) =>
+        set((state) => ({
+          draft: {
+            ...state.draft,
+            abilityBonusPlus1Trio: abilities.slice(0, 3),
+          },
+        })),
 
       setCurrentStep: (step) => set({ currentStep: step }),
 

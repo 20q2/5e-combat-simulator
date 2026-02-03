@@ -4,6 +4,7 @@ import { cn } from '@/lib/utils'
 import { getClassById, getSpellsForClassAtLevel, getSpellById } from '@/data'
 import { useCharacterStore } from '@/stores/characterStore'
 import type { Spell } from '@/types'
+import { Sparkles, BookOpen, Info, Wand2 } from 'lucide-react'
 
 function SpellCard({
   spell,
@@ -147,7 +148,10 @@ export function SpellSelector() {
     return (
       <Card>
         <CardHeader>
-          <CardTitle>Spells</CardTitle>
+          <CardTitle className="flex items-center gap-2">
+            <Wand2 className="w-5 h-5 text-violet-400" />
+            Spells
+          </CardTitle>
           <CardDescription>
             {selectedClass
               ? `${selectedClass.name} is not a spellcasting class.`
@@ -166,7 +170,10 @@ export function SpellSelector() {
       {/* Cantrips */}
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-lg">Cantrips</CardTitle>
+          <CardTitle className="text-lg flex items-center gap-2">
+            <Sparkles className="w-5 h-5 text-cyan-400" />
+            Cantrips
+          </CardTitle>
           <CardDescription>
             Selected: {draft.selectedCantrips.length} / {cantripsKnown}
           </CardDescription>
@@ -192,7 +199,10 @@ export function SpellSelector() {
       {/* Leveled Spells */}
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-lg">Spells</CardTitle>
+          <CardTitle className="text-lg flex items-center gap-2">
+            <BookOpen className="w-5 h-5 text-violet-400" />
+            Spells
+          </CardTitle>
           <CardDescription>
             {isPreparedCaster ? (
               <>Prepared: {draft.selectedSpellIds.length} (suggested max: {preparedLimit})</>
@@ -237,7 +247,10 @@ export function SpellSelector() {
         {selectedSpell ? (
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="text-lg">Spell Details</CardTitle>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <Info className="w-5 h-5 text-blue-400" />
+                Spell Details
+              </CardTitle>
             </CardHeader>
             <CardContent>
               <SpellDetails spell={selectedSpell} />

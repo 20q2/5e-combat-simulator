@@ -137,7 +137,7 @@ export const presetCharacters = [
   createPresetCharacter({
     id: 'preset-rogue',
     name: 'Lyra Shadowstep',
-    raceId: 'elf-high',
+    raceId: 'elf',
     classId: 'rogue',
     level: 3,
     abilityScores: { strength: 10, dexterity: 16, constitution: 14, intelligence: 12, wisdom: 13, charisma: 8 },
@@ -163,7 +163,7 @@ export const presetCharacters = [
   createPresetCharacter({
     id: 'preset-cleric',
     name: 'Thorin Ironforge',
-    raceId: 'dwarf-hill',
+    raceId: 'dwarf',
     classId: 'cleric',
     level: 3,
     abilityScores: { strength: 14, dexterity: 10, constitution: 14, intelligence: 10, wisdom: 16, charisma: 12 },

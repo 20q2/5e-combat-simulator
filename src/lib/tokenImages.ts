@@ -15,16 +15,15 @@ const enemyImages = import.meta.glob<{ default: string }>(
 // Map race IDs to simplified token race names
 const raceToTokenRace: Record<string, string> = {
   'human': 'human',
-  'elf-high': 'elf',
-  'dwarf-hill': 'dwarf',
-  'dwarf-mountain': 'dwarf',
-  'halfling-lightfoot': 'halfling',
-  'halfling-stout': 'halfling',
-  'dragonborn': 'dragonborn',
-  'gnome-rock': 'gnome',
-  'half-elf': 'elf',
-  'half-orc': 'human',
+  'elf': 'elf',
+  'dwarf': 'dwarf',
+  'halfling': 'halfling',
+  'gnome': 'gnome',
+  'orc': 'human', // Use human tokens for orc
   'tiefling': 'tiefling',
+  'aasimar': 'human', // Use human tokens for aasimar
+  'goliath': 'human', // Use human tokens for goliath
+  'dragonborn': 'dragonborn',
 }
 
 // Available class tokens (classes that have image assets)

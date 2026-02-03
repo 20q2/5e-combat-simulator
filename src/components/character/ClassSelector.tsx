@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils'
 import { getAllClasses, getClassById, getClassFeaturesByLevel, getSubclassFeaturesByLevel } from '@/data'
 import { useCharacterStore } from '@/stores/characterStore'
 import type { CharacterClass, ClassFeature } from '@/types'
-import { Minus, Plus } from 'lucide-react'
+import { Minus, Plus, Crown, TrendingUp, Sparkles, Shield, BookOpen, Info, Wand2 } from 'lucide-react'
 
 const ABILITY_LABELS: Record<string, string> = {
   strength: 'STR',
@@ -68,7 +68,10 @@ function FeatureList({ features, title }: { features: ClassFeature[]; title: str
 
   return (
     <div className="space-y-3">
-      <h4 className="font-medium text-sm">{title}</h4>
+      <h4 className="font-medium text-sm flex items-center gap-1.5">
+        <Sparkles className="w-3.5 h-3.5 text-yellow-400" />
+        {title}
+      </h4>
       {Object.entries(featuresByLevel)
         .sort(([a], [b]) => parseInt(a) - parseInt(b))
         .map(([level, levelFeatures]) => (
@@ -107,7 +110,10 @@ function ClassDetails({ characterClass, level, subclassId }: {
   return (
     <Card className="h-full flex flex-col">
       <CardHeader className="pb-3">
-        <CardTitle className="text-lg">{characterClass.name}</CardTitle>
+        <CardTitle className="text-lg flex items-center gap-2">
+          <Info className="w-5 h-5 text-blue-400" />
+          {characterClass.name}
+        </CardTitle>
         <CardDescription>
           d{characterClass.hitDie} Hit Die · Saves:{' '}
           {characterClass.savingThrowProficiencies.map((s) => ABILITY_LABELS[s]).join(', ')}
@@ -116,7 +122,10 @@ function ClassDetails({ characterClass, level, subclassId }: {
       <CardContent className="space-y-4 flex-1 overflow-y-auto">
         {/* Proficiencies */}
         <div>
-          <h4 className="font-medium text-sm mb-1">Armor & Weapons</h4>
+          <h4 className="font-medium text-sm mb-1 flex items-center gap-1.5">
+            <Shield className="w-3.5 h-3.5 text-blue-400" />
+            Armor & Weapons
+          </h4>
           <p className="text-sm text-muted-foreground">
             {characterClass.armorProficiencies.length > 0
               ? `Armor: ${characterClass.armorProficiencies.join(', ')}`
@@ -130,7 +139,10 @@ function ClassDetails({ characterClass, level, subclassId }: {
         {/* Spellcasting */}
         {characterClass.spellcasting && (
           <div>
-            <h4 className="font-medium text-sm mb-1">Spellcasting</h4>
+            <h4 className="font-medium text-sm mb-1 flex items-center gap-1.5">
+              <Wand2 className="w-3.5 h-3.5 text-violet-400" />
+              Spellcasting
+            </h4>
             <p className="text-sm text-muted-foreground">
               Spellcasting Ability: {ABILITY_LABELS[characterClass.spellcasting.ability]}
               {characterClass.spellcasting.preparedCaster && ' (Prepared caster)'}
@@ -163,7 +175,10 @@ export function ClassSelector() {
       {/* Level Selector */}
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-lg">Character Level</CardTitle>
+          <CardTitle className="text-lg flex items-center gap-2">
+            <TrendingUp className="w-5 h-5 text-emerald-400" />
+            Character Level
+          </CardTitle>
           <CardDescription>
             Set your character's level to unlock class features and increase power
           </CardDescription>
@@ -243,7 +258,10 @@ export function ClassSelector() {
         {/* Class List */}
         <Card className="flex flex-col">
           <CardHeader>
-            <CardTitle>Select Class</CardTitle>
+            <CardTitle className="flex items-center gap-2">
+              <Crown className="w-5 h-5 text-amber-400" />
+              Select Class
+            </CardTitle>
             <CardDescription>
               Choose your character's class. This determines your abilities, hit points, and features.
             </CardDescription>
@@ -282,7 +300,10 @@ export function ClassSelector() {
       {draft.level >= 3 && selectedClass && selectedClass.subclasses.length > 0 && (
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-lg">{selectedClass.name} Subclass</CardTitle>
+            <CardTitle className="text-lg flex items-center gap-2">
+              <BookOpen className="w-5 h-5 text-violet-400" />
+              {selectedClass.name} Subclass
+            </CardTitle>
             <CardDescription>
               Choose your specialization within the {selectedClass.name} class
             </CardDescription>

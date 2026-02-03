@@ -10,6 +10,18 @@ export interface AoEConfig {
 }
 
 /**
+ * Calculate distance in feet using D&D 5e 5-10-5 diagonal rule
+ * First diagonal costs 5ft, second costs 10ft, alternating
+ */
+function getDistanceFeet(dx: number, dy: number): number {
+  const absDx = Math.abs(dx)
+  const absDy = Math.abs(dy)
+  const diagonals = Math.min(absDx, absDy)
+  const straights = Math.max(absDx, absDy) - diagonals
+  return (straights + diagonals + Math.floor(diagonals / 2)) * 5
+}
+
+/**
  * Get the angle from origin to target in radians
  */
 function getAngle(origin: Position, target: Position): number {
@@ -17,53 +29,55 @@ function getAngle(origin: Position, target: Position): number {
 }
 
 /**
- * Normalize angle to [-PI, PI]
+ * Direction type for 8 cardinal/diagonal directions
  */
-function normalizeAngle(angle: number): number {
-  while (angle > Math.PI) angle -= 2 * Math.PI
-  while (angle < -Math.PI) angle += 2 * Math.PI
-  return angle
+type Direction = 'N' | 'NE' | 'E' | 'SE' | 'S' | 'SW' | 'W' | 'NW'
+
+/**
+ * Snap an angle to one of 8 directions
+ * Note: Screen coordinates have Y increasing downward, so we flip N/S
+ */
+function snapToDirection(angle: number): Direction {
+  // Normalize to [0, 2*PI)
+  let normalized = angle
+  while (normalized < 0) normalized += 2 * Math.PI
+  while (normalized >= 2 * Math.PI) normalized -= 2 * Math.PI
+
+  // Each direction covers PI/4 (45 degrees)
+  // In screen coords: angle 0 = East, PI/2 = South (down), PI = West, 3PI/2 = North (up)
+  const index = Math.round(normalized / (Math.PI / 4)) % 8
+  const directions: Direction[] = ['E', 'SE', 'S', 'SW', 'W', 'NW', 'N', 'NE']
+  return directions[index]
 }
 
 /**
- * Calculate cells affected by a cone AoE
- * D&D 5e cone: width at any point equals distance from origin
- * This means a ~53 degree half-angle (106 degree total spread)
+ * Generate a cone template for cardinal directions (N, S, E, W)
+ * Creates a triangle: row 1 has 1 cell, row 2 has 2 cells, row 3 has 3 cells, etc.
  */
-function getConeAffectedCells(
-  origin: Position,
-  target: Position,
-  sizeFeet: number
-): Set<string> {
-  const cells = new Set<string>()
-  const sizeSquares = Math.ceil(sizeFeet / 5)
+function getCardinalConeTemplate(numRows: number, direction: Direction): Position[] {
+  const cells: Position[] = []
 
-  // Get the direction angle from origin to target
-  const targetAngle = getAngle(origin, target)
+  for (let row = 1; row <= numRows; row++) {
+    const width = row
+    // Center the cells: for width 1 -> offset 0; width 2 -> offsets 0,1; width 3 -> offsets -1,0,1
+    const startOffset = -Math.floor((width - 1) / 2)
 
-  // Cone half-angle: arctan(0.5) ≈ 26.57 degrees for width = distance
-  // But for grid-based play, use 45 degrees (PI/4) for cleaner shapes
-  const coneHalfAngle = Math.PI / 4 // 45 degrees
+    for (let i = 0; i < width; i++) {
+      const offset = startOffset + i
 
-  // Check all cells within the bounding box of the cone
-  for (let dy = -sizeSquares; dy <= sizeSquares; dy++) {
-    for (let dx = -sizeSquares; dx <= sizeSquares; dx++) {
-      if (dx === 0 && dy === 0) continue // Skip origin
-
-      const cellX = origin.x + dx
-      const cellY = origin.y + dy
-
-      // Calculate distance in grid squares (using Chebyshev for D&D)
-      const distance = Math.max(Math.abs(dx), Math.abs(dy))
-      if (distance > sizeSquares) continue
-
-      // Calculate angle from origin to this cell
-      const cellAngle = Math.atan2(dy, dx)
-
-      // Check if cell is within cone angle
-      const angleDiff = Math.abs(normalizeAngle(cellAngle - targetAngle))
-      if (angleDiff <= coneHalfAngle) {
-        cells.add(`${cellX},${cellY}`)
+      switch (direction) {
+        case 'N':
+          cells.push({ x: offset, y: -row })
+          break
+        case 'S':
+          cells.push({ x: offset, y: row })
+          break
+        case 'E':
+          cells.push({ x: row, y: offset })
+          break
+        case 'W':
+          cells.push({ x: -row, y: offset })
+          break
       }
     }
   }
@@ -72,22 +86,106 @@ function getConeAffectedCells(
 }
 
 /**
+ * Generate a cone template for diagonal directions (NE, SE, SW, NW)
+ * Creates a triangular wedge spreading along two axes
+ */
+function getDiagonalConeTemplate(numRows: number, direction: Direction): Position[] {
+  const cells: Position[] = []
+
+  // Direction multipliers
+  const xDir = direction === 'NE' || direction === 'SE' ? 1 : -1
+  const yDir = direction === 'SE' || direction === 'SW' ? 1 : -1
+
+  for (let row = 1; row <= numRows; row++) {
+    // For diagonal cones, we fill a triangular area
+    // At row r, we have cells forming an L-shape or triangle
+    for (let i = 0; i < row; i++) {
+      for (let j = 0; j < row; j++) {
+        // Only include cells where i + j < row (forms triangle)
+        // Plus the diagonal cell itself at i=row-1, j=0 and i=0, j=row-1
+        if (i + j < row) {
+          // Offset from origin along each axis
+          const dx = (i + 1) * xDir
+          const dy = (j + 1) * yDir
+
+          // Check if this cell is within the cone's distance using 5-10-5
+          const dist = getDistanceFeet(dx, dy)
+          if (dist <= numRows * 5) {
+            cells.push({ x: dx, y: dy })
+          }
+        }
+      }
+    }
+  }
+
+  return cells
+}
+
+/**
+ * Calculate cells affected by a cone AoE
+ * D&D 5e cone: width at any point equals distance from origin
+ * Uses template-based approach snapped to 8 directions
+ */
+function getConeAffectedCells(
+  origin: Position,
+  target: Position,
+  sizeFeet: number
+): Set<string> {
+  const cells = new Set<string>()
+
+  // Don't show cone if target is at origin
+  if (target.x === origin.x && target.y === origin.y) {
+    return cells
+  }
+
+  // Get direction from origin to target
+  const angle = getAngle(origin, target)
+  const direction = snapToDirection(angle)
+
+  // Calculate number of rows based on size (5ft per row)
+  const numRows = Math.floor(sizeFeet / 5)
+
+  // Get the appropriate template
+  const isCardinal = direction === 'N' || direction === 'S' || direction === 'E' || direction === 'W'
+  const template = isCardinal
+    ? getCardinalConeTemplate(numRows, direction)
+    : getDiagonalConeTemplate(numRows, direction)
+
+  // Apply template to origin position
+  for (const offset of template) {
+    cells.add(`${origin.x + offset.x},${origin.y + offset.y}`)
+  }
+
+  return cells
+}
+
+/**
  * Calculate cells affected by a sphere/cylinder AoE
- * Centered on target position
+ * Centered on target position, uses 5-10-5 diagonal rule
+ * 5ft radius = center only, 10ft = plus shape, 20ft = diamond
  */
 function getSphereAffectedCells(
   target: Position,
   radiusFeet: number
 ): Set<string> {
   const cells = new Set<string>()
-  const radiusSquares = Math.ceil(radiusFeet / 5)
 
-  // Check all cells within the bounding box
-  for (let dx = -radiusSquares; dx <= radiusSquares; dx++) {
-    for (let dy = -radiusSquares; dy <= radiusSquares; dy++) {
-      // Use Euclidean distance for circular shape
-      const distSquares = Math.sqrt(dx * dx + dy * dy)
-      if (distSquares <= radiusSquares) {
+  // Always include the center cell
+  cells.add(`${target.x},${target.y}`)
+
+  // For radius > 0, add cells within range using 5-10-5 rule
+  // A cell is included if its distance from center is < radius (strictly less)
+  // This gives us: 5ft = center only, 10ft = center + 4 cardinal, etc.
+  const searchRadius = Math.ceil(radiusFeet / 5) + 1
+
+  for (let dx = -searchRadius; dx <= searchRadius; dx++) {
+    for (let dy = -searchRadius; dy <= searchRadius; dy++) {
+      if (dx === 0 && dy === 0) continue // Already added center
+
+      // Use 5-10-5 rule for distance
+      const distanceFeet = getDistanceFeet(dx, dy)
+      // Include cells where distance is strictly less than radius
+      if (distanceFeet < radiusFeet) {
         cells.add(`${target.x + dx},${target.y + dy}`)
       }
     }
@@ -119,7 +217,8 @@ function getCubeAffectedCells(
 
 /**
  * Calculate cells affected by a line AoE
- * Line from origin toward target, 5 feet wide
+ * Line from origin toward target, 5 feet wide (1 cell)
+ * Snaps to 8 directions like cones
  */
 function getLineAffectedCells(
   origin: Position,
@@ -127,35 +226,36 @@ function getLineAffectedCells(
   lengthFeet: number
 ): Set<string> {
   const cells = new Set<string>()
-  const lengthSquares = Math.ceil(lengthFeet / 5)
 
-  // Get the direction angle from origin to target
-  const targetAngle = getAngle(origin, target)
+  // Don't show line if target is at origin
+  if (target.x === origin.x && target.y === origin.y) {
+    return cells
+  }
 
-  // Line is narrow - use a small angle tolerance (about 22.5 degrees = PI/8)
-  const lineHalfAngle = Math.PI / 8
+  // Snap to one of 8 directions
+  const angle = getAngle(origin, target)
+  const direction = snapToDirection(angle)
 
-  // Check all cells within the line's length
-  for (let dy = -lengthSquares; dy <= lengthSquares; dy++) {
-    for (let dx = -lengthSquares; dx <= lengthSquares; dx++) {
-      if (dx === 0 && dy === 0) continue // Skip origin
+  // Calculate number of cells based on length
+  const numCells = Math.floor(lengthFeet / 5)
 
-      const cellX = origin.x + dx
-      const cellY = origin.y + dy
+  // Direction vectors
+  const dirVectors: Record<Direction, { dx: number; dy: number }> = {
+    N: { dx: 0, dy: -1 },
+    NE: { dx: 1, dy: -1 },
+    E: { dx: 1, dy: 0 },
+    SE: { dx: 1, dy: 1 },
+    S: { dx: 0, dy: 1 },
+    SW: { dx: -1, dy: 1 },
+    W: { dx: -1, dy: 0 },
+    NW: { dx: -1, dy: -1 },
+  }
 
-      // Calculate distance
-      const distance = Math.max(Math.abs(dx), Math.abs(dy))
-      if (distance > lengthSquares) continue
+  const dir = dirVectors[direction]
 
-      // Calculate angle from origin to this cell
-      const cellAngle = Math.atan2(dy, dx)
-
-      // Check if cell is within line angle (narrow cone)
-      const angleDiff = Math.abs(normalizeAngle(cellAngle - targetAngle))
-      if (angleDiff <= lineHalfAngle) {
-        cells.add(`${cellX},${cellY}`)
-      }
-    }
+  // Add cells in a straight line
+  for (let i = 1; i <= numCells; i++) {
+    cells.add(`${origin.x + dir.dx * i},${origin.y + dir.dy * i}`)
   }
 
   return cells

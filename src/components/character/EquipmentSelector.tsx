@@ -6,6 +6,7 @@ import { getAllWeapons, getAllArmors, getClassById, getWeaponById, getArmorById 
 import { useCharacterStore, calculateAC, calculateFinalAbilityScores } from '@/stores/characterStore'
 import { getAbilityModifier } from '@/types'
 import type { Weapon, Armor } from '@/types'
+import { Swords, Shield, Target, Shirt, HardHat, ShieldPlus } from 'lucide-react'
 
 // Parse dice notation and return average
 function parseDiceAverage(diceNotation: string): number {
@@ -220,7 +221,10 @@ export function EquipmentSelector() {
       {/* Weapons */}
       <Card>
         <CardHeader>
-          <CardTitle>Weapons</CardTitle>
+          <CardTitle className="flex items-center gap-2">
+            <Swords className="w-5 h-5 text-orange-400" />
+            Weapons
+          </CardTitle>
           <CardDescription>
             Choose a melee weapon and/or a ranged weapon
             {selectedClass && (
@@ -234,7 +238,10 @@ export function EquipmentSelector() {
           <div className="grid md:grid-cols-2 gap-6">
             {/* Melee Weapons */}
             <div>
-              <h4 className="font-medium text-sm mb-2">Melee Weapon</h4>
+              <h4 className="font-medium text-sm mb-2 flex items-center gap-1.5">
+                <Swords className="w-4 h-4 text-orange-400" />
+                Melee Weapon
+              </h4>
               <div className="space-y-2 max-h-[300px] overflow-y-auto pr-2">
                 <button
                   onClick={() => handleMeleeWeaponSelect(null)}
@@ -261,7 +268,10 @@ export function EquipmentSelector() {
 
             {/* Ranged Weapons */}
             <div>
-              <h4 className="font-medium text-sm mb-2">Ranged Weapon</h4>
+              <h4 className="font-medium text-sm mb-2 flex items-center gap-1.5">
+                <Target className="w-4 h-4 text-blue-400" />
+                Ranged Weapon
+              </h4>
               <div className="space-y-2 max-h-[300px] overflow-y-auto pr-2">
                 <button
                   onClick={() => setRangedWeapon(null)}
@@ -316,7 +326,10 @@ export function EquipmentSelector() {
       {/* Armor */}
       <Card>
         <CardHeader>
-          <CardTitle>Armor</CardTitle>
+          <CardTitle className="flex items-center gap-2">
+            <Shield className="w-5 h-5 text-blue-400" />
+            Armor
+          </CardTitle>
           <CardDescription>
             Choose your armor (Preview AC: {previewAC})
             {selectedClass && (
@@ -332,7 +345,10 @@ export function EquipmentSelector() {
           <div className="grid md:grid-cols-3 gap-6">
             {/* Light Armor */}
             <div>
-              <h4 className="font-medium text-sm mb-2">Light Armor</h4>
+              <h4 className="font-medium text-sm mb-2 flex items-center gap-1.5">
+                <Shirt className="w-4 h-4 text-green-400" />
+                Light Armor
+              </h4>
               <div className="space-y-2">
                 <button
                   onClick={() => setArmor(null)}
@@ -358,7 +374,10 @@ export function EquipmentSelector() {
 
             {/* Medium Armor */}
             <div>
-              <h4 className="font-medium text-sm mb-2">Medium Armor</h4>
+              <h4 className="font-medium text-sm mb-2 flex items-center gap-1.5">
+                <Shield className="w-4 h-4 text-amber-400" />
+                Medium Armor
+              </h4>
               <div className="space-y-2">
                 {armorsByCategory.medium.map((armor) => (
                   <ArmorCard
@@ -374,7 +393,10 @@ export function EquipmentSelector() {
 
             {/* Heavy Armor */}
             <div>
-              <h4 className="font-medium text-sm mb-2">Heavy Armor</h4>
+              <h4 className="font-medium text-sm mb-2 flex items-center gap-1.5">
+                <HardHat className="w-4 h-4 text-slate-400" />
+                Heavy Armor
+              </h4>
               <div className="space-y-2">
                 {armorsByCategory.heavy.map((armor) => (
                   <ArmorCard
@@ -393,7 +415,10 @@ export function EquipmentSelector() {
           {shield && (
             <div className="mt-4 pt-4 border-t">
               <div className="flex items-center gap-4">
-                <Label>Shield (+2 AC)</Label>
+                <Label className="flex items-center gap-1.5">
+                  <ShieldPlus className="w-4 h-4 text-blue-400" />
+                  Shield (+2 AC)
+                </Label>
                 <button
                   onClick={() => setShield(!draft.shieldEquipped)}
                   disabled={!canUseShield || hasTwoHandedWeapon}
