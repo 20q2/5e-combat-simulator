@@ -253,6 +253,7 @@ export function CombatGrid() {
     hoveredTargetId,
     rangeHighlight,
     aoePreview,
+    selectedSpell,
     damagePopups,
     selectCombatant,
     moveCombatant,
@@ -260,8 +261,12 @@ export function CombatGrid() {
     placeCombatant,
     getValidTargets,
     performAttack,
+    castSpell,
     setSelectedAction,
     setHoveredTarget,
+    setSelectedSpell,
+    setAoEPreview,
+    setRangeHighlight,
   } = useCombatStore()
 
   const [draggingCombatantId, setDraggingCombatantId] = useState<string | null>(null)
@@ -519,6 +524,21 @@ export function CombatGrid() {
   const handleCellClick = (x: number, y: number) => {
     const position: Position = { x, y }
 
+    // In AoE spell mode, clicking casts the spell at this location
+    if (phase === 'combat' && aoePreview && selectedSpell && currentTurnId) {
+      // Find a combatant at this position to use as target, or use undefined for area-only
+      const targetAtPosition = combatants.find(
+        c => c.position.x === x && c.position.y === y && c.currentHp > 0
+      )
+      castSpell(currentTurnId, selectedSpell, targetAtPosition?.id)
+      // Clear spell state
+      setSelectedSpell(undefined)
+      setAoEPreview(undefined)
+      setRangeHighlight(undefined)
+      setSelectedAction(undefined)
+      return
+    }
+
     // In setup phase, place selected combatant
     if (phase === 'setup' && selectedCombatantId) {
       if (!isCellOccupied(x, y, selectedCombatantId)) {
@@ -535,6 +555,17 @@ export function CombatGrid() {
   }
 
   const handleTokenClick = (combatantId: string) => {
+    // In AoE spell mode, clicking a token casts the spell targeting that combatant
+    if (phase === 'combat' && aoePreview && selectedSpell && currentTurnId) {
+      castSpell(currentTurnId, selectedSpell, combatantId)
+      // Clear spell state
+      setSelectedSpell(undefined)
+      setAoEPreview(undefined)
+      setRangeHighlight(undefined)
+      setSelectedAction(undefined)
+      return
+    }
+
     // In attack mode, clicking a valid target performs the attack
     if (phase === 'combat' && selectedAction === 'attack' && currentTurnId && validTargetIds.has(combatantId)) {
       setHoveredTarget(undefined)
@@ -691,11 +722,16 @@ export function CombatGrid() {
                 isCurrentTurn={currentTurnId === combatant.id && phase === 'combat'}
                 isDraggable={canDrag}
                 isHoveredTarget={hoveredTargetId === combatant.id}
+                suppressTooltip={!!aoePreview}
                 onClick={() => handleTokenClick(combatant.id)}
                 onDragStart={() => handleTokenDragStart(combatant.id)}
                 onDragEnd={handleTokenDragEnd}
                 onHoverChange={(hovered) => {
                   setHoveredTokenId(hovered ? combatant.id : null)
+                  // Also update hoveredCell so AoE preview continues to work when hovering tokens
+                  if (hovered) {
+                    setHoveredCell(combatant.position)
+                  }
                   // Highlight valid targets when hovering in attack mode
                   if (selectedAction === 'attack' && validTargetIds.has(combatant.id)) {
                     setHoveredTarget(hovered ? combatant.id : undefined)

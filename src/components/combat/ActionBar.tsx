@@ -548,6 +548,8 @@ export function ActionBar() {
     setHoveredTarget,
     setRangeHighlight,
     setAoEPreview,
+    selectedSpell,
+    setSelectedSpell,
     endTurn,
     startCombat,
     combatants,
@@ -573,7 +575,6 @@ export function ActionBar() {
   const [isSelectingTarget, setIsSelectingTarget] = useState(false)
   const [isSelectingSpell, setIsSelectingSpell] = useState(false)
   const [isSelectingWeapon, setIsSelectingWeapon] = useState(false)
-  const [selectedSpell, setSelectedSpell] = useState<Spell | null>(null)
   const [isExecutingAI, setIsExecutingAI] = useState(false)
 
   const currentCombatant = getCurrentCombatant(state)
@@ -588,7 +589,7 @@ export function ActionBar() {
     if (selectedAction !== 'spell') {
       setIsSelectingSpell(false)
       setAoEPreview(undefined)
-      setSelectedSpell(null)
+      setSelectedSpell(undefined)
     }
   }, [selectedAction, setRangeHighlight])
 
@@ -812,7 +813,7 @@ export function ActionBar() {
     setAoEPreview(undefined)
     if (selectedSpell) {
       castSpell(currentCombatant.id, selectedSpell, targetId)
-      setSelectedSpell(null)
+      setSelectedSpell(undefined)
     } else {
       performAttack(currentCombatant.id, targetId, meleeWeapon, monsterActions[0], rangedWeapon)
     }
@@ -827,7 +828,7 @@ export function ActionBar() {
     setSelectedAction(undefined)
     setIsSelectingTarget(false)
     setIsSelectingWeapon(false)
-    setSelectedSpell(null)
+    setSelectedSpell(undefined)
     setIsSelectingSpell(false)
   }
 
@@ -835,7 +836,7 @@ export function ActionBar() {
     if (selectedAction === 'spell') {
       setSelectedAction(undefined)
       setIsSelectingSpell(false)
-      setSelectedSpell(null)
+      setSelectedSpell(undefined)
     } else {
       setSelectedAction('spell')
       setIsSelectingSpell(true)
@@ -873,7 +874,7 @@ export function ActionBar() {
       }
     } else {
       castSpell(currentCombatant.id, spell)
-      setSelectedSpell(null)
+      setSelectedSpell(undefined)
       setSelectedAction(undefined)
     }
   }

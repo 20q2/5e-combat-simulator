@@ -204,6 +204,7 @@ export const spells: Spell[] = [
       type: 'force',
       dice: '3d4+3',
     },
+    autoHit: true,
   },
   {
     id: 'burning-hands',

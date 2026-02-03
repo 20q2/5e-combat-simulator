@@ -13,6 +13,13 @@ import { getAbilityModifier } from '@/types'
 export type AbilityScoreMethod = 'point-buy' | 'standard-array' | 'manual'
 export type AbilityBonusMode = 'standard' | 'three-plus-one'
 
+export type ElfLineage = 'drow' | 'high' | 'wood'
+export type GnomeLineage = 'forest' | 'rock'
+export type TieflingLegacy = 'abyssal' | 'chthonic' | 'infernal'
+export type GoliathGiantAncestry = 'cloud' | 'fire' | 'frost' | 'hill' | 'stone' | 'storm'
+export type OriginFeat = 'alert' | 'crafter' | 'healer' | 'lucky' | 'magic-initiate' | 'musician' | 'savage-attacker' | 'skilled' | 'tavern-brawler' | 'tough'
+export type KeenSensesSkill = 'insight' | 'perception' | 'survival'
+
 export interface CharacterDraft {
   name: string
   abilityScoreMethod: AbilityScoreMethod
@@ -24,7 +31,12 @@ export interface CharacterDraft {
   raceId: string | null
   // Racial choices
   dragonbornAncestry: DragonAncestry | null
-  highElfCantrip: string | null
+  elfLineage: ElfLineage | null
+  elfKeenSensesSkill: KeenSensesSkill | null
+  gnomeLineage: GnomeLineage | null
+  tieflingLegacy: TieflingLegacy | null
+  goliathGiantAncestry: GoliathGiantAncestry | null
+  humanOriginFeat: OriginFeat | null
   classId: string | null
   subclassId: string | null
   level: number
@@ -53,7 +65,12 @@ interface CharacterState {
   setBaseAbilityScores: (scores: AbilityScores) => void
   setRace: (raceId: string | null) => void
   setDragonbornAncestry: (ancestry: DragonAncestry | null) => void
-  setHighElfCantrip: (spellId: string | null) => void
+  setElfLineage: (lineage: ElfLineage | null) => void
+  setElfKeenSensesSkill: (skill: KeenSensesSkill | null) => void
+  setGnomeLineage: (lineage: GnomeLineage | null) => void
+  setTieflingLegacy: (legacy: TieflingLegacy | null) => void
+  setGoliathGiantAncestry: (ancestry: GoliathGiantAncestry | null) => void
+  setHumanOriginFeat: (feat: OriginFeat | null) => void
   setClass: (classId: string | null) => void
   setSubclass: (subclassId: string | null) => void
   setLevel: (level: number) => void
@@ -96,7 +113,12 @@ const initialDraft: CharacterDraft = {
   abilityBonusPlus1Trio: [],
   raceId: null,
   dragonbornAncestry: null,
-  highElfCantrip: null,
+  elfLineage: null,
+  elfKeenSensesSkill: null,
+  gnomeLineage: null,
+  tieflingLegacy: null,
+  goliathGiantAncestry: null,
+  humanOriginFeat: null,
   classId: null,
   subclassId: null,
   level: 1,
@@ -169,9 +191,14 @@ export const useCharacterStore = create<CharacterState>()(
           draft: {
             ...state.draft,
             raceId,
-            // Reset racial choices when race changes
+            // Reset all racial choices when race changes
             dragonbornAncestry: null,
-            highElfCantrip: null,
+            elfLineage: null,
+            elfKeenSensesSkill: null,
+            gnomeLineage: null,
+            tieflingLegacy: null,
+            goliathGiantAncestry: null,
+            humanOriginFeat: null,
           },
         })),
 
@@ -180,9 +207,34 @@ export const useCharacterStore = create<CharacterState>()(
           draft: { ...state.draft, dragonbornAncestry: ancestry },
         })),
 
-      setHighElfCantrip: (spellId) =>
+      setElfLineage: (lineage) =>
         set((state) => ({
-          draft: { ...state.draft, highElfCantrip: spellId },
+          draft: { ...state.draft, elfLineage: lineage },
+        })),
+
+      setElfKeenSensesSkill: (skill) =>
+        set((state) => ({
+          draft: { ...state.draft, elfKeenSensesSkill: skill },
+        })),
+
+      setGnomeLineage: (lineage) =>
+        set((state) => ({
+          draft: { ...state.draft, gnomeLineage: lineage },
+        })),
+
+      setTieflingLegacy: (legacy) =>
+        set((state) => ({
+          draft: { ...state.draft, tieflingLegacy: legacy },
+        })),
+
+      setGoliathGiantAncestry: (ancestry) =>
+        set((state) => ({
+          draft: { ...state.draft, goliathGiantAncestry: ancestry },
+        })),
+
+      setHumanOriginFeat: (feat) =>
+        set((state) => ({
+          draft: { ...state.draft, humanOriginFeat: feat },
         })),
 
       setClass: (classId) =>

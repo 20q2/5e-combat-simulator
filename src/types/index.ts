@@ -261,6 +261,7 @@ export interface Spell {
   }
   savingThrow?: AbilityName
   attackType?: 'melee' | 'ranged'
+  autoHit?: boolean // Spells like Magic Missile that automatically hit
   areaOfEffect?: {
     type: 'cone' | 'cube' | 'cylinder' | 'line' | 'sphere'
     size: number
@@ -515,6 +516,7 @@ export interface CombatState {
   hoveredTargetId?: string
   rangeHighlight?: RangeHighlight
   aoePreview?: AoEPreview
+  selectedSpell?: Spell
   damagePopups: DamagePopup[]
 }
 

@@ -11,6 +11,7 @@ interface TokenProps {
   isCurrentTurn: boolean
   isDraggable: boolean
   isHoveredTarget?: boolean
+  suppressTooltip?: boolean
   onClick: () => void
   onDragStart: (e: React.DragEvent) => void
   onDragEnd: (e: React.DragEvent) => void
@@ -23,6 +24,7 @@ export function Token({
   isCurrentTurn,
   isDraggable,
   isHoveredTarget,
+  suppressTooltip,
   onClick,
   onDragStart,
   onDragEnd,
@@ -208,7 +210,7 @@ export function Token({
       )}
 
       {/* Tooltip */}
-      {showTooltip && (
+      {showTooltip && !suppressTooltip && (
         <div
           className={cn(
             'absolute z-50 pointer-events-none',

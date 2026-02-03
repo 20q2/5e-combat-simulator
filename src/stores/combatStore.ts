@@ -40,6 +40,7 @@ import {
   canUseCunningAction,
   getMaxAttacksPerAction,
 } from '@/engine/classAbilities'
+import { getAoEAffectedCells, aoeOriginatesFromCaster } from '@/lib/aoeShapes'
 
 // Simplified input type for adding combatants
 type AddCombatantInput = {
@@ -69,6 +70,7 @@ interface CombatStore extends CombatState {
   setHoveredTarget: (id: string | undefined) => void
   setRangeHighlight: (highlight: CombatState['rangeHighlight']) => void
   setAoEPreview: (preview: CombatState['aoePreview']) => void
+  setSelectedSpell: (spell: Spell | undefined) => void
 
   // Movement
   moveCombatant: (id: string, to: Position) => void
@@ -84,7 +86,7 @@ interface CombatStore extends CombatState {
   useDash: () => void
   useDodge: () => void
   getValidTargets: (attackerId: string, weapon?: Weapon, monsterAction?: MonsterAction, rangedWeapon?: Weapon) => Combatant[]
-  castSpell: (casterId: string, spell: Spell, targetId?: string) => boolean
+  castSpell: (casterId: string, spell: Spell, targetId?: string, targetPosition?: Position) => boolean
   getAvailableSpells: (combatantId: string) => Spell[]
   makeDeathSave: (combatantId: string) => void
   stabilize: (combatantId: string) => void
@@ -427,6 +429,10 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
 
   setAoEPreview: (preview) => {
     set({ aoePreview: preview })
+  },
+
+  setSelectedSpell: (spell) => {
+    set({ selectedSpell: spell })
   },
 
   moveCombatant: (id, to) => {
@@ -1147,7 +1153,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
     })
   },
 
-  castSpell: (casterId, spell, targetId) => {
+  castSpell: (casterId, spell, targetId, targetPosition) => {
     const { combatants } = get()
     const caster = combatants.find((c) => c.id === casterId)
 
@@ -1164,115 +1170,187 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
       message: `${caster.name} casts ${spell.name}!`,
     })
 
-    // Handle damage spells
-    if (spell.damage && targetId) {
+    // Determine targets based on whether spell has AoE
+    let targets: Combatant[] = []
+
+    if (spell.areaOfEffect && targetPosition) {
+      // AoE spell - find all combatants in the affected area
+      const aoeConfig = {
+        type: spell.areaOfEffect.type,
+        size: spell.areaOfEffect.size,
+        origin: caster.position,
+        target: targetPosition,
+      }
+      const affectedCells = getAoEAffectedCells(aoeConfig)
+
+      // Find all living enemy combatants in the affected cells
+      // For now, AoE spells hit enemies (monsters for player, characters for monsters)
+      const isPlayerCaster = caster.type === 'character'
+      targets = combatants.filter((c) => {
+        if (c.currentHp <= 0) return false
+        if (c.id === casterId) return false // Don't hit self
+        // Check if combatant is in affected area
+        const cellKey = `${c.position.x},${c.position.y}`
+        if (!affectedCells.has(cellKey)) return false
+        // For player casters, only hit monsters; for monster casters, only hit characters
+        if (isPlayerCaster && c.type === 'character') return false
+        if (!isPlayerCaster && c.type === 'monster') return false
+        return true
+      })
+
+      if (targets.length === 0) {
+        get().addLogEntry({
+          type: 'spell',
+          actorId: casterId,
+          actorName: caster.name,
+          message: `${spell.name} hits no targets in the area.`,
+        })
+      }
+    } else if (targetId) {
+      // Single target spell
       const target = combatants.find((c) => c.id === targetId)
-      if (!target) return false
+      if (target) {
+        targets = [target]
+      }
+    }
 
-      // Spell attack or saving throw?
-      if (spell.attackType) {
-        // Spell attack roll
-        const spellAttackBonus = getSpellAttackBonus(character)
-        const attackRoll = rollAttack(spellAttackBonus)
-        const targetAC = target.type === 'character'
-          ? (target.data as Character).ac
-          : (target.data as Monster).ac
+    // Handle damage spells
+    if (spell.damage && targets.length > 0) {
+      for (const target of targets) {
+        const currentTargetId = target.id
 
-        if (attackRoll.isNatural1) {
-          get().addLogEntry({
-            type: 'attack',
-            actorId: casterId,
-            actorName: caster.name,
-            targetId,
-            targetName: target.name,
-            message: `${caster.name} misses with ${spell.name} (natural 1)`,
-            details: attackRoll.breakdown,
-          })
-        } else if (attackRoll.isNatural20 || attackRoll.total >= targetAC) {
-          const isCrit = attackRoll.isNatural20
-          const damage = rollDamage(spell.damage.dice, isCrit)
+        // Spell attack or saving throw?
+        if (spell.attackType) {
+          // Spell attack roll
+          const spellAttackBonus = getSpellAttackBonus(character)
+          const attackRoll = rollAttack(spellAttackBonus)
+          const targetAC = target.type === 'character'
+            ? (target.data as Character).ac
+            : (target.data as Monster).ac
 
-          get().addLogEntry({
-            type: 'attack',
-            actorId: casterId,
-            actorName: caster.name,
-            targetId,
-            targetName: target.name,
-            message: isCrit
-              ? `${caster.name} CRITICALLY HITS ${target.name} with ${spell.name}!`
-              : `${caster.name} hits ${target.name} with ${spell.name}`,
-            details: `${attackRoll.breakdown} vs AC ${targetAC}`,
-          })
+          if (attackRoll.isNatural1) {
+            get().addLogEntry({
+              type: 'attack',
+              actorId: casterId,
+              actorName: caster.name,
+              targetId: currentTargetId,
+              targetName: target.name,
+              message: `${caster.name} misses ${target.name} with ${spell.name} (natural 1)`,
+              details: attackRoll.breakdown,
+            })
+            get().addCombatPopup(currentTargetId, 'miss')
+          } else if (attackRoll.isNatural20 || attackRoll.total >= targetAC) {
+            const isCrit = attackRoll.isNatural20
+            const damage = rollDamage(spell.damage.dice, isCrit)
 
-          get().dealDamage(targetId, damage.total, caster.name)
-          get().addDamagePopup(targetId, damage.total, spell.damage.type, isCrit)
-          get().addLogEntry({
-            type: 'damage',
-            actorId: casterId,
-            actorName: caster.name,
-            targetId,
-            targetName: target.name,
-            message: `${damage.total} ${spell.damage.type} damage`,
-            details: damage.breakdown,
-          })
-        } else {
-          get().addLogEntry({
-            type: 'attack',
-            actorId: casterId,
-            actorName: caster.name,
-            targetId,
-            targetName: target.name,
-            message: `${caster.name} misses ${target.name} with ${spell.name}`,
-            details: `${attackRoll.breakdown} vs AC ${targetAC}`,
-          })
-        }
-      } else if (spell.savingThrow) {
-        // Saving throw spell
-        const dc = getSpellSaveDC(character)
-        const saveResult = rollCombatantSavingThrow(target, spell.savingThrow, dc)
+            get().addLogEntry({
+              type: 'attack',
+              actorId: casterId,
+              actorName: caster.name,
+              targetId: currentTargetId,
+              targetName: target.name,
+              message: isCrit
+                ? `${caster.name} CRITICALLY HITS ${target.name} with ${spell.name}!`
+                : `${caster.name} hits ${target.name} with ${spell.name}`,
+              details: `${attackRoll.breakdown} vs AC ${targetAC}`,
+            })
 
-        if (saveResult.success) {
-          // Usually half damage on save for damaging spells
-          const damage = rollDamage(spell.damage.dice, false)
-          const halfDamage = Math.floor(damage.total / 2)
-
-          get().addLogEntry({
-            type: 'spell',
-            actorId: casterId,
-            actorName: caster.name,
-            targetId,
-            targetName: target.name,
-            message: `${target.name} saves against ${spell.name} (DC ${dc})`,
-            details: `${saveResult.roll.breakdown} - half damage`,
-          })
-
-          // Show saved popup
-          get().addCombatPopup(targetId, 'saved')
-
-          if (halfDamage > 0) {
-            get().dealDamage(targetId, halfDamage, caster.name)
-            get().addDamagePopup(targetId, halfDamage, spell.damage.type, false)
+            get().dealDamage(currentTargetId, damage.total, caster.name)
+            get().addDamagePopup(currentTargetId, damage.total, spell.damage.type, isCrit)
+            get().addLogEntry({
+              type: 'damage',
+              actorId: casterId,
+              actorName: caster.name,
+              targetId: currentTargetId,
+              targetName: target.name,
+              message: `${damage.total} ${spell.damage.type} damage`,
+              details: damage.breakdown,
+            })
+          } else {
+            get().addLogEntry({
+              type: 'attack',
+              actorId: casterId,
+              actorName: caster.name,
+              targetId: currentTargetId,
+              targetName: target.name,
+              message: `${caster.name} misses ${target.name} with ${spell.name}`,
+              details: `${attackRoll.breakdown} vs AC ${targetAC}`,
+            })
+            get().addCombatPopup(currentTargetId, 'miss')
           }
-        } else {
+        } else if (spell.savingThrow) {
+          // Saving throw spell
+          const dc = getSpellSaveDC(character)
+          const saveResult = rollCombatantSavingThrow(target, spell.savingThrow, dc)
+
+          if (saveResult.success) {
+            // Usually half damage on save for damaging spells
+            const damage = rollDamage(spell.damage.dice, false)
+            const halfDamage = Math.floor(damage.total / 2)
+
+            get().addLogEntry({
+              type: 'spell',
+              actorId: casterId,
+              actorName: caster.name,
+              targetId: currentTargetId,
+              targetName: target.name,
+              message: `${target.name} saves against ${spell.name} (DC ${dc})`,
+              details: `${saveResult.roll.breakdown} - half damage`,
+            })
+
+            // Show saved popup
+            get().addCombatPopup(currentTargetId, 'saved')
+
+            if (halfDamage > 0) {
+              get().dealDamage(currentTargetId, halfDamage, caster.name)
+              get().addDamagePopup(currentTargetId, halfDamage, spell.damage.type, false)
+            }
+          } else {
+            const damage = rollDamage(spell.damage.dice, false)
+
+            get().addLogEntry({
+              type: 'spell',
+              actorId: casterId,
+              actorName: caster.name,
+              targetId: currentTargetId,
+              targetName: target.name,
+              message: `${target.name} fails save against ${spell.name} (DC ${dc})`,
+              details: saveResult.roll.breakdown,
+            })
+
+            get().dealDamage(currentTargetId, damage.total, caster.name)
+            get().addDamagePopup(currentTargetId, damage.total, spell.damage.type, false)
+            get().addLogEntry({
+              type: 'damage',
+              actorId: casterId,
+              actorName: caster.name,
+              targetId: currentTargetId,
+              targetName: target.name,
+              message: `${damage.total} ${spell.damage.type} damage`,
+              details: damage.breakdown,
+            })
+          }
+        } else if (spell.autoHit) {
+          // Auto-hit spells (like Magic Missile) - no attack roll or saving throw
           const damage = rollDamage(spell.damage.dice, false)
 
           get().addLogEntry({
             type: 'spell',
             actorId: casterId,
             actorName: caster.name,
-            targetId,
+            targetId: currentTargetId,
             targetName: target.name,
-            message: `${target.name} fails save against ${spell.name} (DC ${dc})`,
-            details: saveResult.roll.breakdown,
+            message: `${caster.name} hits ${target.name} with ${spell.name}`,
+            details: 'Auto-hit',
           })
 
-          get().dealDamage(targetId, damage.total, caster.name)
-          get().addDamagePopup(targetId, damage.total, spell.damage.type, false)
+          get().dealDamage(currentTargetId, damage.total, caster.name)
+          get().addDamagePopup(currentTargetId, damage.total, spell.damage.type, false)
           get().addLogEntry({
             type: 'damage',
             actorId: casterId,
             actorName: caster.name,
-            targetId,
+            targetId: currentTargetId,
             targetName: target.name,
             message: `${damage.total} ${spell.damage.type} damage`,
             details: damage.breakdown,

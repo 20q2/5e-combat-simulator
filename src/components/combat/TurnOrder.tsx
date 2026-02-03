@@ -1,7 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
 import { useCombatStore } from '@/stores/combatStore'
-import { Play, ListOrdered } from 'lucide-react'
+import { Play, Zap } from 'lucide-react'
 
 export function TurnOrder() {
   const { combatants, turnOrder, currentTurnIndex, round, phase, selectCombatant, selectedCombatantId } = useCombatStore()
@@ -16,8 +16,8 @@ export function TurnOrder() {
       <Card>
         <CardHeader className="pb-2">
           <CardTitle className="text-sm flex items-center gap-2">
-            <ListOrdered className="w-4 h-4" />
-            Turn Order
+            <Zap className="w-4 h-4" />
+            Initiative
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -34,8 +34,8 @@ export function TurnOrder() {
       <CardHeader className="pb-2">
         <div className="flex justify-between items-center">
           <CardTitle className="text-sm flex items-center gap-2">
-            <ListOrdered className="w-4 h-4" />
-            Turn Order
+            <Zap className="w-4 h-4" />
+            Initiative
           </CardTitle>
           <span className="text-xs text-muted-foreground">Round {round}</span>
         </div>

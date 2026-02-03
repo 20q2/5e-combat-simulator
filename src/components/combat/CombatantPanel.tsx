@@ -6,12 +6,15 @@ import { getCombatantTokenImage } from '@/lib/tokenImages'
 import { getMaxAttacksPerAction } from '@/engine/classAbilities'
 import type { Character, Monster, Combatant } from '@/types'
 import { getAbilityModifier } from '@/types'
-import { Sword, Crosshair } from 'lucide-react'
+import { Sword, Crosshair, Shield, Footprints, Zap, type LucideIcon } from 'lucide-react'
 
-function StatBlock({ label, value, subtext }: { label: string; value: string | number; subtext?: string }) {
+function StatBlock({ label, value, subtext, icon: Icon }: { label: string; value: string | number; subtext?: string; icon?: LucideIcon }) {
   return (
     <div className="text-center">
-      <div className="text-xs text-muted-foreground">{label}</div>
+      <div className="text-xs text-muted-foreground flex items-center justify-center gap-1">
+        {Icon && <Icon className="w-3 h-3" />}
+        {label}
+      </div>
       <div className="text-lg font-bold">{value}</div>
       {subtext && <div className="text-xs text-muted-foreground">{subtext}</div>}
     </div>
@@ -277,9 +280,9 @@ export function CombatantPanel() {
 
         {/* Core Stats */}
         <div className="grid grid-cols-3 gap-2 py-2">
-          <StatBlock label="AC" value={ac} />
-          <StatBlock label="Speed" value={`${speed} ft`} />
-          <StatBlock label="Initiative" value={displayCombatant.initiative || '—'} />
+          <StatBlock label="AC" value={ac} icon={Shield} />
+          <StatBlock label="Speed" value={`${speed} ft`} icon={Footprints} />
+          <StatBlock label="Initiative" value={displayCombatant.initiative || '—'} icon={Zap} />
         </div>
 
         {/* Action Economy (only during combat) */}
