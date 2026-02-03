@@ -46,10 +46,17 @@ function LogEntry({ entry }: { entry: CombatLogEntry }) {
     <div className={cn('flex items-start gap-2 text-sm py-1.5 border-b border-border/50 last:border-0', color)}>
       <Icon className="w-3.5 h-3.5 mt-0.5 shrink-0" />
       <div className="flex-1 min-w-0">
-        <span className="text-xs text-muted-foreground mr-2">
-          R{entry.round}
-        </span>
-        {entry.message}
+        <div>
+          <span className="text-xs text-muted-foreground mr-2">
+            R{entry.round}
+          </span>
+          {entry.message}
+        </div>
+        {entry.details && (
+          <div className="text-xs text-muted-foreground mt-0.5 font-mono">
+            {entry.details}
+          </div>
+        )}
       </div>
     </div>
   )
