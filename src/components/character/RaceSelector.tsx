@@ -4,7 +4,7 @@ import { getAllRaces, getRaceById } from '@/data'
 import { useCharacterStore } from '@/stores/characterStore'
 import type { Race, RacialAbility, DarkvisionAbility } from '@/types'
 import { isDarkvisionAbility } from '@/types'
-import { Eye, Shield, Sword, Sparkles, Heart, Flame, Zap } from 'lucide-react'
+import { Eye, Shield, Sword, Sparkles, Heart, Flame, Zap, Users, MessageSquare, Info } from 'lucide-react'
 
 // Get icon for ability type
 function getAbilityIcon(type: RacialAbility['type']) {

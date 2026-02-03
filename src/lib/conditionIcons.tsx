@@ -1,0 +1,149 @@
+import {
+  Eye,
+  EyeOff,
+  Heart,
+  EarOff,
+  Ghost,
+  Grab,
+  Brain,
+  Sparkles,
+  Droplets,
+  ArrowDown,
+  Link,
+  Zap,
+  Moon,
+  Gauge,
+  Shield,
+  Wind,
+  Footprints,
+  type LucideIcon,
+} from 'lucide-react'
+import type { Condition } from '@/types'
+
+export interface ConditionIconInfo {
+  icon: LucideIcon
+  color: string
+  bgColor: string
+  label: string
+}
+
+// Extended condition type to include special action states
+export type ExtendedCondition = Condition | 'dodging' | 'disengaging' | 'dashing'
+
+export const conditionIcons: Record<ExtendedCondition, ConditionIconInfo> = {
+  // Standard D&D 5e conditions
+  blinded: {
+    icon: EyeOff,
+    color: 'text-slate-300',
+    bgColor: 'bg-slate-700',
+    label: 'Blinded',
+  },
+  charmed: {
+    icon: Heart,
+    color: 'text-pink-300',
+    bgColor: 'bg-pink-900',
+    label: 'Charmed',
+  },
+  deafened: {
+    icon: EarOff,
+    color: 'text-slate-300',
+    bgColor: 'bg-slate-700',
+    label: 'Deafened',
+  },
+  frightened: {
+    icon: Ghost,
+    color: 'text-purple-300',
+    bgColor: 'bg-purple-900',
+    label: 'Frightened',
+  },
+  grappled: {
+    icon: Grab,
+    color: 'text-orange-300',
+    bgColor: 'bg-orange-900',
+    label: 'Grappled',
+  },
+  incapacitated: {
+    icon: Brain,
+    color: 'text-gray-300',
+    bgColor: 'bg-gray-800',
+    label: 'Incapacitated',
+  },
+  invisible: {
+    icon: Eye,
+    color: 'text-cyan-300',
+    bgColor: 'bg-cyan-900',
+    label: 'Invisible',
+  },
+  paralyzed: {
+    icon: Zap,
+    color: 'text-amber-300',
+    bgColor: 'bg-amber-900',
+    label: 'Paralyzed',
+  },
+  petrified: {
+    icon: Sparkles,
+    color: 'text-stone-300',
+    bgColor: 'bg-stone-700',
+    label: 'Petrified',
+  },
+  poisoned: {
+    icon: Droplets,
+    color: 'text-green-300',
+    bgColor: 'bg-green-900',
+    label: 'Poisoned',
+  },
+  prone: {
+    icon: ArrowDown,
+    color: 'text-yellow-300',
+    bgColor: 'bg-yellow-900',
+    label: 'Prone',
+  },
+  restrained: {
+    icon: Link,
+    color: 'text-orange-300',
+    bgColor: 'bg-orange-900',
+    label: 'Restrained',
+  },
+  stunned: {
+    icon: Zap,
+    color: 'text-amber-300',
+    bgColor: 'bg-amber-900',
+    label: 'Stunned',
+  },
+  unconscious: {
+    icon: Moon,
+    color: 'text-indigo-300',
+    bgColor: 'bg-indigo-900',
+    label: 'Unconscious',
+  },
+  exhaustion: {
+    icon: Gauge,
+    color: 'text-red-300',
+    bgColor: 'bg-red-900',
+    label: 'Exhaustion',
+  },
+
+  // Special action states (not official conditions but tracked in combat)
+  dodging: {
+    icon: Shield,
+    color: 'text-sky-300',
+    bgColor: 'bg-sky-900',
+    label: 'Dodging',
+  },
+  disengaging: {
+    icon: Wind,
+    color: 'text-teal-300',
+    bgColor: 'bg-teal-900',
+    label: 'Disengaging',
+  },
+  dashing: {
+    icon: Footprints,
+    color: 'text-emerald-300',
+    bgColor: 'bg-emerald-900',
+    label: 'Dashing',
+  },
+}
+
+export function getConditionIcon(condition: string): ConditionIconInfo | undefined {
+  return conditionIcons[condition as ExtendedCondition]
+}

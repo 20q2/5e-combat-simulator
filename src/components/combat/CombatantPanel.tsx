@@ -1,9 +1,12 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { useCombatStore, getCurrentCombatant } from '@/stores/combatStore'
 import { getCombatantTokenImage } from '@/lib/tokenImages'
+import { getMaxAttacksPerAction } from '@/engine/classAbilities'
 import type { Character, Monster, Combatant } from '@/types'
 import { getAbilityModifier } from '@/types'
+import { Sword, Crosshair } from 'lucide-react'
 
 function StatBlock({ label, value, subtext }: { label: string; value: string | number; subtext?: string }) {
   return (
@@ -99,6 +102,89 @@ function ActionEconomyIndicator({ combatant }: { combatant: Combatant }) {
         <span className={cn('text-xs', remainingMovement > 0 ? 'text-sky-400' : 'text-slate-500')}>
           {remainingMovement}ft
         </span>
+      </div>
+    </div>
+  )
+}
+
+function TargetActionsPanel({ target, currentCombatant }: { target: Combatant; currentCombatant: Combatant }) {
+  const { getValidTargets, performAttack, selectCombatant } = useCombatStore()
+
+  // Get weapons for the current combatant
+  const isCharacter = currentCombatant.type === 'character'
+  const character = isCharacter ? currentCombatant.data as Character : null
+  const monster = !isCharacter ? currentCombatant.data as Monster : null
+
+  const meleeWeapon = character?.equipment?.meleeWeapon
+  const rangedWeapon = character?.equipment?.rangedWeapon
+  const monsterAction = monster?.actions.find(a => a.attackBonus !== undefined)
+
+  // Check if target is in range
+  const validTargets = getValidTargets(currentCombatant.id, meleeWeapon, monsterAction, rangedWeapon)
+  const isInRange = validTargets.some(t => t.id === target.id)
+
+  // Check if we can attack (have attacks remaining)
+  const maxAttacks = getMaxAttacksPerAction(currentCombatant)
+  const attacksRemaining = maxAttacks - currentCombatant.attacksMadeThisTurn
+  // Can attack if: in range AND have attacks remaining AND (haven't used action OR mid-Attack action)
+  // attacksMadeThisTurn > 0 means we're in the middle of an Attack action with Extra Attack
+  const canAttack = isInRange && attacksRemaining > 0 && (!currentCombatant.hasActed || currentCombatant.attacksMadeThisTurn > 0)
+
+  // Determine which weapon would be used based on range
+  const getWeaponInfo = () => {
+    if (!isCharacter) {
+      return { name: monsterAction?.name ?? 'Attack', icon: Sword }
+    }
+
+    // Check if target is in melee range (5ft for most weapons)
+    const dx = Math.abs(target.position.x - currentCombatant.position.x)
+    const dy = Math.abs(target.position.y - currentCombatant.position.y)
+    const distance = Math.max(dx, dy) * 5
+
+    if (meleeWeapon && distance <= 5) {
+      return { name: meleeWeapon.name, icon: Sword }
+    }
+    if (rangedWeapon) {
+      return { name: rangedWeapon.name, icon: Crosshair }
+    }
+    if (meleeWeapon) {
+      return { name: meleeWeapon.name, icon: Sword }
+    }
+    return { name: 'Unarmed Strike', icon: Sword }
+  }
+
+  const weaponInfo = getWeaponInfo()
+  const WeaponIcon = weaponInfo.icon
+
+  const handleAttack = () => {
+    performAttack(currentCombatant.id, target.id, meleeWeapon, monsterAction, rangedWeapon)
+    // Deselect after attack so the panel updates
+    selectCombatant(undefined)
+  }
+
+  return (
+    <div className="pt-3 border-t border-slate-700">
+      <div className="text-xs text-muted-foreground mb-2">Target Actions</div>
+      <div className="flex flex-col gap-2">
+        <Button
+          variant="destructive"
+          size="sm"
+          className="w-full justify-start gap-2"
+          disabled={!canAttack}
+          onClick={handleAttack}
+        >
+          <WeaponIcon className="w-4 h-4" />
+          <span>Attack with {weaponInfo.name}</span>
+          {attacksRemaining > 1 && (
+            <span className="ml-auto text-xs opacity-75">({attacksRemaining} left)</span>
+          )}
+        </Button>
+        {!isInRange && (
+          <p className="text-xs text-muted-foreground italic">Target is out of range</p>
+        )}
+        {isInRange && currentCombatant.hasActed && attacksRemaining === 0 && (
+          <p className="text-xs text-muted-foreground italic">No attacks remaining this turn</p>
+        )}
       </div>
     </div>
   )
@@ -358,6 +444,16 @@ export function CombatantPanel() {
             )}
           </div>
         )}
+
+        {/* Target Actions - show when viewing an enemy during combat on player's turn */}
+        {phase === 'combat' &&
+          currentCombatant &&
+          currentCombatant.type === 'character' &&
+          displayCombatant.id !== currentCombatant.id &&
+          displayCombatant.type !== currentCombatant.type &&
+          displayCombatant.currentHp > 0 && (
+            <TargetActionsPanel target={displayCombatant} currentCombatant={currentCombatant} />
+          )}
       </CardContent>
     </Card>
   )

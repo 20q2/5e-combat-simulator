@@ -1,5 +1,5 @@
 import { useState, useEffect, type ReactNode } from 'react'
-import { cn } from '@/lib/utils'
+import { cn, formatCR } from '@/lib/utils'
 import { useCombatStore, getCurrentCombatant } from '@/stores/combatStore'
 import { getCharacterTokenImage, getMonsterTokenImage } from '@/lib/tokenImages'
 import type { Character, Monster, Weapon, MonsterAction, Spell } from '@/types'
@@ -33,6 +33,24 @@ import {
   canUseCunningAction,
   getMaxAttacksPerAction,
 } from '@/engine/classAbilities'
+
+// Parse spell range string to number (in feet)
+// e.g., "120 feet" → 120, "Touch" → 5, "Self" → 0
+function parseSpellRange(range: string): number {
+  const lowerRange = range.toLowerCase()
+  if (lowerRange === 'self' || lowerRange === 'self (cone)' || lowerRange.startsWith('self')) {
+    return 0
+  }
+  if (lowerRange === 'touch') {
+    return 5
+  }
+  // Extract number from strings like "120 feet", "60 ft", etc.
+  const match = range.match(/(\d+)\s*(feet|ft|foot)?/i)
+  if (match) {
+    return parseInt(match[1], 10)
+  }
+  return 0
+}
 
 // Action type badge component
 function ActionTypeBadge({ type }: { type: 'action' | 'bonus' | 'reaction' }) {
@@ -529,6 +547,7 @@ export function ActionBar() {
     setSelectedAction,
     setHoveredTarget,
     setRangeHighlight,
+    setAoEPreview,
     endTurn,
     startCombat,
     combatants,
@@ -568,6 +587,7 @@ export function ActionBar() {
     }
     if (selectedAction !== 'spell') {
       setIsSelectingSpell(false)
+      setAoEPreview(undefined)
       setSelectedSpell(null)
     }
   }, [selectedAction, setRangeHighlight])
@@ -693,7 +713,8 @@ export function ActionBar() {
   const maxAttacks = getMaxAttacksPerAction(currentCombatant)
   const attacksRemaining = maxAttacks - currentCombatant.attacksMadeThisTurn
   const hasExtraAttack = maxAttacks > 1
-  const canAttack = attacksRemaining > 0 && validTargets.length > 0
+  // Can attack if: have attacks remaining, have targets, and either haven't acted or mid-Attack action
+  const canAttack = attacksRemaining > 0 && validTargets.length > 0 && (!currentCombatant.hasActed || currentCombatant.attacksMadeThisTurn > 0)
 
   // Build weapons array for character attack selector
   const availableWeapons: WeaponOption[] = []
@@ -788,6 +809,7 @@ export function ActionBar() {
   const handleTargetSelect = (targetId: string) => {
     setHoveredTarget(undefined)
     setRangeHighlight(undefined)
+    setAoEPreview(undefined)
     if (selectedSpell) {
       castSpell(currentCombatant.id, selectedSpell, targetId)
       setSelectedSpell(null)
@@ -801,6 +823,7 @@ export function ActionBar() {
   const handleCancelTarget = () => {
     setHoveredTarget(undefined)
     setRangeHighlight(undefined)
+    setAoEPreview(undefined)
     setSelectedAction(undefined)
     setIsSelectingTarget(false)
     setIsSelectingWeapon(false)
@@ -825,6 +848,29 @@ export function ActionBar() {
 
     if (spell.damage || spell.attackType || spell.savingThrow) {
       setIsSelectingTarget(true)
+
+      // Set range highlight for the spell
+      if (currentCombatant) {
+        const spellRange = parseSpellRange(spell.range)
+        if (spellRange > 0) {
+          setRangeHighlight({
+            origin: currentCombatant.position,
+            range: spellRange,
+            type: 'spell',
+          })
+        }
+
+        // Set AoE preview if spell has area of effect
+        if (spell.areaOfEffect) {
+          setAoEPreview({
+            type: spell.areaOfEffect.type,
+            size: spell.areaOfEffect.size,
+            origin: currentCombatant.position,
+          })
+        } else {
+          setAoEPreview(undefined)
+        }
+      }
     } else {
       castSpell(currentCombatant.id, spell)
       setSelectedSpell(null)
@@ -849,9 +895,7 @@ export function ActionBar() {
   const hpColor: 'green' | 'amber' | 'red' = hpPercent > 50 ? 'green' : hpPercent > 25 ? 'amber' : 'red'
 
   return (
-    <div className="relative bg-gradient-to-t from-slate-950 via-slate-900 to-slate-800 border-t-2 border-slate-700">
-      {/* Ornate top border decoration */}
-      <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 w-32 h-2 bg-gradient-to-r from-transparent via-amber-600 to-transparent rounded-full" />
+    <div className="bg-gradient-to-t from-slate-950 via-slate-900 to-slate-800 border-t-2 border-slate-700">
 
       <div className="max-w-5xl mx-auto p-3">
         {/* Unconscious/Death saves UI */}
@@ -886,7 +930,7 @@ export function ActionBar() {
                 </div>
                 {/* Level/CR badge */}
                 <div className="absolute -bottom-1 -right-1 px-1.5 py-0.5 bg-slate-800 border border-slate-600 rounded text-[10px] font-bold">
-                  {isCharacter ? `Lv${character?.level}` : `CR${monster?.challengeRating}`}
+                  {isCharacter ? `Lv${character?.level}` : `CR${formatCR(monster?.challengeRating ?? 0)}`}
                 </div>
               </div>
 
@@ -1021,7 +1065,7 @@ export function ActionBar() {
                       ? `Attack with ${weaponName} (${attacksRemaining}/${maxAttacks} attacks)`
                       : `Attack with ${weaponName}`
                 }
-                badge={hasExtraAttack && attacksRemaining > 0 ? attacksRemaining : (validTargets.length > 0 ? validTargets.length : undefined)}
+                badge={hasExtraAttack && attacksRemaining > 0 ? attacksRemaining : undefined}
                 actionType="action"
               />
 

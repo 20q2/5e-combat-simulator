@@ -68,6 +68,7 @@ interface CombatStore extends CombatState {
   setSelectedAction: (action: CombatState['selectedAction']) => void
   setHoveredTarget: (id: string | undefined) => void
   setRangeHighlight: (highlight: CombatState['rangeHighlight']) => void
+  setAoEPreview: (preview: CombatState['aoePreview']) => void
 
   // Movement
   moveCombatant: (id: string, to: Position) => void
@@ -422,6 +423,10 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
 
   setRangeHighlight: (highlight) => {
     set({ rangeHighlight: highlight })
+  },
+
+  setAoEPreview: (preview) => {
+    set({ aoePreview: preview })
   },
 
   moveCombatant: (id, to) => {
@@ -1461,6 +1466,9 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
           : c
       ),
     }))
+
+    // Show heal popup
+    get().addHealPopup(combatantId, healResult.total)
   },
 
   useActionSurge: (combatantId) => {
@@ -1485,13 +1493,14 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
       message: `${combatant.name} uses Action Surge! They can take another action this turn.`,
     })
 
-    // Reset hasActed to allow another action
+    // Reset hasActed and attacksMadeThisTurn to allow another full Attack action
     set((state) => ({
       combatants: state.combatants.map((c) =>
         c.id === combatantId
           ? {
               ...c,
               hasActed: false,
+              attacksMadeThisTurn: 0,
               classFeatureUses: useResult.newUses,
             }
           : c

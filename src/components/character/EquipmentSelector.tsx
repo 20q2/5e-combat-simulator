@@ -3,18 +3,53 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Label } from '@/components/ui/label'
 import { cn } from '@/lib/utils'
 import { getAllWeapons, getAllArmors, getClassById, getWeaponById, getArmorById } from '@/data'
-import { useCharacterStore, calculateAC } from '@/stores/characterStore'
+import { useCharacterStore, calculateAC, calculateFinalAbilityScores } from '@/stores/characterStore'
+import { getAbilityModifier } from '@/types'
 import type { Weapon, Armor } from '@/types'
+
+// Parse dice notation and return average
+function parseDiceAverage(diceNotation: string): number {
+  // Handle formats like "1d8", "2d6", "1d10+2"
+  const match = diceNotation.match(/(\d+)d(\d+)(?:\s*\+\s*(\d+))?/)
+  if (!match) return 0
+  const numDice = parseInt(match[1])
+  const dieSize = parseInt(match[2])
+  const bonus = match[3] ? parseInt(match[3]) : 0
+  const averagePerDie = (dieSize + 1) / 2
+  return numDice * averagePerDie + bonus
+}
+
+// Calculate weapon damage modifier based on weapon type and stats
+function getWeaponDamageMod(weapon: Weapon, strMod: number, dexMod: number): number {
+  const isFinesse = weapon.properties.includes('finesse')
+  const isRanged = weapon.type === 'ranged'
+
+  if (isFinesse) {
+    return Math.max(strMod, dexMod)
+  } else if (isRanged) {
+    return dexMod
+  } else {
+    return strMod
+  }
+}
 
 function WeaponCard({
   weapon,
   selected,
   onSelect,
+  strMod,
+  dexMod,
 }: {
   weapon: Weapon
   selected: boolean
   onSelect: () => void
+  strMod: number
+  dexMod: number
 }) {
+  const baseDamage = parseDiceAverage(weapon.damage)
+  const damageMod = getWeaponDamageMod(weapon, strMod, dexMod)
+  const avgDamage = Math.max(1, Math.floor(baseDamage + damageMod))
+
   return (
     <button
       onClick={onSelect}
@@ -31,9 +66,14 @@ function WeaponCard({
             {weapon.range && ` · ${weapon.range.normal}/${weapon.range.long} ft`}
           </p>
         </div>
-        <span className="text-xs text-muted-foreground">
-          {weapon.category}
-        </span>
+        <div className="text-right">
+          <span className="text-xs text-muted-foreground block">
+            {weapon.category}
+          </span>
+          <span className="text-sm font-semibold text-primary">
+            ~{avgDamage} avg
+          </span>
+        </div>
       </div>
       {weapon.properties.length > 0 && (
         <div className="flex flex-wrap gap-1 mt-2">
@@ -98,6 +138,17 @@ export function EquipmentSelector() {
   const weapons = getAllWeapons()
   const armors = getAllArmors()
 
+  // Calculate ability modifiers for damage calculations
+  const finalAbilityScores = calculateFinalAbilityScores(
+    draft.baseAbilityScores,
+    draft.abilityBonusPlus2,
+    draft.abilityBonusPlus1,
+    draft.abilityBonusMode,
+    draft.abilityBonusPlus1Trio
+  )
+  const strMod = getAbilityModifier(finalAbilityScores.strength)
+  const dexMod = getAbilityModifier(finalAbilityScores.dexterity)
+
   // Filter equipment by class proficiencies
   const availableWeapons = useMemo(() => {
     if (!selectedClass) return weapons
@@ -140,6 +191,8 @@ export function EquipmentSelector() {
   const selectedRangedWeapon = draft.rangedWeaponId ? getWeaponById(draft.rangedWeaponId) : null
   const selectedArmor = draft.armorId ? getArmorById(draft.armorId) ?? null : null
 
+  const hasTwoHandedWeapon = selectedMeleeWeapon?.properties.includes('two-handed') ?? false
+
   // Calculate preview AC
   const previewAC = calculateAC(
     selectedArmor?.category !== 'shield' ? selectedArmor : null,
@@ -150,6 +203,17 @@ export function EquipmentSelector() {
   // Group weapons by type
   const meleeWeapons = availableWeapons.filter((w) => w.type === 'melee')
   const rangedWeapons = availableWeapons.filter((w) => w.type === 'ranged')
+
+  // Handle melee weapon selection - auto-unequip shield if two-handed
+  const handleMeleeWeaponSelect = (weaponId: string | null) => {
+    setMeleeWeapon(weaponId)
+    if (weaponId) {
+      const weapon = meleeWeapons.find((w) => w.id === weaponId)
+      if (weapon?.properties.includes('two-handed') && draft.shieldEquipped) {
+        setShield(false)
+      }
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -173,7 +237,7 @@ export function EquipmentSelector() {
               <h4 className="font-medium text-sm mb-2">Melee Weapon</h4>
               <div className="space-y-2 max-h-[300px] overflow-y-auto pr-2">
                 <button
-                  onClick={() => setMeleeWeapon(null)}
+                  onClick={() => handleMeleeWeaponSelect(null)}
                   className={cn(
                     'w-full text-left p-3 rounded-lg border-2 transition-all hover:border-primary/50',
                     !draft.meleeWeaponId ? 'border-primary bg-primary/5' : 'border-border'
@@ -187,7 +251,9 @@ export function EquipmentSelector() {
                     key={weapon.id}
                     weapon={weapon}
                     selected={draft.meleeWeaponId === weapon.id}
-                    onSelect={() => setMeleeWeapon(weapon.id)}
+                    onSelect={() => handleMeleeWeaponSelect(weapon.id)}
+                    strMod={strMod}
+                    dexMod={dexMod}
                   />
                 ))}
               </div>
@@ -213,6 +279,8 @@ export function EquipmentSelector() {
                     weapon={weapon}
                     selected={draft.rangedWeaponId === weapon.id}
                     onSelect={() => setRangedWeapon(weapon.id)}
+                    strMod={strMod}
+                    dexMod={dexMod}
                   />
                 ))}
               </div>
@@ -328,17 +396,20 @@ export function EquipmentSelector() {
                 <Label>Shield (+2 AC)</Label>
                 <button
                   onClick={() => setShield(!draft.shieldEquipped)}
-                  disabled={!canUseShield}
+                  disabled={!canUseShield || hasTwoHandedWeapon}
                   className={cn(
                     'px-4 py-2 rounded-lg border-2 transition-all',
                     draft.shieldEquipped ? 'border-primary bg-primary/5' : 'border-border',
-                    canUseShield ? 'hover:border-primary/50' : 'opacity-50 cursor-not-allowed'
+                    canUseShield && !hasTwoHandedWeapon ? 'hover:border-primary/50' : 'opacity-50 cursor-not-allowed'
                   )}
                 >
                   {draft.shieldEquipped ? 'Equipped' : 'Not Equipped'}
                 </button>
                 {!canUseShield && (
                   <span className="text-xs text-destructive">Not proficient</span>
+                )}
+                {canUseShield && hasTwoHandedWeapon && (
+                  <span className="text-xs text-destructive">Cannot use with two-handed weapon</span>
                 )}
               </div>
             </div>

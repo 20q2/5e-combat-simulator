@@ -1,8 +1,15 @@
 import { useMemo, useState } from 'react'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import {
   getRaceById,
   getClassById,
@@ -21,7 +28,25 @@ import {
 import { getAbilityModifier, getProficiencyBonus } from '@/types'
 import { getCharacterTokenImage } from '@/lib/tokenImages'
 import { CharacterSaveSuccess } from './CharacterSaveSuccess'
-import type { Character } from '@/types'
+import type { Character, AbilityName } from '@/types'
+import type { ClassFeature, FightingStyleFeature, SneakAttackFeature, ImprovedCriticalFeature, ExtraAttackFeature, CunningActionFeature } from '@/types/classFeature'
+import type { RacialAbility } from '@/types/race'
+import {
+  Swords,
+  Target,
+  TriangleAlert,
+  Shield,
+  Heart,
+  Footprints,
+  Award,
+  Crosshair,
+  ShieldCheck,
+  Sparkles,
+  Dna,
+  Wand2,
+  Save,
+  HardHat,
+} from 'lucide-react'
 
 const ABILITY_LABELS: Record<string, string> = {
   strength: 'STR',
@@ -32,13 +57,74 @@ const ABILITY_LABELS: Record<string, string> = {
   charisma: 'CHA',
 }
 
+const ABILITY_ORDER: AbilityName[] = ['strength', 'dexterity', 'constitution', 'intelligence', 'wisdom', 'charisma']
+
+const FIGHTING_STYLE_NAMES: Record<string, string> = {
+  archery: 'Archery',
+  defense: 'Defense',
+  dueling: 'Dueling',
+  great_weapon: 'Great Weapon Fighting',
+  protection: 'Protection',
+  two_weapon: 'Two-Weapon Fighting',
+}
+
 function formatModifier(mod: number): string {
   return mod >= 0 ? `+${mod}` : `${mod}`
+}
+
+function getFeatureDetail(feature: ClassFeature, level: number): string | null {
+  switch (feature.type) {
+    case 'fighting_style':
+      return FIGHTING_STYLE_NAMES[(feature as FightingStyleFeature).style] || null
+    case 'sneak_attack': {
+      const sneakAttack = feature as SneakAttackFeature
+      const dice = sneakAttack.diceScaling[level] || sneakAttack.baseDice
+      return dice
+    }
+    case 'improved_critical':
+      return `Crit on ${(feature as ImprovedCriticalFeature).criticalRange}+`
+    case 'extra_attack':
+      return `${(feature as ExtraAttackFeature).attackCount} attacks`
+    case 'cunning_action': {
+      const actions = (feature as CunningActionFeature).allowedActions
+      return actions.map(a => a.charAt(0).toUpperCase() + a.slice(1)).join(', ')
+    }
+    case 'second_wind':
+      return `1d10+${level} HP`
+    case 'action_surge':
+      return 'Extra action'
+    default:
+      return null
+  }
+}
+
+function getRacialAbilityDetail(ability: RacialAbility): string | null {
+  switch (ability.type) {
+    case 'darkvision':
+      return `${ability.range} ft`
+    case 'resistance':
+      return ability.damageTypes.join(', ')
+    case 'save_advantage':
+      if (ability.conditions?.length) return `vs ${ability.conditions.join(', ')}`
+      if (ability.magicSaves) return 'vs magic'
+      return null
+    case 'reroll':
+      return `Reroll ${ability.triggerValue}s`
+    case 'triggered_heal':
+      return 'Drop to 1 HP instead of 0'
+    case 'bonus_damage':
+      return ability.bonusDice
+    case 'breath_weapon':
+      return `${ability.damageDice} ${ability.damageType}`
+    default:
+      return null
+  }
 }
 
 export function CharacterSheet() {
   const { draft, setName, saveCharacter, resetDraft } = useCharacterStore()
   const [showSuccessModal, setShowSuccessModal] = useState(false)
+  const [showResetConfirm, setShowResetConfirm] = useState(false)
   const [savedCharacter, setSavedCharacter] = useState<Character | null>(null)
 
   const race = draft.raceId ? getRaceById(draft.raceId) ?? null : null
@@ -52,7 +138,9 @@ export function CharacterSheet() {
   const finalAbilityScores = calculateFinalAbilityScores(
     draft.baseAbilityScores,
     draft.abilityBonusPlus2,
-    draft.abilityBonusPlus1
+    draft.abilityBonusPlus1,
+    draft.abilityBonusMode,
+    draft.abilityBonusPlus1Trio
   )
   const proficiencyBonus = getProficiencyBonus(draft.level)
 
@@ -169,232 +257,362 @@ export function CharacterSheet() {
   }
 
   return (
-    <div className="space-y-6">
-      {/* Character Name */}
+    <div className="space-y-4">
+      {/* Header with Token, Name, and Core Stats */}
       <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-lg">Character Name</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-center gap-4">
-            <Label htmlFor="name" className="sr-only">Name</Label>
-            <Input
-              id="name"
-              value={draft.name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Enter character name"
-              className="max-w-xs"
-            />
-          </div>
-        </CardContent>
-      </Card>
+        <CardContent className="pt-6">
+          <div className="flex items-start gap-6">
+            {/* Token */}
+            <div className="shrink-0">
+              {tokenImage ? (
+                <img
+                  src={tokenImage}
+                  alt="Character token"
+                  className="w-24 h-24 rounded-full object-cover border-2 border-violet-500 shadow-lg"
+                />
+              ) : (
+                <div className="w-24 h-24 rounded-full bg-slate-700 flex items-center justify-center text-3xl font-bold text-slate-400 border-2 border-slate-600">
+                  {draft.name ? draft.name.charAt(0).toUpperCase() : '?'}
+                </div>
+              )}
+            </div>
 
-      {/* Character Overview */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-center gap-4">
-            {/* Token Preview */}
-            {tokenImage ? (
-              <img
-                src={tokenImage}
-                alt="Character token"
-                className="w-20 h-20 rounded-full object-cover border-2 border-violet-500 shadow-lg"
-              />
-            ) : (
-              <div className="w-20 h-20 rounded-full bg-slate-700 flex items-center justify-center text-2xl font-bold text-slate-400 border-2 border-slate-600">
-                {draft.name ? draft.name.charAt(0).toUpperCase() : '?'}
+            {/* Name and Info */}
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 mb-1">
+                <Input
+                  value={draft.name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="Character Name"
+                  className="text-xl font-bold h-auto py-1 px-2 border-none bg-transparent focus-visible:ring-1 max-w-[250px]"
+                />
               </div>
-            )}
-            <div>
-              <CardTitle>
-                {draft.name || 'Unnamed Character'}
-              </CardTitle>
-              <CardDescription>
-                {race?.name ?? 'No race'}{' '}
-                {characterClass?.name ?? 'No class'}
-                {subclass && ` (${subclass.name})`}{' '}
-                Level {draft.level}
-              </CardDescription>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent>
-          {/* Core Stats */}
-          <div className="grid grid-cols-3 gap-4 mb-6">
-            <div className="text-center p-4 bg-muted rounded-lg">
-              <div className="text-3xl font-bold">{ac}</div>
-              <div className="text-sm text-muted-foreground">Armor Class</div>
-            </div>
-            <div className="text-center p-4 bg-muted rounded-lg">
-              <div className="text-3xl font-bold">{hp}</div>
-              <div className="text-sm text-muted-foreground">Hit Points</div>
-            </div>
-            <div className="text-center p-4 bg-muted rounded-lg">
-              <div className="text-3xl font-bold">{race?.speed ?? 30}</div>
-              <div className="text-sm text-muted-foreground">Speed (ft)</div>
-            </div>
-          </div>
+              <div className="flex items-center gap-2 mb-3">
+                <span className="text-sm bg-primary/20 text-primary px-2 py-0.5 rounded font-medium">
+                  Level {draft.level}
+                </span>
+                <span className="text-sm text-muted-foreground">
+                  {race?.name ?? 'No race'} {characterClass?.name ?? 'No class'}
+                </span>
+                {subclass && (
+                  <span className="text-sm text-amber-400 font-medium">
+                    {subclass.name}
+                  </span>
+                )}
+              </div>
 
-          {/* Ability Scores */}
-          <div className="mb-6">
-            <h4 className="font-medium mb-3">Ability Scores</h4>
-            <div className="grid grid-cols-6 gap-2">
-              {Object.entries(finalAbilityScores).map(([ability, score]) => {
+              {/* Core Stats Row */}
+              <div className="flex gap-3">
+                <div className="text-center px-4 py-2 bg-muted rounded-lg min-w-[70px]">
+                  <Shield className="w-4 h-4 mx-auto mb-1 text-blue-400" />
+                  <div className="text-2xl font-bold">{ac}</div>
+                  <div className="text-xs text-muted-foreground">AC</div>
+                </div>
+                <div className="text-center px-4 py-2 bg-muted rounded-lg min-w-[70px]">
+                  <Heart className="w-4 h-4 mx-auto mb-1 text-red-400" />
+                  <div className="text-2xl font-bold">{hp}</div>
+                  <div className="text-xs text-muted-foreground">HP</div>
+                </div>
+                <div className="text-center px-4 py-2 bg-muted rounded-lg min-w-[70px]">
+                  <Footprints className="w-4 h-4 mx-auto mb-1 text-green-400" />
+                  <div className="text-2xl font-bold">{race?.speed ?? 30}</div>
+                  <div className="text-xs text-muted-foreground">Speed</div>
+                </div>
+                <div className="text-center px-4 py-2 bg-muted rounded-lg min-w-[70px]">
+                  <Award className="w-4 h-4 mx-auto mb-1 text-amber-400" />
+                  <div className="text-2xl font-bold">{formatModifier(proficiencyBonus)}</div>
+                  <div className="text-xs text-muted-foreground">Prof</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Ability Scores - Larger and more readable */}
+            <div className="grid grid-cols-3 gap-2 shrink-0">
+              {ABILITY_ORDER.map((ability) => {
+                const score = finalAbilityScores[ability]
                 const mod = getAbilityModifier(score)
-                const bonus =
-                  draft.abilityBonusPlus2 === ability ? 2 :
-                  draft.abilityBonusPlus1 === ability ? 1 : 0
                 return (
-                  <div key={ability} className="text-center p-2 border rounded-lg">
-                    <div className="text-xs text-muted-foreground">
-                      {ABILITY_LABELS[ability]}
-                    </div>
-                    <div className="text-xl font-bold">{score}</div>
-                    <div className="text-sm text-muted-foreground">
+                  <div key={ability} className="text-center px-3 py-2 border border-border/50 rounded-lg bg-muted/30">
+                    <div className="text-xs font-medium text-muted-foreground mb-0.5">{ABILITY_LABELS[ability]}</div>
+                    <div className="text-xl font-bold leading-tight">{score}</div>
+                    <div className={`text-sm font-medium ${mod >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                       {formatModifier(mod)}
                     </div>
-                    {bonus > 0 && (
-                      <div className="text-xs text-primary">+{bonus}</div>
-                    )}
                   </div>
                 )
               })}
             </div>
           </div>
+        </CardContent>
+      </Card>
 
-          {/* Proficiency & Saves */}
-          <div className="grid md:grid-cols-2 gap-6 mb-6">
+      {/* Two-Column Layout for Details */}
+      <div className="grid md:grid-cols-2 gap-4">
+        {/* Left Column: Equipment & Combat */}
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <Crosshair className="w-4 h-4 text-red-400" />
+              Combat & Equipment
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {/* Saving Throws */}
             <div>
-              <h4 className="font-medium mb-2">Proficiency Bonus</h4>
-              <div className="text-2xl font-bold">{formatModifier(proficiencyBonus)}</div>
-            </div>
-            <div>
-              <h4 className="font-medium mb-2">Saving Throws</h4>
-              <div className="flex flex-wrap gap-2">
-                {characterClass?.savingThrowProficiencies.map((save) => (
-                  <span key={save} className="text-sm bg-secondary px-2 py-1 rounded">
-                    {ABILITY_LABELS[save]}{' '}
-                    {formatModifier(
-                      getAbilityModifier(finalAbilityScores[save]) + proficiencyBonus
-                    )}
-                  </span>
-                ))}
+              <div className="text-xs text-muted-foreground mb-1.5 flex items-center gap-1.5">
+                <ShieldCheck className="w-3.5 h-3.5" />
+                Saving Throws
+              </div>
+              <div className="grid grid-cols-3 gap-1">
+                {ABILITY_ORDER.map((ability) => {
+                  const isProficient = characterClass?.savingThrowProficiencies.includes(ability)
+                  const mod = getAbilityModifier(finalAbilityScores[ability]) + (isProficient ? proficiencyBonus : 0)
+                  return (
+                    <div
+                      key={ability}
+                      className={`text-xs px-2 py-1 rounded flex items-center justify-between ${
+                        isProficient ? 'bg-primary/20 text-primary' : 'bg-muted/50 text-muted-foreground'
+                      }`}
+                    >
+                      <span className="font-medium">{ABILITY_LABELS[ability]}</span>
+                      <span className={isProficient ? 'font-bold' : ''}>
+                        {formatModifier(mod)}
+                        {isProficient && ' ●'}
+                      </span>
+                    </div>
+                  )
+                })}
               </div>
             </div>
-          </div>
 
-          {/* Equipment */}
-          {(meleeWeapon || rangedWeapon || armor || draft.shieldEquipped) && (
-            <div className="mb-6">
-              <h4 className="font-medium mb-2">Equipment</h4>
-              <div className="space-y-2">
-                {meleeWeapon && (
-                  <div className="p-3 bg-muted/50 rounded-lg">
-                    <div className="font-medium">{meleeWeapon.name}</div>
-                    <div className="text-sm text-muted-foreground">
-                      {formatModifier(meleeAttackBonus)} to hit · {meleeWeapon.damage} {meleeWeapon.damageType}
+            {/* Weapons */}
+            {(meleeWeapon || rangedWeapon) && (
+              <div>
+                <div className="text-xs text-muted-foreground mb-1.5 flex items-center gap-1.5">
+                  <Swords className="w-3.5 h-3.5" />
+                  Weapons
+                </div>
+                <div className="space-y-2">
+                  {meleeWeapon && (
+                    <div className="px-3 py-2 bg-muted/50 rounded-lg">
+                      <div className="flex items-center gap-2 mb-1">
+                        <Swords className="w-4 h-4 text-orange-400" />
+                        <span className="font-medium">{meleeWeapon.name}</span>
+                      </div>
+                      <div className="flex gap-4 text-xs text-muted-foreground">
+                        <span>
+                          <span className="text-foreground font-medium">{formatModifier(meleeAttackBonus)}</span> to hit
+                        </span>
+                        <span>
+                          <span className="text-foreground font-medium">{meleeWeapon.damage}</span> damage
+                        </span>
+                      </div>
                     </div>
-                  </div>
-                )}
-                {rangedWeapon && (
-                  <div className="p-3 bg-muted/50 rounded-lg">
-                    <div className="font-medium">{rangedWeapon.name}</div>
-                    <div className="text-sm text-muted-foreground">
-                      {formatModifier(rangedAttackBonus)} to hit · {rangedWeapon.damage} {rangedWeapon.damageType}
-                      {rangedWeapon.range && ` · ${rangedWeapon.range.normal}/${rangedWeapon.range.long} ft`}
+                  )}
+                  {rangedWeapon && (
+                    <div className="px-3 py-2 bg-muted/50 rounded-lg">
+                      <div className="flex items-center gap-2 mb-1">
+                        <Target className="w-4 h-4 text-blue-400" />
+                        <span className="font-medium">{rangedWeapon.name}</span>
+                      </div>
+                      <div className="flex gap-4 text-xs text-muted-foreground">
+                        <span>
+                          <span className="text-foreground font-medium">{formatModifier(rangedAttackBonus)}</span> to hit
+                        </span>
+                        <span>
+                          <span className="text-foreground font-medium">{rangedWeapon.damage}</span> damage
+                        </span>
+                        {rangedWeapon.range && (
+                          <span>
+                            <span className="text-foreground font-medium">{rangedWeapon.range.normal}/{rangedWeapon.range.long}</span> ft
+                          </span>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                )}
-                {armor && (
-                  <div className="p-3 bg-muted/50 rounded-lg">
-                    <div className="font-medium">{armor.name}</div>
-                    <div className="text-sm text-muted-foreground">
-                      Base AC {armor.baseAC}
-                    </div>
-                  </div>
-                )}
-                {draft.shieldEquipped && (
-                  <div className="p-3 bg-muted/50 rounded-lg">
-                    <div className="font-medium">Shield</div>
-                    <div className="text-sm text-muted-foreground">+2 AC</div>
-                  </div>
-                )}
+                  )}
+                </div>
               </div>
-            </div>
-          )}
+            )}
 
-          {/* Spells */}
-          {(cantrips.length > 0 || spells.length > 0 || spellSlots) && (
-            <div className="mb-6">
-              <h4 className="font-medium mb-2">Spellcasting</h4>
-              {/* Spell Slots */}
-              {spellSlots && (
-                <div className="mb-3">
-                  <div className="text-sm text-muted-foreground mb-1">Spell Slots</div>
-                  <div className="flex flex-wrap gap-2">
+            {/* Armor */}
+            {(armor || draft.shieldEquipped) && (
+              <div>
+                <div className="text-xs text-muted-foreground mb-1 flex items-center gap-1.5">
+                  <HardHat className="w-3.5 h-3.5" />
+                  Armor
+                </div>
+                <div className="flex flex-wrap gap-1">
+                  {armor && (
+                    <span className="text-xs bg-muted px-2 py-0.5 rounded">
+                      {armor.name} (AC {armor.baseAC})
+                    </span>
+                  )}
+                  {draft.shieldEquipped && (
+                    <span className="text-xs bg-muted px-2 py-0.5 rounded">
+                      Shield (+2)
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Spellcasting */}
+            {(cantrips.length > 0 || spells.length > 0 || spellSlots) && (
+              <div>
+                <div className="text-xs text-muted-foreground mb-1 flex items-center gap-1.5">
+                  <Wand2 className="w-3.5 h-3.5 text-violet-400" />
+                  Spellcasting
+                </div>
+                {spellSlots && (
+                  <div className="flex flex-wrap gap-1 mb-1">
                     {Object.entries(spellSlots)
                       .filter(([, slot]) => slot.max > 0)
                       .map(([level, slot]) => (
-                        <span key={level} className="text-sm bg-violet-500/20 text-violet-300 px-2 py-1 rounded border border-violet-500/30">
-                          Level {level}: {slot.max}
+                        <span key={level} className="text-xs bg-violet-500/20 text-violet-300 px-1.5 py-0.5 rounded">
+                          {level}: {slot.max}
                         </span>
                       ))}
                   </div>
-                </div>
-              )}
-              {cantrips.length > 0 && (
-                <div className="mb-2">
-                  <div className="text-sm text-muted-foreground mb-1">Cantrips</div>
-                  <div className="flex flex-wrap gap-1">
+                )}
+                {cantrips.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mb-1">
                     {cantrips.map((spell) => spell && (
-                      <span key={spell.id} className="text-sm bg-secondary px-2 py-1 rounded">
+                      <span key={spell.id} className="text-xs bg-secondary px-1.5 py-0.5 rounded">
                         {spell.name}
                       </span>
                     ))}
                   </div>
-                </div>
-              )}
-              {spells.length > 0 && (
-                <div>
-                  <div className="text-sm text-muted-foreground mb-1">Prepared Spells</div>
+                )}
+                {spells.length > 0 && (
                   <div className="flex flex-wrap gap-1">
                     {spells.map((spell) => spell && (
-                      <span key={spell.id} className="text-sm bg-secondary px-2 py-1 rounded">
-                        {spell.name} ({spell.level})
+                      <span key={spell.id} className="text-xs bg-secondary px-1.5 py-0.5 rounded">
+                        {spell.name}
                       </span>
                     ))}
                   </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Features */}
-          {(classFeatures.length > 0 || subclassFeatures.length > 0) && (
-            <div>
-              <h4 className="font-medium mb-2">Features & Traits</h4>
-              <div className="space-y-2 max-h-[200px] overflow-y-auto">
-                {[...classFeatures, ...subclassFeatures].map((feature, idx) => (
-                  <div key={`${feature.name}-${idx}`} className="text-sm">
-                    <span className="font-medium">{feature.name}</span>
-                    <span className="text-muted-foreground"> (Lv. {feature.level})</span>
-                  </div>
-                ))}
+                )}
               </div>
-            </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Right Column: Features & Racial Traits */}
+        <div className="space-y-4">
+          {/* Class Features */}
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-yellow-400" />
+                Class Features
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {(classFeatures.length > 0 || subclassFeatures.length > 0) ? (
+                <div className="space-y-2">
+                  {[...classFeatures, ...subclassFeatures].map((feature, idx) => {
+                    const detail = getFeatureDetail(feature, draft.level)
+                    const isSubclassFeature = subclassFeatures.some(sf => sf.id === feature.id)
+                    return (
+                      <div key={`${feature.name}-${idx}`} className="px-3 py-2 bg-muted/50 rounded-lg">
+                        <div className="flex items-center justify-between">
+                          <span className="font-medium text-sm">
+                            {feature.name}
+                            {isSubclassFeature && subclass && (
+                              <span className="text-muted-foreground font-normal"> — {subclass.name}</span>
+                            )}
+                          </span>
+                          <span className="text-xs text-muted-foreground">Lv.{feature.level}</span>
+                        </div>
+                        {detail && (
+                          <div className="text-xs text-primary mt-0.5">{detail}</div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">No features at this level</p>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Racial Traits */}
+          {race && race.abilities.length > 0 && (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <Dna className="w-4 h-4 text-emerald-400" />
+                  Racial Traits
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  {race.abilities.map((ability, idx) => {
+                    const detail = getRacialAbilityDetail(ability)
+                    return (
+                      <div key={`${ability.name}-${idx}`} className="px-3 py-2 bg-muted/50 rounded-lg">
+                        <div className="flex items-center justify-between">
+                          <span className="font-medium text-sm">{ability.name}</span>
+                          {ability.trigger !== 'passive' && (
+                            <span className="text-xs text-muted-foreground capitalize">
+                              {ability.trigger.replace('_', ' ')}
+                            </span>
+                          )}
+                        </div>
+                        {detail && (
+                          <div className="text-xs text-amber-400 mt-0.5">{detail}</div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              </CardContent>
+            </Card>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
       {/* Actions */}
-      <div className="flex justify-between">
-        <Button variant="outline" onClick={resetDraft}>
+      <div className="flex justify-between items-center">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => setShowResetConfirm(true)}
+          className="text-muted-foreground hover:text-destructive"
+        >
+          <TriangleAlert className="w-4 h-4 mr-1" />
           Start Over
         </Button>
-        <Button onClick={handleSave} disabled={!isValid}>
+        <Button onClick={handleSave} disabled={!isValid} size="lg">
+          <Save className="w-4 h-4 mr-2" />
           Save Character
         </Button>
       </div>
+
+      {/* Reset Confirmation Dialog */}
+      <Dialog open={showResetConfirm} onOpenChange={setShowResetConfirm}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Start Over?</DialogTitle>
+            <DialogDescription>
+              This will clear all your character choices and return you to the beginning.
+              This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowResetConfirm(false)}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={() => {
+              resetDraft()
+              setShowResetConfirm(false)
+            }}>
+              Yes, Start Over
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Success Modal */}
       <CharacterSaveSuccess

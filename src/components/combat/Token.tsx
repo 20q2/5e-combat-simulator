@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { cn } from '@/lib/utils'
 import { getCombatantTokenImage } from '@/lib/tokenImages'
+import { getConditionIcon } from '@/lib/conditionIcons'
 import { TokenTooltip } from './TokenTooltip'
 import type { Combatant, Character, Monster } from '@/types'
 
@@ -75,6 +76,12 @@ export function Token({
     if (!isDraggable) {
       e.preventDefault()
       return
+    }
+    // Hide tooltip when dragging starts
+    setShowTooltip(false)
+    if (hoverTimeoutRef.current) {
+      clearTimeout(hoverTimeoutRef.current)
+      hoverTimeoutRef.current = null
     }
     e.dataTransfer.setData('text/plain', combatant.id)
     e.dataTransfer.effectAllowed = 'move'
@@ -169,6 +176,36 @@ export function Token({
           </div>
         )}
       </div>
+
+      {/* Condition badges */}
+      {combatant.conditions.length > 0 && !isDead && (
+        <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 flex gap-0.5">
+          {combatant.conditions.slice(0, 3).map((activeCondition, index) => {
+            const iconInfo = getConditionIcon(activeCondition.condition)
+            if (!iconInfo) return null
+            const IconComponent = iconInfo.icon
+            return (
+              <div
+                key={`${activeCondition.condition}-${index}`}
+                className={cn(
+                  'w-4 h-4 rounded-full flex items-center justify-center border border-slate-900 shadow-md',
+                  iconInfo.bgColor
+                )}
+                title={iconInfo.label}
+              >
+                <IconComponent className={cn('w-2.5 h-2.5', iconInfo.color)} />
+              </div>
+            )
+          })}
+          {combatant.conditions.length > 3 && (
+            <div className="w-4 h-4 rounded-full flex items-center justify-center bg-slate-700 border border-slate-900 shadow-md">
+              <span className="text-[8px] text-slate-300 font-bold">
+                +{combatant.conditions.length - 3}
+              </span>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Tooltip */}
       {showTooltip && (

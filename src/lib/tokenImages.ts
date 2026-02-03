@@ -1,5 +1,17 @@
 import type { Character, Monster } from '@/types'
 
+// Use Vite's glob import to load all player class images
+const playerClassImages = import.meta.glob<{ default: string }>(
+  '@/assets/player_classes/**/*.png',
+  { eager: true }
+)
+
+// Use Vite's glob import to load all enemy images
+const enemyImages = import.meta.glob<{ default: string }>(
+  '@/assets/enemies/*.png',
+  { eager: true }
+)
+
 // Map race IDs to simplified token race names
 const raceToTokenRace: Record<string, string> = {
   'human': 'human',
@@ -31,16 +43,6 @@ const availableClassTokens = new Set([
   'wizard',
 ])
 
-// Available enemy tokens
-const availableEnemyTokens = new Set([
-  'bandit',
-  'goblin',
-  'orc',
-  'skeleton',
-  'wolf',
-  'zombie',
-])
-
 export function getCharacterTokenImage(character: Character): string | null {
   const classId = character.class.id
   const raceId = character.race.id
@@ -56,18 +58,33 @@ export function getCharacterTokenImage(character: Character): string | null {
     return null
   }
 
-  return `/src/assets/player_classes/${classId}/${classId}_${tokenRace}.png`
+  // Find the image in the glob imports
+  const imagePath = `/src/assets/player_classes/${classId}/${classId}_${tokenRace}.png`
+  const imageModule = playerClassImages[imagePath]
+
+  return imageModule?.default ?? null
 }
 
 export function getMonsterTokenImage(monster: Monster): string | null {
   const monsterId = monster.id
 
-  // Check if we have a token for this monster
-  if (!availableEnemyTokens.has(monsterId)) {
-    return null
+  // Try to find the image in the glob imports
+  // First try exact match
+  let imagePath = `/src/assets/enemies/${monsterId}.png`
+  let imageModule = enemyImages[imagePath]
+
+  if (imageModule) {
+    return imageModule.default
   }
 
-  return `/src/assets/enemies/${monsterId}.png`
+  // Try with underscores replaced by hyphens and vice versa
+  const altId = monsterId.includes('-')
+    ? monsterId.replace(/-/g, '_')
+    : monsterId.replace(/_/g, '-')
+  imagePath = `/src/assets/enemies/${altId}.png`
+  imageModule = enemyImages[imagePath]
+
+  return imageModule?.default ?? null
 }
 
 export function getCombatantTokenImage(

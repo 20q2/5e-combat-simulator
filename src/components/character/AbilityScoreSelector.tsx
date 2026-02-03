@@ -22,6 +22,8 @@ import {
   STANDARD_ARRAY,
   calculateFinalAbilityScores,
 } from '@/stores/characterStore'
+import { cn } from '@/lib/utils'
+import { Brain, Calculator, ListOrdered, PenLine, Gift, Check } from 'lucide-react'
 
 const ABILITY_NAMES: (keyof AbilityScores)[] = [
   'strength',
@@ -53,14 +55,25 @@ export function AbilityScoreSelector() {
     setBaseAbilityScores,
     setAbilityBonusPlus2,
     setAbilityBonusPlus1,
+    setAbilityBonusMode,
+    toggleAbilityBonusPlus1Trio,
   } = useCharacterStore()
 
-  const { abilityScoreMethod, baseAbilityScores, abilityBonusPlus2, abilityBonusPlus1 } = draft
+  const {
+    abilityScoreMethod,
+    baseAbilityScores,
+    abilityBonusMode,
+    abilityBonusPlus2,
+    abilityBonusPlus1,
+    abilityBonusPlus1Trio,
+  } = draft
 
   const finalAbilityScores = calculateFinalAbilityScores(
     baseAbilityScores,
     abilityBonusPlus2,
-    abilityBonusPlus1
+    abilityBonusPlus1,
+    abilityBonusMode,
+    abilityBonusPlus1Trio
   )
 
   // For standard array assignment
@@ -154,7 +167,10 @@ export function AbilityScoreSelector() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Ability Scores</CardTitle>
+        <CardTitle className="flex items-center gap-2">
+          <Brain className="w-5 h-5 text-violet-400" />
+          Ability Scores
+        </CardTitle>
         <CardDescription>
           Choose how to determine your character's ability scores
         </CardDescription>
@@ -162,9 +178,18 @@ export function AbilityScoreSelector() {
       <CardContent>
         <Tabs value={abilityScoreMethod} onValueChange={handleMethodChange}>
           <TabsList className="grid w-full grid-cols-3">
-            <TabsTrigger value="point-buy">Point Buy</TabsTrigger>
-            <TabsTrigger value="standard-array">Standard Array</TabsTrigger>
-            <TabsTrigger value="manual">Manual</TabsTrigger>
+            <TabsTrigger value="point-buy" className="gap-1.5">
+              <Calculator className="w-4 h-4" />
+              Point Buy
+            </TabsTrigger>
+            <TabsTrigger value="standard-array" className="gap-1.5">
+              <ListOrdered className="w-4 h-4" />
+              Standard Array
+            </TabsTrigger>
+            <TabsTrigger value="manual" className="gap-1.5">
+              <PenLine className="w-4 h-4" />
+              Manual
+            </TabsTrigger>
           </TabsList>
 
           {/* Point Buy */}
@@ -296,69 +321,140 @@ export function AbilityScoreSelector() {
 
         {/* Ability Score Bonuses */}
         <div className="mt-6 pt-4 border-t">
-          <h4 className="font-medium mb-2">Ability Score Bonuses</h4>
-          <p className="text-sm text-muted-foreground mb-4">
-            Choose one ability to increase by +2 and another to increase by +1
-          </p>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <Label className="text-sm mb-2 block">+2 Bonus</Label>
-              <Select
-                value={abilityBonusPlus2 ?? ''}
-                onValueChange={(v) => setAbilityBonusPlus2(v as AbilityName || null)}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select ability" />
-                </SelectTrigger>
-                <SelectContent>
-                  {ABILITY_NAMES.map((ability) => (
-                    <SelectItem
-                      key={ability}
-                      value={ability}
-                      disabled={ability === abilityBonusPlus1}
-                    >
-                      {ABILITY_LABELS[ability]} ({baseAbilityScores[ability]} → {baseAbilityScores[ability] + 2})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label className="text-sm mb-2 block">+1 Bonus</Label>
-              <Select
-                value={abilityBonusPlus1 ?? ''}
-                onValueChange={(v) => setAbilityBonusPlus1(v as AbilityName || null)}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select ability" />
-                </SelectTrigger>
-                <SelectContent>
-                  {ABILITY_NAMES.map((ability) => (
-                    <SelectItem
-                      key={ability}
-                      value={ability}
-                      disabled={ability === abilityBonusPlus2}
-                    >
-                      {ABILITY_LABELS[ability]} ({baseAbilityScores[ability]} → {baseAbilityScores[ability] + 1})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+          <h4 className="font-medium mb-2 flex items-center gap-2">
+            <Gift className="w-4 h-4 text-amber-400" />
+            Ability Score Bonuses (Background)
+          </h4>
+
+          {/* Mode Toggle */}
+          <div className="flex gap-2 mb-4">
+            <button
+              onClick={() => setAbilityBonusMode('standard')}
+              className={cn(
+                'flex-1 px-3 py-2 text-sm rounded-lg border-2 transition-all',
+                abilityBonusMode === 'standard'
+                  ? 'border-primary bg-primary/5'
+                  : 'border-border hover:border-primary/50'
+              )}
+            >
+              +2 / +1
+            </button>
+            <button
+              onClick={() => setAbilityBonusMode('three-plus-one')}
+              className={cn(
+                'flex-1 px-3 py-2 text-sm rounded-lg border-2 transition-all',
+                abilityBonusMode === 'three-plus-one'
+                  ? 'border-primary bg-primary/5'
+                  : 'border-border hover:border-primary/50'
+              )}
+            >
+              3× +1
+            </button>
           </div>
+
+          {abilityBonusMode === 'standard' ? (
+            <>
+              <p className="text-sm text-muted-foreground mb-4">
+                Choose one ability to increase by +2 and another to increase by +1
+              </p>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label className="text-sm mb-2 block">+2 Bonus</Label>
+                  <Select
+                    value={abilityBonusPlus2 ?? ''}
+                    onValueChange={(v) => setAbilityBonusPlus2(v as AbilityName || null)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select ability" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {ABILITY_NAMES.map((ability) => (
+                        <SelectItem
+                          key={ability}
+                          value={ability}
+                          disabled={ability === abilityBonusPlus1}
+                        >
+                          {ABILITY_LABELS[ability]} ({baseAbilityScores[ability]} → {baseAbilityScores[ability] + 2})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label className="text-sm mb-2 block">+1 Bonus</Label>
+                  <Select
+                    value={abilityBonusPlus1 ?? ''}
+                    onValueChange={(v) => setAbilityBonusPlus1(v as AbilityName || null)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select ability" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {ABILITY_NAMES.map((ability) => (
+                        <SelectItem
+                          key={ability}
+                          value={ability}
+                          disabled={ability === abilityBonusPlus2}
+                        >
+                          {ABILITY_LABELS[ability]} ({baseAbilityScores[ability]} → {baseAbilityScores[ability] + 1})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </>
+          ) : (
+            <>
+              <p className="text-sm text-muted-foreground mb-4">
+                Choose three different abilities to increase by +1 each ({abilityBonusPlus1Trio.length}/3 selected)
+              </p>
+              <div className="grid grid-cols-3 gap-2">
+                {ABILITY_NAMES.map((ability) => {
+                  const isSelected = abilityBonusPlus1Trio.includes(ability)
+                  const isDisabled = !isSelected && abilityBonusPlus1Trio.length >= 3
+                  return (
+                    <button
+                      key={ability}
+                      onClick={() => toggleAbilityBonusPlus1Trio(ability)}
+                      disabled={isDisabled}
+                      className={cn(
+                        'p-3 rounded-lg border-2 transition-all text-center',
+                        isSelected
+                          ? 'border-primary bg-primary/5'
+                          : 'border-border',
+                        isDisabled
+                          ? 'opacity-50 cursor-not-allowed'
+                          : 'hover:border-primary/50'
+                      )}
+                    >
+                      <div className="font-medium">{ABILITY_LABELS[ability]}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {baseAbilityScores[ability]} → {baseAbilityScores[ability] + (isSelected ? 1 : 0)}
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+            </>
+          )}
         </div>
 
         {/* Summary */}
         <div className="mt-6 pt-4 border-t">
-          <h4 className="font-medium mb-2">Final Ability Scores</h4>
+          <h4 className="font-medium mb-2 flex items-center gap-2">
+            <Check className="w-4 h-4 text-green-400" />
+            Final Ability Scores
+          </h4>
           <div className="flex flex-wrap gap-4 text-sm">
             {ABILITY_NAMES.map((ability) => {
               const baseScore = baseAbilityScores[ability]
               const finalScore = finalAbilityScores[ability]
               const mod = getAbilityModifier(finalScore)
               const bonus =
-                abilityBonusPlus2 === ability ? 2 :
-                abilityBonusPlus1 === ability ? 1 : 0
+                abilityBonusMode === 'standard'
+                  ? (abilityBonusPlus2 === ability ? 2 : abilityBonusPlus1 === ability ? 1 : 0)
+                  : (abilityBonusPlus1Trio.includes(ability) ? 1 : 0)
               return (
                 <div key={ability} className="text-center">
                   <div className="text-xs text-muted-foreground">{ABILITY_LABELS[ability]}</div>

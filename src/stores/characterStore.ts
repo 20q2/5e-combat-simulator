@@ -10,13 +10,16 @@ import type {
 import { getAbilityModifier } from '@/types'
 
 export type AbilityScoreMethod = 'point-buy' | 'standard-array' | 'manual'
+export type AbilityBonusMode = 'standard' | 'three-plus-one'
 
 export interface CharacterDraft {
   name: string
   abilityScoreMethod: AbilityScoreMethod
   baseAbilityScores: AbilityScores
+  abilityBonusMode: AbilityBonusMode
   abilityBonusPlus2: AbilityName | null
   abilityBonusPlus1: AbilityName | null
+  abilityBonusPlus1Trio: AbilityName[]
   raceId: string | null
   classId: string | null
   subclassId: string | null
@@ -56,6 +59,8 @@ interface CharacterState {
   setShield: (equipped: boolean) => void
   setAbilityBonusPlus2: (ability: AbilityName | null) => void
   setAbilityBonusPlus1: (ability: AbilityName | null) => void
+  setAbilityBonusMode: (mode: AbilityBonusMode) => void
+  toggleAbilityBonusPlus1Trio: (ability: AbilityName) => void
   setCurrentStep: (step: number) => void
   nextStep: () => void
   prevStep: () => void
@@ -78,8 +83,10 @@ const initialDraft: CharacterDraft = {
     wisdom: 8,
     charisma: 8,
   },
+  abilityBonusMode: 'standard',
   abilityBonusPlus2: null,
   abilityBonusPlus1: null,
+  abilityBonusPlus1Trio: [],
   raceId: null,
   classId: null,
   subclassId: null,
@@ -236,6 +243,43 @@ export const useCharacterStore = create<CharacterState>()(
           },
         })),
 
+      setAbilityBonusMode: (mode) =>
+        set((state) => ({
+          draft: {
+            ...state.draft,
+            abilityBonusMode: mode,
+            // Clear selections when switching modes
+            abilityBonusPlus2: null,
+            abilityBonusPlus1: null,
+            abilityBonusPlus1Trio: [],
+          },
+        })),
+
+      toggleAbilityBonusPlus1Trio: (ability) =>
+        set((state) => {
+          const current = state.draft.abilityBonusPlus1Trio
+          const isSelected = current.includes(ability)
+          let newTrio: AbilityName[]
+
+          if (isSelected) {
+            // Remove the ability
+            newTrio = current.filter((a) => a !== ability)
+          } else if (current.length < 3) {
+            // Add the ability (max 3)
+            newTrio = [...current, ability]
+          } else {
+            // Already at max, don't change
+            newTrio = current
+          }
+
+          return {
+            draft: {
+              ...state.draft,
+              abilityBonusPlus1Trio: newTrio,
+            },
+          }
+        }),
+
       setCurrentStep: (step) => set({ currentStep: step }),
 
       nextStep: () =>
@@ -287,15 +331,25 @@ export const useCharacterStore = create<CharacterState>()(
 export function calculateFinalAbilityScores(
   baseScores: AbilityScores,
   abilityBonusPlus2: AbilityName | null,
-  abilityBonusPlus1: AbilityName | null
+  abilityBonusPlus1: AbilityName | null,
+  abilityBonusMode: AbilityBonusMode = 'standard',
+  abilityBonusPlus1Trio: AbilityName[] = []
 ): AbilityScores {
   const result = { ...baseScores }
 
-  if (abilityBonusPlus2) {
-    result[abilityBonusPlus2] += 2
-  }
-  if (abilityBonusPlus1) {
-    result[abilityBonusPlus1] += 1
+  if (abilityBonusMode === 'standard') {
+    // +2 to one stat, +1 to another
+    if (abilityBonusPlus2) {
+      result[abilityBonusPlus2] += 2
+    }
+    if (abilityBonusPlus1) {
+      result[abilityBonusPlus1] += 1
+    }
+  } else {
+    // Three +1s to different stats
+    for (const ability of abilityBonusPlus1Trio) {
+      result[ability] += 1
+    }
   }
 
   return result

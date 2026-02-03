@@ -25,7 +25,11 @@
       "Bash(git commit -m \"$\\(cat <<''EOF''\nInitial commit: D&D 5e Combat Simulator\n\nReact + TypeScript + Vite tactical combat simulator with:\n- Character creation with 12 classes and 11 races\n- Turn-based combat with AI opponents\n- Tactical grid with A* pathfinding\n- Class features \\(Action Surge, Cunning Action, Extra Attack, etc.\\)\n- Spellcasting with concentration tracking\n- Condition effects and death saves\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
       "Bash(git branch:*)",
       "Bash(git push:*)",
-      "Bash(git commit -m \"$\\(cat <<''EOF''\nAdd GitHub Pages deployment workflow\n\n- Add GitHub Actions workflow for automatic deployment\n- Set Vite base path for GitHub Pages subdirectory\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")"
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nAdd GitHub Pages deployment workflow\n\n- Add GitHub Actions workflow for automatic deployment\n- Set Vite base path for GitHub Pages subdirectory\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nShow roll details in combat log\n\nDisplay attack roll breakdown \\(d20 roll, modifiers, AC comparison\\)\nand damage roll details below the main log message.\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(npm run test:run:*)",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nImprove character level selector UI\n\n- Add large centered level display with +/- buttons\n- Add quick-select buttons for common levels \\(1, 3, 5, 8, 10, 12, 15, 17, 20\\)\n- Show D&D tier indicator \\(Local Heroes, Heroes of the Realm, etc.\\)\n- Color-coded tier display\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(git commit:*)"
     ]
   }
 }

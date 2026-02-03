@@ -4,11 +4,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { cn } from '@/lib/utils'
+import { cn, formatCR } from '@/lib/utils'
 import { getAllMonsters } from '@/data'
 import { useCharacterStore } from '@/stores/characterStore'
 import { useCombatStore } from '@/stores/combatStore'
-import { getCharacterTokenImage } from '@/lib/tokenImages'
+import { getCharacterTokenImage, getMonsterTokenImage } from '@/lib/tokenImages'
 import { setupCombatWithPlacement } from '@/lib/combatPlacement'
 import type { Monster, Character } from '@/types'
 
@@ -101,38 +101,56 @@ function MonsterCard({
   onAdd: () => void
   onRemove: () => void
 }) {
+  const tokenImage = getMonsterTokenImage(monster)
+
   return (
     <div
       className={cn(
-        'p-3 rounded-lg border transition-all',
+        'relative p-3 rounded-lg border transition-all overflow-hidden',
         count > 0 ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/50'
       )}
     >
-      <div className="flex justify-between items-start mb-2">
-        <div>
-          <h4 className="font-medium text-sm">{monster.name}</h4>
-          <p className="text-xs text-muted-foreground">
-            CR {monster.challengeRating} · {monster.type} · {monster.size}
-          </p>
+      {/* Background token image with gradient fade */}
+      {tokenImage && (
+        <div
+          className="absolute inset-0 opacity-20"
+          style={{
+            backgroundImage: `linear-gradient(to right, transparent 0%, hsl(var(--background)) 70%), url(${tokenImage})`,
+            backgroundSize: 'cover, 150% auto',
+            backgroundPosition: 'center, 0% center',
+            backgroundRepeat: 'no-repeat, no-repeat',
+          }}
+        />
+      )}
+
+      {/* Content */}
+      <div className="relative z-10">
+        <div className="flex justify-between items-start mb-2">
+          <div>
+            <h4 className="font-medium text-sm">{monster.name}</h4>
+            <p className="text-xs text-muted-foreground">
+              CR {formatCR(monster.challengeRating)} · {monster.type} · {monster.size}
+            </p>
+          </div>
+          <span className="text-xs bg-secondary px-2 py-1 rounded">
+            {getMonsterXP(monster.challengeRating)} XP
+          </span>
         </div>
-        <span className="text-xs bg-secondary px-2 py-1 rounded">
-          {getMonsterXP(monster.challengeRating)} XP
-        </span>
-      </div>
-      <div className="flex items-center justify-between">
-        <div className="text-xs text-muted-foreground">
-          HP {monster.hp} · AC {monster.ac}
-        </div>
-        <div className="flex items-center gap-2">
-          {count > 0 && (
-            <Button size="sm" variant="outline" onClick={onRemove} className="h-7 w-7 p-0">
-              -
+        <div className="flex items-center justify-between">
+          <div className="text-xs text-muted-foreground">
+            HP {monster.hp} · AC {monster.ac}
+          </div>
+          <div className="flex items-center gap-2">
+            {count > 0 && (
+              <Button size="sm" variant="outline" onClick={onRemove} className="h-7 w-7 p-0">
+                -
+              </Button>
+            )}
+            {count > 0 && <span className="text-sm font-medium w-4 text-center">{count}</span>}
+            <Button size="sm" variant="outline" onClick={onAdd} className="h-7 w-7 p-0">
+              +
             </Button>
-          )}
-          {count > 0 && <span className="text-sm font-medium w-4 text-center">{count}</span>}
-          <Button size="sm" variant="outline" onClick={onAdd} className="h-7 w-7 p-0">
-            +
-          </Button>
+          </div>
         </div>
       </div>
     </div>
@@ -154,7 +172,7 @@ export function EncounterBuilder() {
   const filteredMonsters = useMemo(() => {
     return allMonsters.filter((m) => {
       const matchesSearch = m.name.toLowerCase().includes(searchQuery.toLowerCase())
-      const matchesCR = crFilter === 'all' || m.challengeRating.toString() === crFilter
+      const matchesCR = crFilter === 'all' || formatCR(m.challengeRating) === crFilter
       return matchesSearch && matchesCR
     })
   }, [allMonsters, searchQuery, crFilter])
@@ -170,7 +188,7 @@ export function EncounterBuilder() {
 
   // Get unique CRs for filter
   const availableCRs = useMemo(() => {
-    const crs = new Set(allMonsters.map((m) => m.challengeRating.toString()))
+    const crs = new Set(allMonsters.map((m) => formatCR(m.challengeRating)))
     return Array.from(crs).sort((a, b) => {
       const numA = parseCR(a)
       const numB = parseCR(b)
@@ -390,7 +408,7 @@ export function EncounterBuilder() {
                 <ul className="text-sm">
                   {selectedMonsters.map((sm) => (
                     <li key={sm.monster.id}>
-                      {sm.count}x {sm.monster.name} (CR {sm.monster.challengeRating})
+                      {sm.count}x {sm.monster.name} (CR {formatCR(sm.monster.challengeRating)})
                     </li>
                   ))}
                 </ul>

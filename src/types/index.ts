@@ -468,6 +468,12 @@ export interface RangeHighlight {
   shape?: 'circle' | 'cone' | 'line' // For future use
 }
 
+export interface AoEPreview {
+  type: 'cone' | 'cube' | 'cylinder' | 'line' | 'sphere'
+  size: number
+  origin: Position // Caster position
+}
+
 export type CombatPopupType =
   | 'damage'      // Shows damage number
   | 'miss'        // "MISS"
@@ -508,6 +514,7 @@ export interface CombatState {
   }
   hoveredTargetId?: string
   rangeHighlight?: RangeHighlight
+  aoePreview?: AoEPreview
   damagePopups: DamagePopup[]
 }
 

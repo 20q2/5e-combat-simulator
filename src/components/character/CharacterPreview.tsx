@@ -55,7 +55,9 @@ export function CharacterPreview() {
   const finalAbilityScores = calculateFinalAbilityScores(
     draft.baseAbilityScores,
     draft.abilityBonusPlus2,
-    draft.abilityBonusPlus1
+    draft.abilityBonusPlus1,
+    draft.abilityBonusMode,
+    draft.abilityBonusPlus1Trio
   )
   const proficiencyBonus = getProficiencyBonus(draft.level)
 

@@ -135,3 +135,19 @@ body {
 .animate-damage-popup {
   animation: damage-popup 1.2s ease-out forwards;
 }
+
+/* Tooltip entrance animation - scales and fades in from below */
+@keyframes tooltip-enter {
+  0% {
+    transform: translateY(8px) scale(0.95);
+    opacity: 0;
+  }
+  100% {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+  }
+}
+
+.animate-tooltip-enter {
+  animation: tooltip-enter 0.15s ease-out forwards;
+}

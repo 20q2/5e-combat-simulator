@@ -171,9 +171,9 @@ export function CharacterCreator() {
           </div>
         </div>
       ) : (
-        <div className="grid md:grid-cols-[1fr,350px] gap-6">
+        <div className="flex gap-6">
           {/* Main Content - Left Side */}
-          <div className="order-2 md:order-1">
+          <div className="flex-1 min-w-0">
             <div className="mb-8">
               <CurrentStepComponent />
             </div>
@@ -196,7 +196,7 @@ export function CharacterCreator() {
           </div>
 
           {/* Character Preview - Right Side */}
-          <div className="order-1 md:order-2">
+          <div className="w-[320px] shrink-0">
             <CharacterPreview />
           </div>
         </div>

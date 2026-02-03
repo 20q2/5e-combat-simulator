@@ -105,7 +105,7 @@ function ClassDetails({ characterClass, level, subclassId }: {
   const selectedSubclass = characterClass.subclasses.find(s => s.id === subclassId)
 
   return (
-    <Card>
+    <Card className="h-full flex flex-col">
       <CardHeader className="pb-3">
         <CardTitle className="text-lg">{characterClass.name}</CardTitle>
         <CardDescription>
@@ -113,7 +113,7 @@ function ClassDetails({ characterClass, level, subclassId }: {
           {characterClass.savingThrowProficiencies.map((s) => ABILITY_LABELS[s]).join(', ')}
         </CardDescription>
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="space-y-4 flex-1 overflow-y-auto">
         {/* Proficiencies */}
         <div>
           <h4 className="font-medium text-sm mb-1">Armor & Weapons</h4>
@@ -239,16 +239,16 @@ export function ClassSelector() {
         </CardContent>
       </Card>
 
-      <div className="grid md:grid-cols-2 gap-6">
+      <div className="grid md:grid-cols-2 gap-6 items-stretch">
         {/* Class List */}
-        <Card>
+        <Card className="flex flex-col">
           <CardHeader>
             <CardTitle>Select Class</CardTitle>
             <CardDescription>
               Choose your character's class. This determines your abilities, hit points, and features.
             </CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="flex-1">
             <div className="space-y-2 max-h-[400px] overflow-y-auto pr-2">
               {classes.map((c) => (
                 <ClassCard
@@ -263,21 +263,19 @@ export function ClassSelector() {
         </Card>
 
         {/* Class Details */}
-        <div>
-          {selectedClass ? (
-            <ClassDetails
-              characterClass={selectedClass}
-              level={draft.level}
-              subclassId={draft.subclassId}
-            />
-          ) : (
-            <Card className="h-full flex items-center justify-center">
-              <CardContent className="text-center text-muted-foreground py-12">
-                Select a class to see its details
-              </CardContent>
-            </Card>
-          )}
-        </div>
+        {selectedClass ? (
+          <ClassDetails
+            characterClass={selectedClass}
+            level={draft.level}
+            subclassId={draft.subclassId}
+          />
+        ) : (
+          <Card className="flex items-center justify-center">
+            <CardContent className="text-center text-muted-foreground py-12">
+              Select a class to see its details
+            </CardContent>
+          </Card>
+        )}
       </div>
 
       {/* Subclass Selector - show when level >= 3 and class has subclasses */}
@@ -290,26 +288,43 @@ export function ClassSelector() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
-              {selectedClass.subclasses.map((subclass) => (
-                <button
-                  key={subclass.id}
-                  onClick={() => setSubclass(subclass.id)}
-                  className={cn(
-                    'p-3 rounded-lg border-2 transition-all text-left hover:border-primary/50',
-                    draft.subclassId === subclass.id
-                      ? 'border-primary bg-primary/10'
-                      : 'border-border'
-                  )}
-                >
-                  <div className="font-medium text-sm">{subclass.name}</div>
-                  {subclass.features.length > 0 && (
-                    <div className="text-xs text-muted-foreground mt-1 line-clamp-2">
-                      {subclass.features[0].name}
-                    </div>
-                  )}
-                </button>
-              ))}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+              {selectedClass.subclasses.map((subclass) => {
+                const featuresAtLevel = getSubclassFeaturesByLevel(selectedClass, subclass.id, draft.level)
+                return (
+                  <button
+                    key={subclass.id}
+                    onClick={() => setSubclass(subclass.id)}
+                    className={cn(
+                      'p-4 rounded-lg border-2 transition-all text-left hover:border-primary/50',
+                      draft.subclassId === subclass.id
+                        ? 'border-primary bg-primary/10'
+                        : 'border-border'
+                    )}
+                  >
+                    <div className="font-semibold mb-2">{subclass.name}</div>
+                    {featuresAtLevel.length > 0 ? (
+                      <ul className="space-y-1">
+                        {featuresAtLevel.slice(0, 4).map((feature) => (
+                          <li key={feature.name} className="text-xs text-muted-foreground flex items-start gap-1">
+                            <span className="text-primary">•</span>
+                            <span className="line-clamp-1">{feature.name}</span>
+                          </li>
+                        ))}
+                        {featuresAtLevel.length > 4 && (
+                          <li className="text-xs text-muted-foreground italic">
+                            +{featuresAtLevel.length - 4} more features
+                          </li>
+                        )}
+                      </ul>
+                    ) : (
+                      <div className="text-xs text-muted-foreground italic">
+                        Features unlock at higher levels
+                      </div>
+                    )}
+                  </button>
+                )
+              })}
             </div>
           </CardContent>
         </Card>

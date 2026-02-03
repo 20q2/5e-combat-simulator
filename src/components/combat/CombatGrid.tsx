@@ -5,7 +5,14 @@ import { Token } from './Token'
 import { DamagePopup } from './DamagePopup'
 import { calculateMovementDistance } from '@/lib/movement'
 import { findPath, calculatePathCost } from '@/lib/pathfinding'
+import { getAoEAffectedCells, aoeOriginatesFromCaster } from '@/lib/aoeShapes'
 import type { Position, Character, Monster, GridCell as GridCellType } from '@/types'
+
+// Use Vite's glob import to load obstacle images
+const obstacleImages = import.meta.glob<{ default: string }>(
+  '@/assets/obstacles/*.png',
+  { eager: true }
+)
 
 const CELL_SIZE = 56 // pixels
 
@@ -66,6 +73,7 @@ interface GridCellProps {
   isTargetable: boolean
   isThreatened: boolean
   isInWeaponRange?: 'melee' | 'ranged' | 'spell'
+  isInAoEPreview: boolean
   distance?: number
   onDragOver: (e: React.DragEvent) => void
   onDragLeave: (e: React.DragEvent) => void
@@ -77,14 +85,9 @@ interface GridCellProps {
 
 // Get obstacle image path (returns null if no image available)
 function getObstacleImage(type: string): string | null {
-  switch (type) {
-    case 'wall': return '/src/assets/obstacles/wall.png'
-    case 'tree': return '/src/assets/obstacles/tree.png'
-    case 'pillar': return '/src/assets/obstacles/pillar.png'
-    case 'boulder': return '/src/assets/obstacles/boulder.png'
-    case 'furniture': return '/src/assets/obstacles/furniture.png'
-    default: return null
-  }
+  const imagePath = `/src/assets/obstacles/${type}.png`
+  const imageModule = obstacleImages[imagePath]
+  return imageModule?.default ?? null
 }
 
 // Get obstacle visual icon/emoji (fallback for obstacles without images)
@@ -110,6 +113,7 @@ function GridCell({
   isTargetable,
   isThreatened,
   isInWeaponRange,
+  isInAoEPreview,
   distance,
   onDragOver,
   onDragLeave,
@@ -139,6 +143,8 @@ function GridCell({
         isInWeaponRange === 'melee' && 'bg-rose-900/30 border-rose-700/50',
         isInWeaponRange === 'ranged' && 'bg-orange-900/30 border-orange-700/50',
         isInWeaponRange === 'spell' && 'bg-violet-900/30 border-violet-700/50',
+        // AoE preview highlighting (overrides weapon range)
+        isInAoEPreview && 'bg-orange-500/50 border-orange-400 ring-1 ring-orange-400/50',
         // Terrain backgrounds
         hasDifficultTerrain && 'bg-amber-900/40',
         hasHazardTerrain && 'bg-red-900/50 animate-pulse',
@@ -246,6 +252,7 @@ export function CombatGrid() {
     selectedAction,
     hoveredTargetId,
     rangeHighlight,
+    aoePreview,
     damagePopups,
     selectCombatant,
     moveCombatant,
@@ -395,6 +402,29 @@ export function CombatGrid() {
 
     return { cells: cellsInRange, type }
   }, [rangeHighlight, grid.width, grid.height])
+
+  // Calculate AoE preview cells based on hovered position
+  const aoeAffectedCells = useMemo(() => {
+    if (!aoePreview || !hoveredCell) return new Set<string>()
+
+    // For cones/lines, the target is where the mouse is pointing
+    // For spheres/cubes, the target is where the effect will be centered
+    const targetPosition = hoveredCell
+
+    // Don't show preview if cursor is on the caster (for origin-based AoE)
+    if (aoeOriginatesFromCaster(aoePreview.type)) {
+      if (targetPosition.x === aoePreview.origin.x && targetPosition.y === aoePreview.origin.y) {
+        return new Set<string>()
+      }
+    }
+
+    return getAoEAffectedCells({
+      type: aoePreview.type,
+      size: aoePreview.size,
+      origin: aoePreview.origin,
+      target: targetPosition,
+    })
+  }, [aoePreview, hoveredCell])
 
   // Calculate movement path when hovering over a reachable cell in move mode using A* pathfinding
   // This is computed first so getDistanceToCell can use the path cost
@@ -592,6 +622,7 @@ export function CombatGrid() {
             const isTargetable = targetablePositions.has(cellKey)
             const isThreatened = threatenedPositions.has(cellKey) && selectedAction === 'move'
             const isInWeaponRange = weaponRangeData.cells.has(cellKey) ? weaponRangeData.type : undefined
+            const isInAoEPreview = aoeAffectedCells.has(cellKey)
             const distance = getDistanceToCell(x, y)
 
             return (
@@ -607,6 +638,7 @@ export function CombatGrid() {
                 isTargetable={isTargetable}
                 isThreatened={isThreatened}
                 isInWeaponRange={isInWeaponRange}
+                isInAoEPreview={isInAoEPreview}
                 distance={distance}
                 onDragOver={(e) => handleCellDragOver(e, x, y)}
                 onDragLeave={handleCellDragLeave}

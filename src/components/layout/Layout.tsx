@@ -16,7 +16,8 @@ export function Layout() {
       <header className="border-b">
         <div className="container mx-auto px-4">
           <nav className="flex items-center h-16 gap-6">
-            <Link to="/" className="text-xl font-bold">
+            <Link to="/" className="flex items-center gap-2 text-xl font-bold">
+              <img src={`${import.meta.env.BASE_URL}logo.png`} alt="Logo" className="h-8 w-8" />
               5e Combat Sim
             </Link>
             <div className="flex gap-4">

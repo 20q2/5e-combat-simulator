@@ -1,7 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
 import { useCombatStore } from '@/stores/combatStore'
-import { Play, User, Skull, ListOrdered } from 'lucide-react'
+import { Play, ListOrdered } from 'lucide-react'
 
 export function TurnOrder() {
   const { combatants, turnOrder, currentTurnIndex, round, phase, selectCombatant, selectedCombatantId } = useCombatStore()
@@ -70,23 +70,14 @@ export function TurnOrder() {
                 {combatant.initiative}
               </span>
 
-              {/* Type indicator */}
-              <span
-                className={cn(
-                  'shrink-0',
-                  combatant.type === 'character' ? 'text-violet-500' : 'text-rose-500'
-                )}
-              >
-                {combatant.type === 'character' ? (
-                  <User className="w-3.5 h-3.5" />
-                ) : (
-                  <Skull className="w-3.5 h-3.5" />
-                )}
-              </span>
-
               {/* Name and HP */}
               <div className="flex-1 min-w-0">
-                <div className="text-xs font-medium truncate">{combatant.name}</div>
+                <div className={cn(
+                  'text-xs font-medium truncate',
+                  combatant.type === 'character' ? 'text-violet-300' : 'text-rose-300'
+                )}>
+                  {combatant.name}
+                </div>
                 <div className="text-[10px] text-muted-foreground">
                   {combatant.currentHp}/{combatant.maxHp} HP
                 </div>

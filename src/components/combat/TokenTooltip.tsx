@@ -1,4 +1,5 @@
-import { cn } from '@/lib/utils'
+import { cn, formatCR } from '@/lib/utils'
+import { getConditionIcon } from '@/lib/conditionIcons'
 import type { Combatant, Character, Monster } from '@/types'
 import {
   Heart,
@@ -47,7 +48,7 @@ export function TokenTooltip({ combatant, isCurrentTurn }: TokenTooltipProps) {
   const showDeathSaves = combatant.currentHp === 0 && isCharacter && !combatant.isStable
 
   return (
-    <div className="bg-slate-800 border border-slate-600 rounded-lg shadow-xl p-3 min-w-[200px] max-w-[280px] text-sm">
+    <div className="bg-slate-800 border border-slate-600 rounded-lg shadow-xl p-3 min-w-[200px] max-w-[280px] text-sm animate-tooltip-enter">
       {/* Header - Name and Type */}
       <div className="flex items-center justify-between gap-2 mb-2 pb-2 border-b border-slate-700">
         <span className="font-bold text-white truncate">{combatant.name}</span>
@@ -55,7 +56,7 @@ export function TokenTooltip({ combatant, isCurrentTurn }: TokenTooltipProps) {
           'text-xs px-1.5 py-0.5 rounded',
           isCharacter ? 'bg-violet-600/50 text-violet-200' : 'bg-rose-600/50 text-rose-200'
         )}>
-          {isCharacter ? `Lvl ${character!.level}` : `CR ${monster!.challengeRating}`}
+          {isCharacter ? `Lvl ${character!.level}` : `CR ${formatCR(monster!.challengeRating)}`}
         </span>
       </div>
 
@@ -166,21 +167,35 @@ export function TokenTooltip({ combatant, isCurrentTurn }: TokenTooltipProps) {
 
       {/* Conditions */}
       {combatant.conditions.length > 0 && (
-        <div className="px-2 py-1.5 bg-rose-900/30 border border-rose-700/50 rounded mb-2">
-          <div className="flex items-center gap-1.5 mb-1">
-            <AlertTriangle className="w-3.5 h-3.5 text-rose-400" />
-            <span className="text-xs text-rose-300 font-medium">Conditions</span>
+        <div className="px-2 py-1.5 bg-slate-900/50 border border-slate-700 rounded mb-2">
+          <div className="flex items-center gap-1.5 mb-1.5">
+            <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
+            <span className="text-xs text-slate-300 font-medium">Conditions</span>
           </div>
-          <div className="flex flex-wrap gap-1">
-            {combatant.conditions.map((c, i) => (
-              <span
-                key={i}
-                className="text-xs px-1.5 py-0.5 bg-rose-800/50 text-rose-200 rounded"
-              >
-                {formatCondition(c.condition)}
-                {c.duration && <span className="text-rose-400 ml-1">({c.duration}r)</span>}
-              </span>
-            ))}
+          <div className="flex flex-wrap gap-1.5">
+            {combatant.conditions.map((c, i) => {
+              const iconInfo = getConditionIcon(c.condition)
+              const IconComponent = iconInfo?.icon
+              return (
+                <div
+                  key={i}
+                  className={cn(
+                    'flex items-center gap-1 text-xs px-1.5 py-0.5 rounded',
+                    iconInfo?.bgColor || 'bg-slate-800',
+                  )}
+                >
+                  {IconComponent && (
+                    <IconComponent className={cn('w-3 h-3', iconInfo?.color || 'text-slate-300')} />
+                  )}
+                  <span className={iconInfo?.color || 'text-slate-200'}>
+                    {formatCondition(c.condition)}
+                  </span>
+                  {c.duration && (
+                    <span className="text-slate-400 ml-0.5">({c.duration}r)</span>
+                  )}
+                </div>
+              )
+            })}
           </div>
         </div>
       )}
