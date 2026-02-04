@@ -272,6 +272,15 @@ export interface Spell {
     damagePerProjectile: string      // Damage dice per projectile (e.g., "1d4+1")
     scalingPerSlotLevel?: number     // Additional projectiles per slot level above base
   }
+  // Reaction spells (Shield, Counterspell, Absorb Elements, etc.)
+  reaction?: {
+    trigger: 'on_hit' | 'on_magic_missile' | 'enemy_casts_spell' | 'take_damage'
+    effect: {
+      type: 'ac_bonus' | 'negate_spell' | 'resistance'
+      value?: number                 // e.g., +5 for Shield
+      damageType?: DamageType        // For Absorb Elements
+    }
+  }
 }
 
 // ============================================
@@ -529,6 +538,21 @@ export interface CombatState {
     spell: Spell
     totalProjectiles: number
     assignments: Record<string, number>  // targetId -> count
+  }
+  // Pending reaction prompt (Shield, opportunity attacks, etc.)
+  pendingReaction?: {
+    type: 'shield' | 'opportunity_attack'
+    reactingCombatantId: string          // Who can react
+    triggeringCombatantId: string        // Who triggered the reaction
+    availableReactions: Spell[]          // Reaction spells available
+    context: {
+      attackRoll?: number                // The attack roll that hit
+      attackBonus?: number               // Attacker's bonus
+      targetAC?: number                  // Target's current AC
+      damage?: number                    // Pending damage (for Shield)
+      damageType?: DamageType
+      isCritical?: boolean
+    }
   }
 }
 

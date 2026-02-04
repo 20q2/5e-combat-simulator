@@ -7,6 +7,7 @@ import { TurnOrder } from '@/components/combat/TurnOrder'
 import { ActionBar } from '@/components/combat/ActionBar'
 import { CombatLog } from '@/components/combat/CombatLog'
 import { CombatantPanel } from '@/components/combat/CombatantPanel'
+import { ReactionPrompt } from '@/components/combat/ReactionPrompt'
 import { useCombatStore } from '@/stores/combatStore'
 import { useCharacterStore } from '@/stores/characterStore'
 import { getMonsterById } from '@/data'
@@ -17,11 +18,7 @@ import {
   Skull,
   RotateCcw,
   MapPin,
-  Info,
   Plus,
-  Footprints,
-  Target,
-  AlertTriangle,
   Swords,
 } from 'lucide-react'
 
@@ -269,51 +266,13 @@ export function CombatPage() {
           {/* Unplaced combatants (only in setup phase) */}
           {phase === 'setup' && <UnplacedCombatantsPanel />}
 
-          {/* Legend */}
-          {phase === 'combat' && (
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm flex items-center gap-2">
-                  <Info className="w-4 h-4" />
-                  Legend
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2 text-xs">
-                <div className="flex items-center gap-2">
-                  <Footprints className="w-4 h-4 text-emerald-500" />
-                  <span className="text-muted-foreground">Movement Range</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Target className="w-4 h-4 text-rose-500" />
-                  <span className="text-muted-foreground">Attack Target</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <AlertTriangle className="w-4 h-4 text-amber-500" />
-                  <span className="text-muted-foreground">Threatened (AoO)</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <User className="w-4 h-4 text-violet-500" />
-                  <span className="text-muted-foreground">Player</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Skull className="w-4 h-4 text-rose-500" />
-                  <span className="text-muted-foreground">Enemy</span>
-                </div>
-              </CardContent>
-            </Card>
-          )}
+          {/* Combat Log */}
+          {phase === 'combat' && <CombatLog />}
         </div>
 
         {/* Center Column - Combat Grid */}
         <div className="flex flex-col items-center gap-4">
           <CombatGrid />
-
-          {/* Combat Log - below grid */}
-          {phase === 'combat' && (
-            <div className="w-full max-w-3xl">
-              <CombatLog />
-            </div>
-          )}
         </div>
 
         {/* Right Column - Character Info */}
@@ -327,6 +286,9 @@ export function CombatPage() {
       <div className="sticky bottom-0 z-40">
         <ActionBar />
       </div>
+
+      {/* Reaction Prompt Overlay */}
+      <ReactionPrompt />
     </div>
   )
 }

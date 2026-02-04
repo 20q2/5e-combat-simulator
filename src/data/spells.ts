@@ -275,6 +275,13 @@ export const spells: Spell[] = [
     ritual: false,
     description: 'An invisible barrier of magical force appears and protects you. Until the start of your next turn, you have a +5 bonus to AC, including against the triggering attack, and you take no damage from magic missile.',
     classes: ['sorcerer', 'wizard'],
+    reaction: {
+      trigger: 'on_hit',
+      effect: {
+        type: 'ac_bonus',
+        value: 5,
+      },
+    },
   },
   {
     id: 'mage-armor',

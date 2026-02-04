@@ -79,6 +79,10 @@ interface CombatStore extends CombatState {
   confirmProjectileTargeting: () => void
   cancelProjectileTargeting: () => void
 
+  // Reactions (Shield, opportunity attacks, etc.)
+  useReactionSpell: (spellId: string) => void
+  skipReaction: () => void
+
   // Movement
   moveCombatant: (id: string, to: Position) => void
   canMoveTo: (combatantId: string, to: Position) => boolean
@@ -164,6 +168,35 @@ function generateId(): string {
   return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
 }
 
+// Get reaction spells available for a combatant based on trigger type
+function getAvailableReactionSpells(
+  combatant: Combatant,
+  trigger: 'on_hit' | 'on_magic_missile' | 'enemy_casts_spell' | 'take_damage'
+): Spell[] {
+  if (combatant.type !== 'character') return []
+  if (combatant.hasReacted) return []
+
+  const character = combatant.data as Character
+  const knownSpells = character.knownSpells || []
+  const preparedSpells = character.preparedSpells || []
+  const allSpells = [...knownSpells, ...preparedSpells]
+
+  // Filter for reaction spells matching the trigger
+  return allSpells.filter(spell => {
+    if (!spell.reaction) return false
+    if (spell.reaction.trigger !== trigger) return false
+
+    // Check if character has spell slots available (for leveled spells)
+    if (spell.level > 0 && character.spellSlots) {
+      const slotLevel = spell.level as 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9
+      const slots = character.spellSlots[slotLevel]
+      if (!slots || slots.current <= 0) return false
+    }
+
+    return true
+  })
+}
+
 const initialState: CombatState = {
   grid: createEmptyGrid(20, 15),
   combatants: [],
@@ -177,6 +210,7 @@ const initialState: CombatState = {
   targetingMode: undefined,
   hoveredTargetId: undefined,
   damagePopups: [],
+  pendingReaction: undefined,
 }
 
 export const useCombatStore = create<CombatStore>((set, get) => ({
@@ -531,6 +565,115 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
       rangeHighlight: undefined,
       hoveredTargetId: undefined,
     })
+  },
+
+  // Reaction handling
+  useReactionSpell: (spellId: string) => {
+    const { pendingReaction, combatants } = get()
+    if (!pendingReaction) return
+
+    const reactor = combatants.find(c => c.id === pendingReaction.reactingCombatantId)
+    if (!reactor || reactor.hasReacted) return
+
+    const spell = pendingReaction.availableReactions.find(s => s.id === spellId)
+    if (!spell) return
+
+    // Handle Shield spell
+    if (spell.id === 'shield' && spell.reaction?.effect.type === 'ac_bonus') {
+      const acBonus = spell.reaction.effect.value || 5
+      const newAC = (pendingReaction.context.targetAC || 0) + acBonus
+      const attackRoll = pendingReaction.context.attackRoll || 0
+
+      // Log the Shield cast
+      get().addLogEntry({
+        type: 'spell',
+        actorId: pendingReaction.reactingCombatantId,
+        actorName: reactor.name,
+        message: `${reactor.name} casts Shield as a reaction! (+${acBonus} AC)`,
+        details: `AC ${pendingReaction.context.targetAC} → ${newAC}`,
+      })
+
+      // Mark reaction as used
+      set((state) => ({
+        combatants: state.combatants.map(c =>
+          c.id === pendingReaction.reactingCombatantId
+            ? { ...c, hasReacted: true }
+            : c
+        ),
+      }))
+
+      // Check if the attack now misses with the new AC
+      if (attackRoll < newAC) {
+        // Attack misses due to Shield
+        get().addLogEntry({
+          type: 'attack',
+          actorId: pendingReaction.triggeringCombatantId,
+          actorName: combatants.find(c => c.id === pendingReaction.triggeringCombatantId)?.name || 'Attacker',
+          targetId: pendingReaction.reactingCombatantId,
+          targetName: reactor.name,
+          message: `Attack blocked by Shield!`,
+          details: `Roll ${attackRoll} vs AC ${newAC}`,
+        })
+        get().addCombatPopup(pendingReaction.reactingCombatantId, 'saved')
+      } else {
+        // Attack still hits - apply the pending damage
+        if (pendingReaction.context.damage) {
+          get().dealDamage(
+            pendingReaction.reactingCombatantId,
+            pendingReaction.context.damage,
+            combatants.find(c => c.id === pendingReaction.triggeringCombatantId)?.name
+          )
+          get().addDamagePopup(
+            pendingReaction.reactingCombatantId,
+            pendingReaction.context.damage,
+            pendingReaction.context.damageType || 'bludgeoning',
+            pendingReaction.context.isCritical || false
+          )
+        }
+      }
+
+      // Apply Shield buff (lasts until start of reactor's next turn)
+      // For now, we'll track this as a condition
+      set((state) => ({
+        combatants: state.combatants.map(c =>
+          c.id === pendingReaction.reactingCombatantId
+            ? {
+                ...c,
+                conditions: [
+                  ...c.conditions,
+                  { condition: 'shielded' as any, duration: 1, source: 'Shield spell' }
+                ]
+              }
+            : c
+        ),
+      }))
+    }
+
+    // Clear pending reaction
+    set({ pendingReaction: undefined })
+  },
+
+  skipReaction: () => {
+    const { pendingReaction, combatants } = get()
+    if (!pendingReaction) return
+
+    // Apply the pending damage since they chose not to react
+    if (pendingReaction.context.damage) {
+      get().dealDamage(
+        pendingReaction.reactingCombatantId,
+        pendingReaction.context.damage,
+        combatants.find(c => c.id === pendingReaction.triggeringCombatantId)?.name
+      )
+      get().addDamagePopup(
+        pendingReaction.reactingCombatantId,
+        pendingReaction.context.damage,
+        pendingReaction.context.damageType || 'bludgeoning',
+        pendingReaction.context.isCritical || false
+      )
+    }
+
+    // Clear pending reaction
+    set({ pendingReaction: undefined })
   },
 
   moveCombatant: (id, to) => {
@@ -971,31 +1114,57 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
         bonusDamageDetails.push(`Sneak Attack [${result.sneakAttackDamage.rolls.join(', ')}]`)
       }
 
-      get().dealDamage(targetId, totalDamage, attacker.name)
-      get().addDamagePopup(targetId, totalDamage, (result.damageType ?? 'bludgeoning') as DamageType, result.critical)
+      // Check if target has reaction spells available (like Shield)
+      const availableReactionSpells = getAvailableReactionSpells(target, 'on_hit')
 
-      const damageDetails = bonusDamageDetails.length > 0
-        ? `${result.damage.breakdown} + ${bonusDamageDetails.join(' + ')}`
-        : result.damage.breakdown
+      if (availableReactionSpells.length > 0 && !target.hasReacted) {
+        // Set pending reaction and pause for player decision
+        set({
+          pendingReaction: {
+            type: 'shield',
+            reactingCombatantId: targetId,
+            triggeringCombatantId: attackerId,
+            availableReactions: availableReactionSpells,
+            context: {
+              attackRoll: result.attackRoll.total,
+              attackBonus: result.attackRoll.total - result.attackRoll.naturalRoll,
+              targetAC: result.targetAC,
+              damage: totalDamage,
+              damageType: (result.damageType ?? 'bludgeoning') as DamageType,
+              isCritical: result.critical,
+            },
+          },
+        })
+        // Don't deal damage yet - wait for reaction decision
+        // Update attacker state still needs to happen
+      } else {
+        // No reaction available, deal damage immediately
+        get().dealDamage(targetId, totalDamage, attacker.name)
+        get().addDamagePopup(targetId, totalDamage, (result.damageType ?? 'bludgeoning') as DamageType, result.critical)
 
-      get().addLogEntry({
-        type: 'damage',
-        actorId: attackerId,
-        actorName: attacker.name,
-        targetId,
-        targetName: target.name,
-        message: `${totalDamage} ${result.damageType} damage`,
-        details: damageDetails,
-      })
+        const damageDetails = bonusDamageDetails.length > 0
+          ? `${result.damage.breakdown} + ${bonusDamageDetails.join(' + ')}`
+          : result.damage.breakdown
 
-      // Log Sneak Attack if used
-      if (result.sneakAttackUsed) {
         get().addLogEntry({
-          type: 'other',
+          type: 'damage',
           actorId: attackerId,
           actorName: attacker.name,
-          message: `${attacker.name} deals Sneak Attack damage! (+${result.sneakAttackDamage?.total})`,
+          targetId,
+          targetName: target.name,
+          message: `${totalDamage} ${result.damageType} damage`,
+          details: damageDetails,
         })
+
+        // Log Sneak Attack if used
+        if (result.sneakAttackUsed) {
+          get().addLogEntry({
+            type: 'other',
+            actorId: attackerId,
+            actorName: attacker.name,
+            message: `${attacker.name} deals Sneak Attack damage! (+${result.sneakAttackDamage?.total})`,
+          })
+        }
       }
     }
 
@@ -1259,6 +1428,54 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
     if (caster.type !== 'character') return false // Only characters can cast spells for now
 
     const character = caster.data as Character
+
+    // Check and consume spell slot for leveled spells (not cantrips)
+    if (spell.level > 0) {
+      const spellSlots = character.spellSlots
+      if (!spellSlots) {
+        get().addLogEntry({
+          type: 'spell',
+          actorId: casterId,
+          actorName: caster.name,
+          message: `${caster.name} cannot cast ${spell.name} - no spell slots!`,
+        })
+        return false
+      }
+
+      const slotLevel = spell.level as keyof typeof spellSlots
+      const slot = spellSlots[slotLevel]
+      if (!slot || slot.current <= 0) {
+        get().addLogEntry({
+          type: 'spell',
+          actorId: casterId,
+          actorName: caster.name,
+          message: `${caster.name} cannot cast ${spell.name} - no level ${spell.level} spell slots remaining!`,
+        })
+        return false
+      }
+
+      // Decrement the spell slot
+      const updatedSpellSlots = {
+        ...spellSlots,
+        [slotLevel]: { ...slot, current: slot.current - 1 },
+      }
+
+      // Update character's spell slots in combatants
+      set((state) => ({
+        combatants: state.combatants.map((c) =>
+          c.id === casterId && c.type === 'character'
+            ? { ...c, data: { ...(c.data as Character), spellSlots: updatedSpellSlots } }
+            : c
+        ),
+      }))
+
+      get().addLogEntry({
+        type: 'spell',
+        actorId: casterId,
+        actorName: caster.name,
+        message: `${caster.name} uses a level ${spell.level} spell slot (${slot.current - 1}/${slot.max} remaining)`,
+      })
+    }
 
     // Log spell cast
     get().addLogEntry({

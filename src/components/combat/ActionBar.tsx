@@ -2,6 +2,7 @@ import { useState, useEffect, type ReactNode } from 'react'
 import { cn, formatCR } from '@/lib/utils'
 import { useCombatStore, getCurrentCombatant } from '@/stores/combatStore'
 import { getCharacterTokenImage, getMonsterTokenImage } from '@/lib/tokenImages'
+import { SpellSlotDisplay } from './SpellSlotDisplay'
 import type { Character, Monster, Weapon, MonsterAction, Spell } from '@/types'
 import { getMeleeRange } from '@/engine/combat'
 import {
@@ -1114,6 +1115,14 @@ export function ActionBar() {
 
             {/* Main Action Buttons */}
             <div className="relative flex-1 flex items-center justify-center gap-2">
+              {/* Spell Slots Display (BG3-style) - floats on top edge of bar */}
+              {isCharacter && character?.spellSlots && (
+                <div className="absolute -top-4 left-1/2 -translate-x-1/2 z-10">
+                  <SpellSlotDisplay spellSlots={character.spellSlots} compact />
+                </div>
+              )}
+
+              {/* Action Buttons */}
               {/* Spell selector popup */}
               {isSelectingSpell && selectedAction === 'spell' && (
                 <SpellSelector
