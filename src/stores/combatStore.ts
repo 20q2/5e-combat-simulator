@@ -651,6 +651,11 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
 
     // Clear pending reaction
     set({ pendingReaction: undefined })
+
+    // If this was during an AI turn, end the turn now
+    if (get().isAITurn()) {
+      setTimeout(() => get().endTurn(), 500)
+    }
   },
 
   skipReaction: () => {
@@ -674,6 +679,11 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
 
     // Clear pending reaction
     set({ pendingReaction: undefined })
+
+    // If this was during an AI turn, end the turn now
+    if (get().isAITurn()) {
+      setTimeout(() => get().endTurn(), 500)
+    }
   },
 
   moveCombatant: (id, to) => {
@@ -1342,6 +1352,13 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
       monsterAction,
     })
 
+    // Use the attacker's reaction
+    set((state) => ({
+      combatants: state.combatants.map((c) =>
+        c.id === attackerId ? { ...c, hasReacted: true } : c
+      ),
+    }))
+
     // Log the attack result
     if (result.hit) {
       get().addLogEntry({
@@ -1357,17 +1374,44 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
       })
 
       if (result.damage) {
-        get().dealDamage(targetId, result.damage.total, attacker.name)
-        get().addDamagePopup(targetId, result.damage.total, (result.damageType ?? 'bludgeoning') as DamageType, result.critical)
-        get().addLogEntry({
-          type: 'damage',
-          actorId: attackerId,
-          actorName: attacker.name,
-          targetId,
-          targetName: target.name,
-          message: `${result.damage.total} ${result.damageType} damage`,
-          details: result.damage.breakdown,
-        })
+        const totalDamage = result.damage.total
+
+        // Check if target has reaction spells available (like Shield)
+        const availableReactionSpells = getAvailableReactionSpells(target, 'on_hit')
+
+        if (availableReactionSpells.length > 0 && !target.hasReacted) {
+          // Set pending reaction and pause for player decision
+          set({
+            pendingReaction: {
+              type: 'opportunity_attack',
+              reactingCombatantId: targetId,
+              triggeringCombatantId: attackerId,
+              availableReactions: availableReactionSpells,
+              context: {
+                attackRoll: result.attackRoll.total,
+                attackBonus: result.attackRoll.total - result.attackRoll.naturalRoll,
+                targetAC: result.targetAC,
+                damage: totalDamage,
+                damageType: (result.damageType ?? 'bludgeoning') as DamageType,
+                isCritical: result.critical,
+              },
+            },
+          })
+          // Don't deal damage yet - wait for reaction decision
+        } else {
+          // No reaction available, deal damage immediately
+          get().dealDamage(targetId, totalDamage, attacker.name)
+          get().addDamagePopup(targetId, totalDamage, (result.damageType ?? 'bludgeoning') as DamageType, result.critical)
+          get().addLogEntry({
+            type: 'damage',
+            actorId: attackerId,
+            actorName: attacker.name,
+            targetId,
+            targetName: target.name,
+            message: `${totalDamage} ${result.damageType} damage`,
+            details: result.damage.breakdown,
+          })
+        }
       }
     } else {
       get().addLogEntry({
@@ -1382,13 +1426,6 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
       // Show miss popup on target
       get().addCombatPopup(targetId, 'miss')
     }
-
-    // Use the attacker's reaction
-    set((state) => ({
-      combatants: state.combatants.map((c) =>
-        c.id === attackerId ? { ...c, hasReacted: true } : c
-      ),
-    }))
 
     return result
   },
@@ -2148,9 +2185,15 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
           get().performAttack(current.id, action.targetId, undefined, action.action)
         }
 
-        // End the monster's turn
-        await new Promise((resolve) => setTimeout(resolve, 500))
-        get().endTurn()
+        // Check if there's a pending reaction - if so, don't end turn yet
+        // The reaction handlers (useReactionSpell/skipReaction) will end the turn
+        const hasPendingReaction = get().pendingReaction !== undefined
+        if (!hasPendingReaction) {
+          // End the monster's turn
+          await new Promise((resolve) => setTimeout(resolve, 500))
+          get().endTurn()
+        }
+        // If there's a pending reaction, the turn will be ended by the reaction handler
       }
     }
   },

@@ -6,6 +6,7 @@ const navItems = [
   { path: '/character', label: 'Character Creator' },
   { path: '/encounter', label: 'Encounter Setup' },
   { path: '/combat', label: 'Combat' },
+  { path: '/map-builder', label: 'Map Builder' },
 ]
 
 export function Layout() {

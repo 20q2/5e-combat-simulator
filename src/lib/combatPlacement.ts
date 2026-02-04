@@ -1,8 +1,9 @@
-import type { Character, Monster, Position } from '@/types'
+import type { Character, Monster, Position, TerrainDefinition } from '@/types'
 
 interface CombatStoreActions {
   resetCombat: () => void
   initializeGrid: (width: number, height: number) => void
+  initializeGridWithTerrain?: (width: number, height: number, terrain: TerrainDefinition[]) => void
   addCombatant: (input: {
     name: string
     type: 'character' | 'monster'
@@ -21,6 +22,7 @@ interface PlacementOptions {
   autoStart?: boolean
   gridWidth?: number
   gridHeight?: number
+  terrain?: TerrainDefinition[]
 }
 
 /**
@@ -69,11 +71,17 @@ export function setupCombatWithPlacement(
   monsters: MonsterSelection[],
   options: PlacementOptions = {}
 ): void {
-  const { autoStart = true, gridWidth = 15, gridHeight = 10 } = options
+  const { autoStart = true, gridWidth = 15, gridHeight = 10, terrain } = options
 
   // Reset combat state and initialize grid
   combatStore.resetCombat()
-  combatStore.initializeGrid(gridWidth, gridHeight)
+
+  // Use terrain-aware initialization if terrain is provided
+  if (terrain && terrain.length > 0 && combatStore.initializeGridWithTerrain) {
+    combatStore.initializeGridWithTerrain(gridWidth, gridHeight, terrain)
+  } else {
+    combatStore.initializeGrid(gridWidth, gridHeight)
+  }
 
   // Calculate total monster count
   const totalMonsters = monsters.reduce((sum, m) => sum + m.count, 0)

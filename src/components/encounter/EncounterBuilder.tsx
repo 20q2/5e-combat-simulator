@@ -10,6 +10,8 @@ import { useCharacterStore } from '@/stores/characterStore'
 import { useCombatStore } from '@/stores/combatStore'
 import { getCharacterTokenImage, getMonsterTokenImage } from '@/lib/tokenImages'
 import { setupCombatWithPlacement } from '@/lib/combatPlacement'
+import { MapSelector } from './MapSelector'
+import type { MapPreset } from '@/data/maps'
 import type { Monster, Character } from '@/types'
 
 // XP thresholds by character level
@@ -160,11 +162,12 @@ function MonsterCard({
 export function EncounterBuilder() {
   const navigate = useNavigate()
   const { savedCharacters } = useCharacterStore()
-  const { addCombatant, initializeGrid, resetCombat, startCombat } = useCombatStore()
+  const { addCombatant, initializeGrid, initializeGridWithTerrain, resetCombat, startCombat } = useCombatStore()
   const allMonsters = getAllMonsters()
 
   const [selectedCharacters, setSelectedCharacters] = useState<Character[]>([])
   const [selectedMonsters, setSelectedMonsters] = useState<SelectedMonster[]>([])
+  const [selectedMap, setSelectedMap] = useState<MapPreset | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [crFilter, setCrFilter] = useState<string>('all')
 
@@ -253,12 +256,21 @@ export function EncounterBuilder() {
   }
 
   const handleStartCombat = () => {
+    // Determine grid size from map or use defaults
+    const gridWidth = selectedMap?.gridWidth ?? 15
+    const gridHeight = selectedMap?.gridHeight ?? 10
+
     // Use shared utility for auto-placement and auto-start
     setupCombatWithPlacement(
-      { resetCombat, initializeGrid, addCombatant, startCombat },
+      { resetCombat, initializeGrid, initializeGridWithTerrain, addCombatant, startCombat },
       selectedCharacters,
       selectedMonsters.map(sm => ({ monster: sm.monster, count: sm.count })),
-      { autoStart: true }
+      {
+        autoStart: true,
+        gridWidth,
+        gridHeight,
+        terrain: selectedMap?.terrain,
+      }
     )
 
     // Navigate to combat
@@ -314,6 +326,9 @@ export function EncounterBuilder() {
             </div>
           </CardContent>
         </Card>
+
+        {/* Map Selection */}
+        <MapSelector selectedMap={selectedMap} onSelectMap={setSelectedMap} />
       </div>
 
       {/* Sidebar - Party & Summary */}

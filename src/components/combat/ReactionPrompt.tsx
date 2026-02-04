@@ -43,12 +43,16 @@ export function ReactionPrompt() {
         {/* Attack info */}
         <div className="bg-slate-800 rounded-lg p-3 mb-4">
           <div className="text-sm text-slate-300 mb-2">
-            <span className="text-rose-400 font-semibold">{attacker.name}</span> hit{' '}
-            <span className="text-violet-400 font-semibold">{reactor.name}</span>!
+            <span className="text-rose-400 font-semibold">{attacker.name}</span>
+            {pendingReaction.type === 'opportunity_attack' ? (
+              <> hit <span className="text-violet-400 font-semibold">{reactor.name}</span> with an <span className="text-amber-400">opportunity attack</span>!</>
+            ) : (
+              <> hit <span className="text-violet-400 font-semibold">{reactor.name}</span>!</>
+            )}
           </div>
-          <div className="flex gap-4 text-xs text-slate-400">
+          <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-400">
             <span>Attack Roll: <span className="text-white font-mono">{context.attackRoll}</span></span>
-            <span>vs AC: <span className="text-white font-mono">{context.targetAC}</span></span>
+            <span>Your AC: <span className="text-white font-mono">{context.targetAC}</span></span>
             {context.damage && (
               <span>Damage: <span className="text-rose-400 font-mono">{context.damage}</span></span>
             )}
@@ -60,6 +64,12 @@ export function ReactionPrompt() {
           <div className="text-xs text-slate-400 uppercase tracking-wider">Available Reactions</div>
           {availableReactions.map((spell) => {
             const Icon = getReactionIcon(spell)
+            // Calculate Shield effect
+            const acBonus = spell.reaction?.effect.value || 0
+            const newAC = (context.targetAC || 0) + acBonus
+            const attackRoll = context.attackRoll || 0
+            const wouldMiss = attackRoll < newAC
+
             return (
               <button
                 key={spell.id}
@@ -76,11 +86,17 @@ export function ReactionPrompt() {
                 </div>
                 <div className="flex-1 text-left">
                   <div className="text-sm font-semibold text-violet-200">{spell.name}</div>
-                  <div className="text-xs text-slate-400">
-                    {spell.reaction?.effect.type === 'ac_bonus' && (
-                      <>+{spell.reaction.effect.value} AC (may cause attack to miss)</>
-                    )}
-                  </div>
+                  {spell.reaction?.effect.type === 'ac_bonus' && (
+                    <div className="text-xs">
+                      <span className="text-slate-400">AC {context.targetAC} → </span>
+                      <span className="text-violet-300 font-semibold">{newAC}</span>
+                      {wouldMiss ? (
+                        <span className="ml-2 text-emerald-400 font-semibold">• Attack would MISS!</span>
+                      ) : (
+                        <span className="ml-2 text-rose-400">• Attack still hits</span>
+                      )}
+                    </div>
+                  )}
                 </div>
                 <div className="text-xs text-amber-400 font-medium">
                   Lv {spell.level}

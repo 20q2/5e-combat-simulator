@@ -55,3 +55,21 @@ export {
   getEncounterPresetById,
   type EncounterPreset,
 } from './presets'
+
+// Backgrounds
+export {
+  BACKGROUNDS,
+  getBackgroundById,
+  getAllBackgrounds,
+  type Background,
+} from './backgrounds'
+
+// Origin Feats
+export {
+  ORIGIN_FEATS,
+  getOriginFeatById,
+  isRepeatableFeat,
+  type OriginFeat,
+  type OriginFeatId,
+  type OriginFeatBenefit,
+} from './originFeats'
