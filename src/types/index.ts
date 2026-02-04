@@ -560,6 +560,20 @@ export interface CombatState {
       isCritical?: boolean
     }
   }
+  // Movement animation state
+  movementAnimation?: {
+    combatantId: string
+    path: Position[]
+    currentIndex: number
+  }
+  // Pending movement data (applied after animation completes)
+  pendingMovement?: {
+    id: string
+    to: Position
+    path: Position[]
+    pathCost: number
+    threateningEnemies: string[]  // IDs of enemies that will trigger opportunity attacks
+  }
 }
 
 // ============================================

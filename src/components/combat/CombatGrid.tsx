@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react'
 import { cn } from '@/lib/utils'
 import { useCombatStore, isCurrentTurn } from '@/stores/combatStore'
+import { useMovementAnimation } from '@/hooks/useMovementAnimation'
 import { Token } from './Token'
 import { DamagePopup } from './DamagePopup'
 import { calculateMovementDistance } from '@/lib/movement'
@@ -311,6 +312,7 @@ export function CombatGrid() {
     selectedSpell,
     damagePopups,
     mapBackgroundImage,
+    movementAnimation,
     selectCombatant,
     moveCombatant,
     getReachablePositions,
@@ -326,6 +328,9 @@ export function CombatGrid() {
     projectileTargeting,
     assignProjectile,
   } = useCombatStore()
+
+  // Drive the movement animation
+  useMovementAnimation()
 
   // Get the actual background image URL from the filename
   const backgroundImageUrl = getMapBackgroundImage(mapBackgroundImage)
@@ -587,6 +592,9 @@ export function CombatGrid() {
 
   // Check if a combatant can be dragged
   const canDragCombatant = (combatantId: string) => {
+    // Block dragging during movement animation
+    if (movementAnimation) return false
+
     const combatant = combatants.find((c) => c.id === combatantId)
     if (!combatant) return false
     if (combatant.currentHp <= 0) return false
@@ -644,6 +652,9 @@ export function CombatGrid() {
   }
 
   const handleCellClick = (x: number, y: number) => {
+    // Block interactions during movement animation
+    if (movementAnimation) return
+
     const position: Position = { x, y }
 
     // In AoE spell mode, clicking casts the spell at this location
@@ -677,6 +688,9 @@ export function CombatGrid() {
   }
 
   const handleTokenClick = (combatantId: string) => {
+    // Block interactions during movement animation
+    if (movementAnimation) return
+
     // In projectile targeting mode, clicking an enemy token assigns a projectile
     if (phase === 'combat' && projectileTargeting && currentTurnId) {
       // Only allow targeting enemies (not self)
@@ -866,18 +880,26 @@ export function CombatGrid() {
           const visualScale = getVisualScale(size)
           const tokenSize = footprint * CELL_SIZE - 8
 
+          // Check if this combatant is currently animating movement
+          const isAnimatingMovement = movementAnimation?.combatantId === combatant.id
+          const displayPosition = isAnimatingMovement && movementAnimation
+            ? movementAnimation.path[movementAnimation.currentIndex]
+            : combatant.position
+
           return (
             <div
               key={combatant.id}
               className={cn(
-                'absolute transition-all duration-150',
+                'absolute',
+                // Use faster transition when animating movement for smooth stepping
+                isAnimatingMovement ? 'transition-[left,top] duration-100 ease-linear' : 'transition-all duration-150',
                 isDragging && 'opacity-50 scale-90 z-50',
                 isHovered && !isDragging && 'z-40',
                 !isDragging && !isHovered && 'z-10'
               )}
               style={{
-                left: combatant.position.x * CELL_SIZE + 4,
-                top: combatant.position.y * CELL_SIZE + 4,
+                left: displayPosition.x * CELL_SIZE + 4,
+                top: displayPosition.y * CELL_SIZE + 4,
                 width: tokenSize,
                 height: tokenSize,
               }}

@@ -91,6 +91,11 @@ interface CombatStore extends CombatState {
   getReachablePositions: (combatantId: string) => Position[]
   useDisengage: () => void
 
+  // Movement animation
+  advanceMovementAnimation: () => void
+  finishMovementAnimation: () => void
+  isAnimating: () => boolean
+
   // Combat actions
   dealDamage: (targetId: string, amount: number, source?: string) => void
   healDamage: (targetId: string, amount: number, source?: string) => void
@@ -231,6 +236,8 @@ const initialState: CombatState = {
   hoveredTargetId: undefined,
   damagePopups: [],
   pendingReaction: undefined,
+  movementAnimation: undefined,
+  pendingMovement: undefined,
 }
 
 export const useCombatStore = create<CombatStore>((set, get) => ({
@@ -769,6 +776,9 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
     // Check if target is valid (redundant but safe)
     if (!get().canMoveTo(id, to)) return
 
+    // Collect threatening enemies that will trigger opportunity attacks
+    const threateningEnemyIds: string[] = []
+
     // Check for opportunity attacks (only during combat, not setup)
     if (phase === 'combat') {
       // Check if combatant has disengaging condition
@@ -802,19 +812,76 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
 
           // If we're moving out of reach (no longer adjacent), trigger opportunity attack
           if (!stillAdjacent) {
-            // Enemy makes opportunity attack
-            get().performOpportunityAttack(enemy.id, id)
-
-            // Re-fetch combatant in case they were damaged/killed
-            const updatedCombatant = get().combatants.find((c) => c.id === id)
-            if (!updatedCombatant || updatedCombatant.currentHp <= 0) {
-              // Combatant was killed by opportunity attack, cancel movement
-              return
-            }
+            threateningEnemyIds.push(enemy.id)
           }
         }
       }
     }
+
+    // Start movement animation (path includes start position)
+    set({
+      movementAnimation: {
+        combatantId: id,
+        path: path,
+        currentIndex: 0,
+      },
+      pendingMovement: {
+        id,
+        to,
+        path,
+        pathCost,
+        threateningEnemies: threateningEnemyIds,
+      },
+    })
+  },
+
+  advanceMovementAnimation: () => {
+    const { movementAnimation } = get()
+    if (!movementAnimation) return
+
+    const nextIndex = movementAnimation.currentIndex + 1
+    if (nextIndex >= movementAnimation.path.length) {
+      // Animation complete, finalize movement
+      get().finishMovementAnimation()
+    } else {
+      set({
+        movementAnimation: {
+          ...movementAnimation,
+          currentIndex: nextIndex,
+        },
+      })
+    }
+  },
+
+  finishMovementAnimation: () => {
+    const { pendingMovement, grid, combatants } = get()
+    if (!pendingMovement) {
+      set({ movementAnimation: undefined })
+      return
+    }
+
+    const { id, to, pathCost, threateningEnemies } = pendingMovement
+    const combatant = combatants.find((c) => c.id === id)
+    if (!combatant) {
+      set({ movementAnimation: undefined, pendingMovement: undefined })
+      return
+    }
+
+    // Process opportunity attacks
+    for (const enemyId of threateningEnemies) {
+      get().performOpportunityAttack(enemyId, id)
+
+      // Re-fetch combatant in case they were damaged/killed
+      const updatedCombatant = get().combatants.find((c) => c.id === id)
+      if (!updatedCombatant || updatedCombatant.currentHp <= 0) {
+        // Combatant was killed by opportunity attack, cancel movement
+        set({ movementAnimation: undefined, pendingMovement: undefined })
+        return
+      }
+    }
+
+    // Get creature size for footprint calculations
+    const size = getCombatantSize(combatant)
 
     // Clear old position cells (all footprint cells)
     const oldCells = getOccupiedCells(combatant.position, size)
@@ -836,6 +903,8 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
           ? { ...c, position: to, movementUsed: c.movementUsed + pathCost }
           : c
       ),
+      movementAnimation: undefined,
+      pendingMovement: undefined,
     }))
 
     get().addLogEntry({
@@ -859,6 +928,10 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
         message: `${combatant.name} takes ${hazardDamage} fire damage from hazardous terrain`,
       })
     }
+  },
+
+  isAnimating: () => {
+    return get().movementAnimation !== null
   },
 
   canMoveTo: (combatantId, to) => {
@@ -1331,16 +1404,17 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
 
     if (!combatant || combatant.hasActed) return
 
-    // Dash doubles remaining movement for this turn
+    // Dash adds your speed to your remaining movement for this turn
     const speed = combatant.type === 'character'
       ? (combatant.data as Character).speed
       : (combatant.data as Monster).speed.walk
 
-    // Reset movement used to give full speed again
+    // Subtract speed from movementUsed (can go negative to represent bonus movement)
+    // Example: 30 speed, used 10 ft -> movementUsed becomes -20, remaining = 30 - (-20) = 50 ft
     set((state) => ({
       combatants: state.combatants.map((c) =>
         c.id === currentId
-          ? { ...c, hasActed: true, movementUsed: Math.max(0, c.movementUsed - speed) }
+          ? { ...c, hasActed: true, movementUsed: c.movementUsed - speed }
           : c
       ),
       selectedAction: undefined,
@@ -2166,7 +2240,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
     if (!combatant || combatant.hasBonusActed) return
     if (!canUseCunningAction(combatant, 'dash')) return
 
-    // Cunning Action Dash: doubles remaining movement for this turn
+    // Cunning Action Dash: adds your speed to remaining movement for this turn
     const speed = combatant.type === 'character'
       ? (combatant.data as Character).speed
       : (combatant.data as Monster).speed.walk
@@ -2175,7 +2249,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
       type: 'other',
       actorId: currentId,
       actorName: combatant.name,
-      message: `${combatant.name} uses Cunning Action to Dash!`,
+      message: `${combatant.name} uses Cunning Action to Dash (+${speed} ft)!`,
     })
 
     // Grant extra movement (same as regular Dash but uses bonus action)
@@ -2185,7 +2259,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
           ? {
               ...c,
               hasBonusActed: true,
-              movementUsed: Math.max(0, c.movementUsed - speed), // Grant extra speed
+              movementUsed: c.movementUsed - speed, // Grant extra speed (can go negative)
             }
           : c
       ),
