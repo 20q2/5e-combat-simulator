@@ -266,6 +266,12 @@ export interface Spell {
     type: 'cone' | 'cube' | 'cylinder' | 'line' | 'sphere'
     size: number
   }
+  // Multi-projectile spells (Magic Missile, Scorching Ray, Eldritch Blast, etc.)
+  projectiles?: {
+    count: number                    // Base number of projectiles at spell level
+    damagePerProjectile: string      // Damage dice per projectile (e.g., "1d4+1")
+    scalingPerSlotLevel?: number     // Additional projectiles per slot level above base
+  }
 }
 
 // ============================================

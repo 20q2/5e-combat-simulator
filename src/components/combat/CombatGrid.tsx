@@ -234,7 +234,7 @@ function GridCell({
       {/* Distance indicator on hover */}
       {distance !== undefined && distance > 0 && !hasObstacle && (
         <span className="absolute inset-0 flex items-center justify-center text-xs font-bold text-white/80 pointer-events-none">
-          {distance}
+          {distance}ft
         </span>
       )}
     </div>
@@ -530,7 +530,7 @@ export function CombatGrid() {
       const targetAtPosition = combatants.find(
         c => c.position.x === x && c.position.y === y && c.currentHp > 0
       )
-      castSpell(currentTurnId, selectedSpell, targetAtPosition?.id)
+      castSpell(currentTurnId, selectedSpell, targetAtPosition?.id, position)
       // Clear spell state
       setSelectedSpell(undefined)
       setAoEPreview(undefined)
@@ -557,7 +557,8 @@ export function CombatGrid() {
   const handleTokenClick = (combatantId: string) => {
     // In AoE spell mode, clicking a token casts the spell targeting that combatant
     if (phase === 'combat' && aoePreview && selectedSpell && currentTurnId) {
-      castSpell(currentTurnId, selectedSpell, combatantId)
+      const targetCombatant = combatants.find(c => c.id === combatantId)
+      castSpell(currentTurnId, selectedSpell, combatantId, targetCombatant?.position)
       // Clear spell state
       setSelectedSpell(undefined)
       setAoEPreview(undefined)

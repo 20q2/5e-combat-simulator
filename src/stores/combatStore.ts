@@ -40,7 +40,7 @@ import {
   canUseCunningAction,
   getMaxAttacksPerAction,
 } from '@/engine/classAbilities'
-import { getAoEAffectedCells, aoeOriginatesFromCaster } from '@/lib/aoeShapes'
+import { getAoEAffectedCells } from '@/lib/aoeShapes'
 
 // Simplified input type for adding combatants
 type AddCombatantInput = {
@@ -86,7 +86,7 @@ interface CombatStore extends CombatState {
   useDash: () => void
   useDodge: () => void
   getValidTargets: (attackerId: string, weapon?: Weapon, monsterAction?: MonsterAction, rangedWeapon?: Weapon) => Combatant[]
-  castSpell: (casterId: string, spell: Spell, targetId?: string, targetPosition?: Position) => boolean
+  castSpell: (casterId: string, spell: Spell, targetId?: string, targetPosition?: Position, projectileAssignments?: { targetId: string; count: number }[]) => boolean
   getAvailableSpells: (combatantId: string) => Spell[]
   makeDeathSave: (combatantId: string) => void
   stabilize: (combatantId: string) => void
@@ -1153,7 +1153,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
     })
   },
 
-  castSpell: (casterId, spell, targetId, targetPosition) => {
+  castSpell: (casterId, spell, targetId, targetPosition, projectileAssignments) => {
     const { combatants } = get()
     const caster = combatants.find((c) => c.id === casterId)
 
@@ -1170,41 +1170,111 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
       message: `${caster.name} casts ${spell.name}!`,
     })
 
+    // Handle multi-projectile spells (Magic Missile, Scorching Ray, etc.)
+    if (spell.projectiles && projectileAssignments && projectileAssignments.length > 0) {
+      const damageType = spell.damage?.type || 'force'
+      const damagePerProjectile = spell.projectiles.damagePerProjectile
+
+      // Process each target assignment
+      for (const assignment of projectileAssignments) {
+        const target = combatants.find((c) => c.id === assignment.targetId)
+        if (!target || target.currentHp <= 0) continue
+
+        // Roll damage for each projectile and deal it
+        let totalDamage = 0
+        const projectileDamages: number[] = []
+
+        for (let i = 0; i < assignment.count; i++) {
+          const damageResult = rollDamage(damagePerProjectile, false)
+          projectileDamages.push(damageResult.total)
+          totalDamage += damageResult.total
+        }
+
+        // Log the projectile hits
+        const projectileWord = assignment.count === 1 ? 'projectile' : 'projectiles'
+        const damageBreakdown = projectileDamages.join(' + ')
+
+        if (spell.autoHit) {
+          get().addLogEntry({
+            type: 'spell',
+            actorId: casterId,
+            actorName: caster.name,
+            targetId: assignment.targetId,
+            targetName: target.name,
+            message: `${assignment.count} ${projectileWord} hit ${target.name}`,
+            details: `Auto-hit`,
+          })
+        }
+
+        // Deal the combined damage
+        get().dealDamage(assignment.targetId, totalDamage, caster.name)
+        get().addDamagePopup(assignment.targetId, totalDamage, damageType, false)
+
+        get().addLogEntry({
+          type: 'damage',
+          actorId: casterId,
+          actorName: caster.name,
+          targetId: assignment.targetId,
+          targetName: target.name,
+          message: `${totalDamage} ${damageType} damage (${damageBreakdown})`,
+          details: `${assignment.count}x ${damagePerProjectile}`,
+        })
+      }
+
+      // Mark action as used
+      set((state) => ({
+        combatants: state.combatants.map((c) =>
+          c.id === casterId ? { ...c, hasActed: true } : c
+        ),
+      }))
+
+      return true
+    }
+
     // Determine targets based on whether spell has AoE
     let targets: Combatant[] = []
 
-    if (spell.areaOfEffect && targetPosition) {
-      // AoE spell - find all combatants in the affected area
-      const aoeConfig = {
-        type: spell.areaOfEffect.type,
-        size: spell.areaOfEffect.size,
-        origin: caster.position,
-        target: targetPosition,
+    if (spell.areaOfEffect && (targetPosition || targetId)) {
+      // Get target position - prefer directly passed position, fall back to combatant position
+      let aoeTargetPosition = targetPosition
+      if (!aoeTargetPosition && targetId) {
+        const targetCombatant = combatants.find((c) => c.id === targetId)
+        aoeTargetPosition = targetCombatant?.position
       }
-      const affectedCells = getAoEAffectedCells(aoeConfig)
 
-      // Find all living enemy combatants in the affected cells
-      // For now, AoE spells hit enemies (monsters for player, characters for monsters)
-      const isPlayerCaster = caster.type === 'character'
-      targets = combatants.filter((c) => {
-        if (c.currentHp <= 0) return false
-        if (c.id === casterId) return false // Don't hit self
-        // Check if combatant is in affected area
-        const cellKey = `${c.position.x},${c.position.y}`
-        if (!affectedCells.has(cellKey)) return false
-        // For player casters, only hit monsters; for monster casters, only hit characters
-        if (isPlayerCaster && c.type === 'character') return false
-        if (!isPlayerCaster && c.type === 'monster') return false
-        return true
-      })
+      if (aoeTargetPosition) {
+        // AoE spell - find all combatants in the affected area
+        const aoeConfig = {
+          type: spell.areaOfEffect.type,
+          size: spell.areaOfEffect.size,
+          origin: caster.position,
+          target: aoeTargetPosition,
+        }
+        const affectedCells = getAoEAffectedCells(aoeConfig)
 
-      if (targets.length === 0) {
-        get().addLogEntry({
-          type: 'spell',
-          actorId: casterId,
-          actorName: caster.name,
-          message: `${spell.name} hits no targets in the area.`,
+        // Find all living enemy combatants in the affected cells
+        // For now, AoE spells hit enemies (monsters for player, characters for monsters)
+        const isPlayerCaster = caster.type === 'character'
+        targets = combatants.filter((c) => {
+          if (c.currentHp <= 0) return false
+          if (c.id === casterId) return false // Don't hit self
+          // Check if combatant is in affected area
+          const cellKey = `${c.position.x},${c.position.y}`
+          if (!affectedCells.has(cellKey)) return false
+          // For player casters, only hit monsters; for monster casters, only hit characters
+          if (isPlayerCaster && c.type === 'character') return false
+          if (!isPlayerCaster && c.type === 'monster') return false
+          return true
         })
+
+        if (targets.length === 0) {
+          get().addLogEntry({
+            type: 'spell',
+            actorId: casterId,
+            actorName: caster.name,
+            message: `${spell.name} hits no targets in the area.`,
+          })
+        }
       }
     } else if (targetId) {
       // Single target spell

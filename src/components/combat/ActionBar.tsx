@@ -441,6 +441,141 @@ function SpellSelector({
   )
 }
 
+// Projectile target selector for multi-target spells (Magic Missile, etc.)
+function ProjectileTargetSelector({
+  spell,
+  targets,
+  projectileCount,
+  onConfirm,
+  onCancel,
+  onHover,
+}: {
+  spell: Spell
+  targets: { id: string; name: string; hp: number; maxHp: number }[]
+  projectileCount: number
+  onConfirm: (assignments: { targetId: string; count: number }[]) => void
+  onCancel: () => void
+  onHover?: (targetId: string | undefined) => void
+}) {
+  const [assignments, setAssignments] = useState<Record<string, number>>({})
+
+  const totalAssigned = Object.values(assignments).reduce((sum, n) => sum + n, 0)
+  const remaining = projectileCount - totalAssigned
+
+  const addProjectile = (targetId: string) => {
+    if (remaining <= 0) return
+    setAssignments((prev) => ({
+      ...prev,
+      [targetId]: (prev[targetId] || 0) + 1,
+    }))
+  }
+
+  const removeProjectile = (targetId: string) => {
+    setAssignments((prev) => {
+      const current = prev[targetId] || 0
+      if (current <= 0) return prev
+      if (current === 1) {
+        const { [targetId]: _, ...rest } = prev
+        return rest
+      }
+      return { ...prev, [targetId]: current - 1 }
+    })
+  }
+
+  const handleConfirm = () => {
+    const result = Object.entries(assignments)
+      .filter(([_, count]) => count > 0)
+      .map(([targetId, count]) => ({ targetId, count }))
+    if (result.length > 0) {
+      onConfirm(result)
+    }
+  }
+
+  return (
+    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-80 bg-slate-900 border-2 border-violet-800 rounded-lg shadow-2xl p-3 z-50">
+      <div className="text-sm font-semibold text-violet-300 mb-1 flex items-center gap-2">
+        <Sparkles className="w-4 h-4" />
+        {spell.name}
+      </div>
+      <div className="text-xs text-slate-400 mb-3">
+        Assign {projectileCount} projectiles to targets ({remaining} remaining)
+      </div>
+
+      <div className="space-y-1 max-h-48 overflow-y-auto mb-3">
+        {targets.map((target) => {
+          const count = assignments[target.id] || 0
+          return (
+            <div
+              key={target.id}
+              className="flex items-center gap-2 p-2 rounded bg-slate-800"
+              onMouseEnter={() => onHover?.(target.id)}
+              onMouseLeave={() => onHover?.(undefined)}
+            >
+              <div className="flex-1 min-w-0">
+                <div className="text-xs text-slate-200 truncate">{target.name}</div>
+                <div className="text-[10px] text-rose-400">{target.hp}/{target.maxHp} HP</div>
+              </div>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => removeProjectile(target.id)}
+                  disabled={count === 0}
+                  className={cn(
+                    'w-6 h-6 rounded flex items-center justify-center text-sm font-bold transition-colors',
+                    count > 0
+                      ? 'bg-rose-900 hover:bg-rose-800 text-rose-200'
+                      : 'bg-slate-700 text-slate-500 cursor-not-allowed'
+                  )}
+                >
+                  -
+                </button>
+                <span className={cn(
+                  'w-6 text-center text-sm font-bold',
+                  count > 0 ? 'text-violet-300' : 'text-slate-500'
+                )}>
+                  {count}
+                </span>
+                <button
+                  onClick={() => addProjectile(target.id)}
+                  disabled={remaining === 0}
+                  className={cn(
+                    'w-6 h-6 rounded flex items-center justify-center text-sm font-bold transition-colors',
+                    remaining > 0
+                      ? 'bg-violet-900 hover:bg-violet-800 text-violet-200'
+                      : 'bg-slate-700 text-slate-500 cursor-not-allowed'
+                  )}
+                >
+                  +
+                </button>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
+      <div className="flex gap-2">
+        <button
+          onClick={handleConfirm}
+          disabled={totalAssigned === 0}
+          className={cn(
+            'flex-1 p-2 rounded text-sm font-medium transition-colors',
+            totalAssigned > 0
+              ? 'bg-violet-700 hover:bg-violet-600 text-violet-100'
+              : 'bg-slate-700 text-slate-500 cursor-not-allowed'
+          )}
+        >
+          Cast ({totalAssigned} projectiles)
+        </button>
+        <button
+          onClick={onCancel}
+          className="px-4 p-2 text-sm text-slate-400 hover:text-slate-200 transition-colors"
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  )
+}
+
 // Death saves UI
 function DeathSavesUI({
   combatant,
@@ -575,6 +710,7 @@ export function ActionBar() {
   const [isSelectingTarget, setIsSelectingTarget] = useState(false)
   const [isSelectingSpell, setIsSelectingSpell] = useState(false)
   const [isSelectingWeapon, setIsSelectingWeapon] = useState(false)
+  const [isSelectingProjectileTargets, setIsSelectingProjectileTargets] = useState(false)
   const [isExecutingAI, setIsExecutingAI] = useState(false)
 
   const currentCombatant = getCurrentCombatant(state)
@@ -588,6 +724,7 @@ export function ActionBar() {
     }
     if (selectedAction !== 'spell') {
       setIsSelectingSpell(false)
+      setIsSelectingProjectileTargets(false)
       setAoEPreview(undefined)
       setSelectedSpell(undefined)
     }
@@ -828,6 +965,7 @@ export function ActionBar() {
     setSelectedAction(undefined)
     setIsSelectingTarget(false)
     setIsSelectingWeapon(false)
+    setIsSelectingProjectileTargets(false)
     setSelectedSpell(undefined)
     setIsSelectingSpell(false)
   }
@@ -848,8 +986,6 @@ export function ActionBar() {
     setIsSelectingSpell(false)
 
     if (spell.damage || spell.attackType || spell.savingThrow) {
-      setIsSelectingTarget(true)
-
       // Set range highlight for the spell
       if (currentCombatant) {
         const spellRange = parseSpellRange(spell.range)
@@ -872,11 +1008,29 @@ export function ActionBar() {
           setAoEPreview(undefined)
         }
       }
+
+      // Check if this is a multi-projectile spell
+      if (spell.projectiles) {
+        setIsSelectingProjectileTargets(true)
+      } else {
+        setIsSelectingTarget(true)
+      }
     } else {
       castSpell(currentCombatant.id, spell)
       setSelectedSpell(undefined)
       setSelectedAction(undefined)
     }
+  }
+
+  const handleProjectileConfirm = (assignments: { targetId: string; count: number }[]) => {
+    if (selectedSpell && currentCombatant) {
+      castSpell(currentCombatant.id, selectedSpell, undefined, undefined, assignments)
+    }
+    setIsSelectingProjectileTargets(false)
+    setSelectedSpell(undefined)
+    setSelectedAction(undefined)
+    setRangeHighlight(undefined)
+    setHoveredTarget(undefined)
   }
 
   const handleMoveClick = () => {
@@ -1026,7 +1180,7 @@ export function ActionBar() {
               )}
 
               {/* Target selector popup for monster attacks and spells */}
-              {isSelectingTarget && !isSelectingSpell && !isSelectingWeapon && (
+              {isSelectingTarget && !isSelectingSpell && !isSelectingWeapon && !isSelectingProjectileTargets && (
                 <TargetSelector
                   targets={(selectedSpell ? spellTargets : validTargets).map((t) => ({
                     id: t.id,
@@ -1038,6 +1192,23 @@ export function ActionBar() {
                   onCancel={handleCancelTarget}
                   onHover={setHoveredTarget}
                   label={selectedSpell ? `Target for ${selectedSpell.name}` : 'Select Target'}
+                />
+              )}
+
+              {/* Projectile target selector for multi-projectile spells */}
+              {isSelectingProjectileTargets && selectedSpell?.projectiles && (
+                <ProjectileTargetSelector
+                  spell={selectedSpell}
+                  targets={spellTargets.map((t) => ({
+                    id: t.id,
+                    name: t.name,
+                    hp: t.currentHp,
+                    maxHp: t.maxHp,
+                  }))}
+                  projectileCount={selectedSpell.projectiles.count}
+                  onConfirm={handleProjectileConfirm}
+                  onCancel={handleCancelTarget}
+                  onHover={setHoveredTarget}
                 />
               )}
 

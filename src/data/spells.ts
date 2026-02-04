@@ -202,9 +202,14 @@ export const spells: Spell[] = [
     classes: ['sorcerer', 'wizard'],
     damage: {
       type: 'force',
-      dice: '3d4+3',
+      dice: '1d4+1',
     },
     autoHit: true,
+    projectiles: {
+      count: 3,
+      damagePerProjectile: '1d4+1',
+      scalingPerSlotLevel: 1,
+    },
   },
   {
     id: 'burning-hands',
