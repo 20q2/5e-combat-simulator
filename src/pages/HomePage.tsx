@@ -156,7 +156,7 @@ export function HomePage() {
 
     // Initialize grid with terrain if present
     if (selectedEncounter.terrain && selectedEncounter.terrain.length > 0) {
-      initializeGridWithTerrain(gridWidth, gridHeight, selectedEncounter.terrain)
+      initializeGridWithTerrain(gridWidth, gridHeight, selectedEncounter.terrain, selectedEncounter.backgroundImage)
     } else {
       initializeGrid(gridWidth, gridHeight)
     }

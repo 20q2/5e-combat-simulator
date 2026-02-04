@@ -287,12 +287,17 @@ export interface Spell {
 // Character Types
 // ============================================
 
+// Import Background type for Character interface
+import type { Background, OriginFeatId } from '@/data'
+
 export interface Character {
   id: string
   name: string
   race: Race
   class: CharacterClass
   subclass?: Subclass
+  background?: Background
+  originFeats: OriginFeatId[] // All origin feats (from background, and from human racial if applicable)
   level: number
   abilityScores: AbilityScores
   maxHp: number
@@ -520,6 +525,7 @@ export interface CombatState {
   round: number
   phase: CombatPhase
   log: CombatLogEntry[]
+  mapBackgroundImage?: string // Background image path for the map
   selectedCombatantId?: string
   selectedAction?: 'move' | 'attack' | 'spell' | 'dash' | 'disengage' | 'dodge' | 'help' | 'hide' | 'ready'
   targetingMode?: {

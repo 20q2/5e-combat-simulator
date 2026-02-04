@@ -3,6 +3,7 @@ import { cn } from '@/lib/utils'
 import { useCharacterStore } from '@/stores/characterStore'
 import { AbilityScoreSelector } from './AbilityScoreSelector'
 import { RaceSelector } from './RaceSelector'
+import { BackgroundSelector } from './BackgroundSelector'
 import { ClassSelector } from './ClassSelector'
 import { SpellSelector } from './SpellSelector'
 import { EquipmentSelector } from './EquipmentSelector'
@@ -12,6 +13,7 @@ import { getClassById } from '@/data'
 import {
   Brain,
   Users,
+  BookOpen,
   Crown,
   Sparkles,
   Shield,
@@ -25,10 +27,11 @@ import {
 const STEPS: { id: number; label: string; component: React.ComponentType; icon: LucideIcon }[] = [
   { id: 0, label: 'Abilities', component: AbilityScoreSelector, icon: Brain },
   { id: 1, label: 'Race', component: RaceSelector, icon: Users },
-  { id: 2, label: 'Class', component: ClassSelector, icon: Crown },
-  { id: 3, label: 'Spells', component: SpellSelector, icon: Sparkles },
-  { id: 4, label: 'Equipment', component: EquipmentSelector, icon: Shield },
-  { id: 5, label: 'Review', component: CharacterSheet, icon: ScrollText },
+  { id: 2, label: 'Background', component: BackgroundSelector, icon: BookOpen },
+  { id: 3, label: 'Class', component: ClassSelector, icon: Crown },
+  { id: 4, label: 'Spells', component: SpellSelector, icon: Sparkles },
+  { id: 5, label: 'Equipment', component: EquipmentSelector, icon: Shield },
+  { id: 6, label: 'Review', component: CharacterSheet, icon: ScrollText },
 ]
 
 function StepIndicator({
@@ -139,6 +142,8 @@ export function CharacterCreator() {
     switch (step?.label) {
       case 'Race':
         return !!draft.raceId
+      case 'Background':
+        return !!draft.backgroundId && !!draft.backgroundOriginFeat
       case 'Class':
         return !!draft.classId
       default:

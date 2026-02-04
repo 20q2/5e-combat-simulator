@@ -15,6 +15,20 @@ const obstacleImages = import.meta.glob<{ default: string }>(
   { eager: true }
 )
 
+// Use Vite's glob import to load map background images
+const mapBackgroundImages = import.meta.glob<{ default: string }>(
+  '@/assets/maps/*.png',
+  { eager: true }
+)
+
+// Get map background image by filename (e.g., "goblin_camp")
+function getMapBackgroundImage(filename: string | undefined): string | null {
+  if (!filename) return null
+  const imagePath = `/src/assets/maps/${filename}.png`
+  const imageModule = mapBackgroundImages[imagePath]
+  return imageModule?.default ?? null
+}
+
 const CELL_SIZE = 56 // pixels
 
 // Get the direction arrow for a path segment
@@ -77,6 +91,7 @@ interface GridCellProps {
   isBlockedByLOS: boolean
   isInAoEPreview: boolean
   distance?: number
+  wallBorderStyle?: React.CSSProperties // For wall outline rendering
   onDragOver: (e: React.DragEvent) => void
   onDragLeave: (e: React.DragEvent) => void
   onDrop: (e: React.DragEvent) => void
@@ -118,6 +133,7 @@ function GridCell({
   isBlockedByLOS,
   isInAoEPreview,
   distance,
+  wallBorderStyle,
   onDragOver,
   onDragLeave,
   onDrop,
@@ -126,6 +142,7 @@ function GridCell({
   onMouseLeave,
 }: GridCellProps) {
   const hasObstacle = cell.obstacle !== undefined
+  const isWall = cell.obstacle?.type === 'wall'
   const hasDifficultTerrain = cell.terrain === 'difficult'
   const hasHazardTerrain = cell.terrain === 'hazard'
   const hasWaterTerrain = cell.terrain === 'water'
@@ -156,9 +173,8 @@ function GridCell({
         hasWaterTerrain && 'bg-blue-900/50',
         // Elevation styling
         isElevated && 'bg-slate-700/60 border-slate-500 shadow-inner',
-        // Obstacle styling
-        hasObstacle && 'bg-slate-800',
-        hasObstacle && cell.obstacle?.type === 'wall' && 'bg-stone-800',
+        // Obstacle styling (walls are rendered as outlines, not filled)
+        hasObstacle && !isWall && 'bg-slate-800',
         hasObstacle && cell.obstacle?.type === 'pillar' && 'bg-stone-700',
         hasObstacle && cell.obstacle?.type === 'tree' && 'bg-emerald-950',
         hasObstacle && cell.obstacle?.type === 'boulder' && 'bg-stone-600',
@@ -181,8 +197,16 @@ function GridCell({
         gridRow: y + 1,
       }}
     >
-      {/* Obstacle image or icon */}
-      {hasObstacle && (
+      {/* Wall obstacle - rendered as faint outline */}
+      {isWall && wallBorderStyle && (
+        <div
+          className="absolute inset-0 bg-transparent pointer-events-none"
+          style={wallBorderStyle}
+        />
+      )}
+
+      {/* Non-wall obstacle image or icon */}
+      {hasObstacle && !isWall && (
         <>
           {getObstacleImage(cell.obstacle!.type) ? (
             <img
@@ -267,6 +291,7 @@ export function CombatGrid() {
     aoePreview,
     selectedSpell,
     damagePopups,
+    mapBackgroundImage,
     selectCombatant,
     moveCombatant,
     getReachablePositions,
@@ -282,6 +307,30 @@ export function CombatGrid() {
     projectileTargeting,
     assignProjectile,
   } = useCombatStore()
+
+  // Get the actual background image URL from the filename
+  const backgroundImageUrl = getMapBackgroundImage(mapBackgroundImage)
+
+  // Helper to check if a cell has a wall obstacle
+  const hasWallAt = (x: number, y: number): boolean => {
+    const cell = grid.cells[y]?.[x]
+    return cell?.obstacle?.type === 'wall'
+  }
+
+  // Get wall border styles based on adjacent walls (for merged outline effect)
+  const getWallBorderStyle = (x: number, y: number): React.CSSProperties => {
+    const borderWidth = 2
+    const borderColor = 'rgba(255, 255, 255, 0.4)' // Faint white
+
+    return {
+      borderTopWidth: hasWallAt(x, y - 1) ? 0 : borderWidth,
+      borderBottomWidth: hasWallAt(x, y + 1) ? 0 : borderWidth,
+      borderLeftWidth: hasWallAt(x - 1, y) ? 0 : borderWidth,
+      borderRightWidth: hasWallAt(x + 1, y) ? 0 : borderWidth,
+      borderColor,
+      borderStyle: 'solid',
+    }
+  }
 
   const [draggingCombatantId, setDraggingCombatantId] = useState<string | null>(null)
   const [dragOverCell, setDragOverCell] = useState<Position | null>(null)
@@ -676,13 +725,30 @@ export function CombatGrid() {
       <div
         className="relative"
         style={{
-          display: 'grid',
-          gridTemplateColumns: `repeat(${grid.width}, ${CELL_SIZE}px)`,
-          gridTemplateRows: `repeat(${grid.height}, ${CELL_SIZE}px)`,
           width: grid.width * CELL_SIZE,
           height: grid.height * CELL_SIZE,
         }}
       >
+        {/* Background image layer */}
+        {backgroundImageUrl && (
+          <div className="absolute inset-0 overflow-hidden pointer-events-none z-0">
+            <img
+              src={backgroundImageUrl}
+              alt="Map background"
+              className="w-full h-full object-cover opacity-50"
+            />
+          </div>
+        )}
+
+        {/* Grid layer */}
+        <div
+          className="relative z-10"
+          style={{
+            display: 'grid',
+            gridTemplateColumns: `repeat(${grid.width}, ${CELL_SIZE}px)`,
+            gridTemplateRows: `repeat(${grid.height}, ${CELL_SIZE}px)`,
+          }}
+        >
         {/* Grid cells */}
         {Array.from({ length: grid.height }).map((_, y) =>
           Array.from({ length: grid.width }).map((_, x) => {
@@ -696,6 +762,9 @@ export function CombatGrid() {
             const isBlockedByLOS = weaponRangeData.blockedCells.has(cellKey)
             const isInAoEPreview = aoeAffectedCells.has(cellKey)
             const distance = getDistanceToCell(x, y)
+
+            // Calculate wall border style for outline rendering
+            const isWallCell = cell.obstacle?.type === 'wall'
 
             return (
               <GridCell
@@ -713,6 +782,7 @@ export function CombatGrid() {
                 isBlockedByLOS={isBlockedByLOS}
                 isInAoEPreview={isInAoEPreview}
                 distance={distance}
+                wallBorderStyle={isWallCell ? getWallBorderStyle(x, y) : undefined}
                 onDragOver={(e) => handleCellDragOver(e, x, y)}
                 onDragLeave={handleCellDragLeave}
                 onDrop={(e) => handleCellDrop(e, x, y)}
@@ -723,6 +793,7 @@ export function CombatGrid() {
             )
           })
         )}
+        </div>
 
         {/* Movement path overlay */}
         {movementPath.map((pos, index) => (

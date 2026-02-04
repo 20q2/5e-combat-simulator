@@ -94,6 +94,7 @@ function createPresetCharacter(config: {
     class: charClass,
     level: config.level,
     abilityScores: finalScores,
+    originFeats: [], // Preset characters don't have origin feats defined
     maxHp,
     currentHp: maxHp,
     temporaryHp: 0,
@@ -185,6 +186,7 @@ export interface EncounterPreset {
   gridWidth?: number
   gridHeight?: number
   terrain?: TerrainDefinition[]
+  backgroundImage?: string // Filename (without extension) of the map background image
 }
 
 // Load encounters from JSON file - cast to correct type

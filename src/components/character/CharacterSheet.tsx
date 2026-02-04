@@ -18,7 +18,9 @@ import {
   getSpellById,
   getClassFeaturesByLevel,
   getSubclassFeaturesByLevel,
+  getBackgroundById,
 } from '@/data'
+import type { OriginFeatId } from '@/data/originFeats'
 import {
   useCharacterStore,
   calculateFinalAbilityScores,
@@ -133,6 +135,7 @@ export function CharacterSheet() {
   const rangedWeapon = draft.rangedWeaponId ? getWeaponById(draft.rangedWeaponId) ?? null : null
   const armor = draft.armorId ? getArmorById(draft.armorId) ?? null : null
   const subclass = characterClass?.subclasses.find((s) => s.id === draft.subclassId)
+  const background = draft.backgroundId ? getBackgroundById(draft.backgroundId) ?? null : null
 
   // Calculate final stats
   const finalAbilityScores = calculateFinalAbilityScores(
@@ -216,10 +219,17 @@ export function CharacterSheet() {
   const rangedAttackBonus = useMemo(() => calculateAttackBonus(rangedWeapon), [rangedWeapon, finalAbilityScores, proficiencyBonus])
 
   // Check if character is valid
-  const isValid = draft.name.trim() && race && characterClass
+  const isValid = draft.name.trim() && race && characterClass && background && draft.backgroundOriginFeat
 
   const handleSave = () => {
-    if (!isValid || !race || !characterClass) return
+    if (!isValid || !race || !characterClass || !background || !draft.backgroundOriginFeat) return
+
+    // Collect all origin feats (human racial + background)
+    const originFeats: OriginFeatId[] = []
+    if (draft.raceId === 'human' && draft.humanOriginFeat) {
+      originFeats.push(draft.humanOriginFeat)
+    }
+    originFeats.push(draft.backgroundOriginFeat)
 
     const character: Character = {
       id: `char-${Date.now()}`,
@@ -227,6 +237,8 @@ export function CharacterSheet() {
       race,
       class: characterClass,
       subclass,
+      background,
+      originFeats,
       level: draft.level,
       abilityScores: finalAbilityScores,
       maxHp: hp,

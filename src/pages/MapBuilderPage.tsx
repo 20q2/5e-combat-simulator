@@ -222,6 +222,27 @@ export function MapBuilderPage() {
     setGridHeight(Math.max(5, Math.min(20, newHeight)))
   }
 
+  // Check if a cell has a wall obstacle
+  const hasWall = (x: number, y: number): boolean => {
+    const key = getCellKey(x, y)
+    return gridData[key]?.obstacle?.type === 'wall'
+  }
+
+  // Get wall border styles based on adjacent walls
+  const getWallBorderStyle = (x: number, y: number): React.CSSProperties => {
+    const borderWidth = 3
+    const borderColor = '#ffffff' // white for visibility
+
+    return {
+      borderTopWidth: hasWall(x, y - 1) ? 0 : borderWidth,
+      borderBottomWidth: hasWall(x, y + 1) ? 0 : borderWidth,
+      borderLeftWidth: hasWall(x - 1, y) ? 0 : borderWidth,
+      borderRightWidth: hasWall(x + 1, y) ? 0 : borderWidth,
+      borderColor,
+      borderStyle: 'solid',
+    }
+  }
+
   const getCellContent = (x: number, y: number) => {
     const key = getCellKey(x, y)
     const data = gridData[key]
@@ -229,6 +250,17 @@ export function MapBuilderPage() {
     if (!data) return null
 
     if (data.obstacle) {
+      // Special rendering for walls - transparent fill with merged borders
+      if (data.obstacle.type === 'wall') {
+        return (
+          <div
+            className="absolute inset-0 bg-transparent"
+            style={getWallBorderStyle(x, y)}
+          />
+        )
+      }
+
+      // Other obstacles use images
       const image = getObstacleImage(data.obstacle.type)
       if (image) {
         return (

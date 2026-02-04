@@ -9,6 +9,7 @@ import type {
   DragonAncestry,
 } from '@/types'
 import { getAbilityModifier } from '@/types'
+import type { OriginFeatId } from '@/data/originFeats'
 
 export type AbilityScoreMethod = 'point-buy' | 'standard-array' | 'manual'
 export type AbilityBonusMode = 'standard' | 'three-plus-one'
@@ -17,8 +18,10 @@ export type ElfLineage = 'drow' | 'high' | 'wood'
 export type GnomeLineage = 'forest' | 'rock'
 export type TieflingLegacy = 'abyssal' | 'chthonic' | 'infernal'
 export type GoliathGiantAncestry = 'cloud' | 'fire' | 'frost' | 'hill' | 'stone' | 'storm'
-export type OriginFeat = 'alert' | 'crafter' | 'healer' | 'lucky' | 'magic-initiate' | 'musician' | 'savage-attacker' | 'skilled' | 'tavern-brawler' | 'tough'
 export type KeenSensesSkill = 'insight' | 'perception' | 'survival'
+
+// Re-export for backward compatibility
+export type OriginFeat = OriginFeatId
 
 export interface CharacterDraft {
   name: string
@@ -37,6 +40,9 @@ export interface CharacterDraft {
   tieflingLegacy: TieflingLegacy | null
   goliathGiantAncestry: GoliathGiantAncestry | null
   humanOriginFeat: OriginFeat | null
+  // Background
+  backgroundId: string | null
+  backgroundOriginFeat: OriginFeat | null
   classId: string | null
   subclassId: string | null
   level: number
@@ -71,6 +77,8 @@ interface CharacterState {
   setTieflingLegacy: (legacy: TieflingLegacy | null) => void
   setGoliathGiantAncestry: (ancestry: GoliathGiantAncestry | null) => void
   setHumanOriginFeat: (feat: OriginFeat | null) => void
+  setBackground: (backgroundId: string | null) => void
+  setBackgroundOriginFeat: (feat: OriginFeat | null) => void
   setClass: (classId: string | null) => void
   setSubclass: (subclassId: string | null) => void
   setLevel: (level: number) => void
@@ -119,6 +127,8 @@ const initialDraft: CharacterDraft = {
   tieflingLegacy: null,
   goliathGiantAncestry: null,
   humanOriginFeat: null,
+  backgroundId: null,
+  backgroundOriginFeat: null,
   classId: null,
   subclassId: null,
   level: 1,
@@ -235,6 +245,21 @@ export const useCharacterStore = create<CharacterState>()(
       setHumanOriginFeat: (feat) =>
         set((state) => ({
           draft: { ...state.draft, humanOriginFeat: feat },
+        })),
+
+      setBackground: (backgroundId) =>
+        set((state) => ({
+          draft: {
+            ...state.draft,
+            backgroundId,
+            // Reset origin feat when background changes
+            backgroundOriginFeat: null,
+          },
+        })),
+
+      setBackgroundOriginFeat: (feat) =>
+        set((state) => ({
+          draft: { ...state.draft, backgroundOriginFeat: feat },
         })),
 
       setClass: (classId) =>
@@ -369,7 +394,7 @@ export const useCharacterStore = create<CharacterState>()(
 
       nextStep: () =>
         set((state) => ({
-          currentStep: Math.min(state.currentStep + 1, 6),
+          currentStep: Math.min(state.currentStep + 1, 7),
         })),
 
       prevStep: () =>

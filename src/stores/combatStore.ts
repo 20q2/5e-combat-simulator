@@ -53,7 +53,8 @@ type AddCombatantInput = {
 interface CombatStore extends CombatState {
   // Setup actions
   initializeGrid: (width: number, height: number) => void
-  initializeGridWithTerrain: (width: number, height: number, terrain: TerrainDefinition[]) => void
+  initializeGridWithTerrain: (width: number, height: number, terrain: TerrainDefinition[], backgroundImage?: string) => void
+  setMapBackgroundImage: (image: string | undefined) => void
   addCombatant: (input: AddCombatantInput) => void
   removeCombatant: (id: string) => void
   placeCombatant: (id: string, position: Position) => void
@@ -217,11 +218,15 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
   ...initialState,
 
   initializeGrid: (width, height) => {
-    set({ grid: createEmptyGrid(width, height) })
+    set({ grid: createEmptyGrid(width, height), mapBackgroundImage: undefined })
   },
 
-  initializeGridWithTerrain: (width, height, terrain) => {
-    set({ grid: createGridWithTerrain(width, height, terrain) })
+  initializeGridWithTerrain: (width, height, terrain, backgroundImage) => {
+    set({ grid: createGridWithTerrain(width, height, terrain), mapBackgroundImage: backgroundImage })
+  },
+
+  setMapBackgroundImage: (image) => {
+    set({ mapBackgroundImage: image })
   },
 
   addCombatant: (input) => {

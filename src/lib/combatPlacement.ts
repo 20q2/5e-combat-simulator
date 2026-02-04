@@ -3,7 +3,7 @@ import type { Character, Monster, Position, TerrainDefinition } from '@/types'
 interface CombatStoreActions {
   resetCombat: () => void
   initializeGrid: (width: number, height: number) => void
-  initializeGridWithTerrain?: (width: number, height: number, terrain: TerrainDefinition[]) => void
+  initializeGridWithTerrain?: (width: number, height: number, terrain: TerrainDefinition[], backgroundImage?: string) => void
   addCombatant: (input: {
     name: string
     type: 'character' | 'monster'
@@ -23,6 +23,7 @@ interface PlacementOptions {
   gridWidth?: number
   gridHeight?: number
   terrain?: TerrainDefinition[]
+  backgroundImage?: string
 }
 
 /**
@@ -71,14 +72,14 @@ export function setupCombatWithPlacement(
   monsters: MonsterSelection[],
   options: PlacementOptions = {}
 ): void {
-  const { autoStart = true, gridWidth = 15, gridHeight = 10, terrain } = options
+  const { autoStart = true, gridWidth = 15, gridHeight = 10, terrain, backgroundImage } = options
 
   // Reset combat state and initialize grid
   combatStore.resetCombat()
 
   // Use terrain-aware initialization if terrain is provided
   if (terrain && terrain.length > 0 && combatStore.initializeGridWithTerrain) {
-    combatStore.initializeGridWithTerrain(gridWidth, gridHeight, terrain)
+    combatStore.initializeGridWithTerrain(gridWidth, gridHeight, terrain, backgroundImage)
   } else {
     combatStore.initializeGrid(gridWidth, gridHeight)
   }
