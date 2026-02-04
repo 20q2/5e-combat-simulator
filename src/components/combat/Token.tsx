@@ -134,7 +134,6 @@ export function Token({
           tokenImage ? borderColor : bgColor,
           tokenImage ? 'border-2' : 'border-white/20',
           isCurrentTurn && 'ring-2 ring-emerald-400 ring-offset-1 ring-offset-slate-900',
-          isSelected && 'ring-4 ring-amber-400 ring-offset-2 ring-offset-slate-900',
           isHoveredTarget && 'ring-4 ring-rose-500 ring-offset-2 ring-offset-slate-900 scale-110 animate-pulse',
           // Concentration glow effect
           isConcentrating && !isSelected && !isHoveredTarget && 'ring-2 ring-purple-400/70 ring-offset-1 ring-offset-slate-900',

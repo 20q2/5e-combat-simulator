@@ -170,6 +170,24 @@ function generateId(): string {
 }
 
 // Get reaction spells available for a combatant based on trigger type
+// Helper to check if combat has ended (all monsters dead = victory, all characters dead = defeat)
+function checkCombatEnd(combatants: Combatant[]): 'victory' | 'defeat' | null {
+  const characters = combatants.filter(c => c.type === 'character')
+  const monsters = combatants.filter(c => c.type === 'monster')
+
+  // Check if all monsters are dead (HP <= 0)
+  const allMonstersDead = monsters.length > 0 && monsters.every(m => m.currentHp <= 0)
+
+  // Check if all characters are dead (3 death save failures)
+  const allCharactersDead = characters.length > 0 && characters.every(c =>
+    c.deathSaves.failures >= 3
+  )
+
+  if (allMonstersDead) return 'victory'
+  if (allCharactersDead) return 'defeat'
+  return null
+}
+
 function getAvailableReactionSpells(
   combatant: Combatant,
   trigger: 'on_hit' | 'on_magic_missile' | 'enemy_casts_spell' | 'take_damage'
@@ -399,6 +417,12 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
   },
 
   nextTurn: () => {
+    // Don't advance turns if combat has ended
+    const currentPhase = get().phase
+    if (currentPhase === 'victory' || currentPhase === 'defeat') {
+      return
+    }
+
     const { turnOrder, currentTurnIndex, combatants } = get()
 
     // Reset current combatant's turn state
@@ -988,6 +1012,17 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
         ),
       }
     })
+
+    // Check for victory/defeat after damage is dealt
+    const combatResult = checkCombatEnd(get().combatants)
+    if (combatResult) {
+      set({ phase: combatResult })
+      get().addLogEntry({
+        type: combatResult === 'victory' ? 'initiative' : 'death',
+        actorName: 'System',
+        message: combatResult === 'victory' ? 'Victory! All enemies defeated!' : 'Defeat... All heroes have fallen.',
+      })
+    }
   },
 
   healDamage: (targetId, amount, source) => {
@@ -1903,6 +1938,19 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
           : c
       ),
     }))
+
+    // Check for defeat after death save (only defeat possible here since this is character death)
+    if (newFailures >= 3) {
+      const combatResult = checkCombatEnd(get().combatants)
+      if (combatResult === 'defeat') {
+        set({ phase: 'defeat' })
+        get().addLogEntry({
+          type: 'death',
+          actorName: 'System',
+          message: 'Defeat... All heroes have fallen.',
+        })
+      }
+    }
   },
 
   stabilize: (combatantId) => {

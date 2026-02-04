@@ -40,7 +40,11 @@ export function Layout() {
           </nav>
         </div>
       </header>
-      <main className="container mx-auto px-4 py-6">
+      <main className={cn(
+        location.pathname === '/combat'
+          ? 'py-2' // Combat page uses full width
+          : 'container mx-auto px-4 py-6'
+      )}>
         <Outlet />
       </main>
     </div>

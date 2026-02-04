@@ -1,4 +1,5 @@
 import { useState, useEffect, type ReactNode } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { cn, formatCR } from '@/lib/utils'
 import { useCombatStore, getCurrentCombatant } from '@/stores/combatStore'
 import { getCharacterTokenImage, getMonsterTokenImage } from '@/lib/tokenImages'
@@ -22,6 +23,8 @@ import {
   Heart,
   Zap,
   Eye,
+  Trophy,
+  Skull,
 } from 'lucide-react'
 import {
   getSecondWindFeature,
@@ -681,7 +684,10 @@ export function ActionBar() {
     projectileTargeting,
     startProjectileTargeting,
     cancelProjectileTargeting,
+    resetCombat,
   } = state
+
+  const navigate = useNavigate()
 
   const [isSelectingTarget, setIsSelectingTarget] = useState(false)
   const [isSelectingSpell, setIsSelectingSpell] = useState(false)
@@ -747,6 +753,76 @@ export function ActionBar() {
           >
             Start Combat
           </button>
+        </div>
+      </div>
+    )
+  }
+
+  // Victory phase UI
+  if (phase === 'victory') {
+    return (
+      <div className="bg-gradient-to-t from-emerald-950 via-emerald-900 to-slate-800 border-t-2 border-emerald-500 p-6">
+        <div className="max-w-4xl mx-auto text-center">
+          <Trophy className="w-16 h-16 mx-auto text-emerald-400 mb-4" />
+          <h2 className="text-3xl font-bold text-emerald-400 mb-2">Victory!</h2>
+          <p className="text-slate-300 mb-6">All enemies have been defeated!</p>
+          <div className="flex gap-4 justify-center">
+            <button
+              onClick={() => navigate('/')}
+              className={cn(
+                'px-6 py-3 rounded-lg font-semibold text-sm transition-all',
+                'bg-gradient-to-b from-emerald-600 to-emerald-700 border-2 border-emerald-500',
+                'hover:from-emerald-500 hover:to-emerald-600'
+              )}
+            >
+              Return Home
+            </button>
+            <button
+              onClick={resetCombat}
+              className={cn(
+                'px-6 py-3 rounded-lg font-semibold text-sm transition-all',
+                'bg-gradient-to-b from-slate-600 to-slate-700 border-2 border-slate-500',
+                'hover:from-slate-500 hover:to-slate-600'
+              )}
+            >
+              New Battle
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // Defeat phase UI
+  if (phase === 'defeat') {
+    return (
+      <div className="bg-gradient-to-t from-rose-950 via-rose-900 to-slate-800 border-t-2 border-rose-500 p-6">
+        <div className="max-w-4xl mx-auto text-center">
+          <Skull className="w-16 h-16 mx-auto text-rose-400 mb-4" />
+          <h2 className="text-3xl font-bold text-rose-400 mb-2">Defeat</h2>
+          <p className="text-slate-300 mb-6">Your party has fallen...</p>
+          <div className="flex gap-4 justify-center">
+            <button
+              onClick={() => navigate('/')}
+              className={cn(
+                'px-6 py-3 rounded-lg font-semibold text-sm transition-all',
+                'bg-gradient-to-b from-rose-600 to-rose-700 border-2 border-rose-500',
+                'hover:from-rose-500 hover:to-rose-600'
+              )}
+            >
+              Return Home
+            </button>
+            <button
+              onClick={resetCombat}
+              className={cn(
+                'px-6 py-3 rounded-lg font-semibold text-sm transition-all',
+                'bg-gradient-to-b from-slate-600 to-slate-700 border-2 border-slate-500',
+                'hover:from-slate-500 hover:to-slate-600'
+              )}
+            >
+              Try Again
+            </button>
+          </div>
         </div>
       </div>
     )

@@ -19,7 +19,6 @@ import {
   RotateCcw,
   MapPin,
   Plus,
-  Swords,
 } from 'lucide-react'
 
 // Quick setup panel for testing
@@ -242,19 +241,8 @@ export function CombatPage() {
 
   return (
     <div className="flex flex-col min-h-[calc(100vh-4rem)]">
-      {/* Header */}
-      <div className="px-4 py-2">
-        <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
-          <Swords className="w-6 h-6" />
-          Combat
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          Tactical grid-based combat simulation
-        </p>
-      </div>
-
       {/* Main content area */}
-      <div className="flex-1 grid grid-cols-1 lg:grid-cols-[220px_1fr_260px] gap-4 px-4 pb-4">
+      <div className="flex-1 grid grid-cols-1 lg:grid-cols-[280px_1fr_300px] gap-3 px-2 pb-4">
         {/* Left Column - Initiative & Setup */}
         <div className="space-y-4">
           {/* Turn Order / Initiative */}
