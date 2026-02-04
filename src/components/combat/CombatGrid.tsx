@@ -158,7 +158,7 @@ function GridCell({
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
       className={cn(
-        'border border-slate-700 transition-colors cursor-pointer bg-slate-900/50 relative',
+        'border border-slate-700/50 transition-colors cursor-pointer relative',
         // Weapon range highlighting (before other highlights so they can override)
         isInWeaponRange === 'melee' && 'bg-rose-900/30 border-rose-700/50',
         isInWeaponRange === 'ranged' && 'bg-orange-900/30 border-orange-700/50',
@@ -173,7 +173,8 @@ function GridCell({
         hasWaterTerrain && 'bg-blue-900/50',
         // Elevation styling
         isElevated && 'bg-slate-700/60 border-slate-500 shadow-inner',
-        // Obstacle styling (walls are rendered as outlines, not filled)
+        // Obstacle styling (walls get subtle tint, others are filled)
+        isWall && 'bg-slate-900/40',
         hasObstacle && !isWall && 'bg-slate-800',
         hasObstacle && cell.obstacle?.type === 'pillar' && 'bg-stone-700',
         hasObstacle && cell.obstacle?.type === 'tree' && 'bg-emerald-950',
@@ -260,11 +261,28 @@ function GridCell({
         </span>
       )}
 
-      {/* Distance indicator on hover */}
+      {/* Distance and terrain indicator on hover */}
       {distance !== undefined && distance > 0 && !hasObstacle && (
-        <span className="absolute inset-0 flex items-center justify-center text-xs font-bold text-white/80 pointer-events-none">
-          {distance}ft
-        </span>
+        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+          <span className="text-xs font-bold text-white/90 drop-shadow-md">
+            {distance}ft
+          </span>
+          {hasDifficultTerrain && (
+            <span className="text-[9px] font-medium text-amber-300/90 drop-shadow-md">
+              Difficult
+            </span>
+          )}
+          {hasHazardTerrain && (
+            <span className="text-[9px] font-medium text-red-300/90 drop-shadow-md">
+              1d4 fire
+            </span>
+          )}
+          {hasWaterTerrain && (
+            <span className="text-[9px] font-medium text-blue-300/90 drop-shadow-md">
+              Water
+            </span>
+          )}
+        </div>
       )}
 
       {/* LOS blocked indicator */}
@@ -735,7 +753,7 @@ export function CombatGrid() {
             <img
               src={backgroundImageUrl}
               alt="Map background"
-              className="w-full h-full object-cover opacity-50"
+              className="w-full h-full object-cover opacity-80"
             />
           </div>
         )}

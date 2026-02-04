@@ -1251,20 +1251,28 @@ export function ActionBar() {
               />
 
               {/* Second Wind (Fighter bonus action) */}
-              {hasSecondWind && (
-                <>
-                  <div className="w-px h-10 bg-slate-700" />
-                  <ActionButton
-                    icon={<Heart className="w-5 h-5" />}
-                    label="2nd Wind"
-                    onClick={() => useSecondWind(currentCombatant.id)}
-                    disabled={!canUseSecondWindNow}
-                    tooltip={`Heal 1d10+${character?.level ?? 1} HP (${secondWindUses} use remaining)`}
-                    badge={secondWindUses > 0 ? secondWindUses : undefined}
-                    actionType="bonus"
-                  />
-                </>
-              )}
+              {hasSecondWind && (() => {
+                const isMissingHp = currentCombatant.currentHp < currentCombatant.maxHp
+                const hpMissing = currentCombatant.maxHp - currentCombatant.currentHp
+                return (
+                  <>
+                    <div className="w-px h-10 bg-slate-700" />
+                    <ActionButton
+                      icon={<Heart className="w-5 h-5" />}
+                      label="2nd Wind"
+                      onClick={() => useSecondWind(currentCombatant.id)}
+                      disabled={!canUseSecondWindNow}
+                      variant={isMissingHp ? 'attack' : 'default'}
+                      tooltip={isMissingHp
+                        ? `Heal 1d10+${character?.level ?? 1} HP (missing ${hpMissing} HP)`
+                        : `Heal 1d10+${character?.level ?? 1} HP (at full health)`
+                      }
+                      badge={secondWindUses > 0 ? secondWindUses : undefined}
+                      actionType="bonus"
+                    />
+                  </>
+                )
+              })()}
 
               {/* Action Surge (Fighter, level 2+) */}
               {hasActionSurge && (
@@ -1323,18 +1331,33 @@ export function ActionBar() {
 
             {/* End Turn Section */}
             <div className="pl-4 border-l border-slate-700">
-              <button
-                onClick={endTurn}
-                className={cn(
-                  'flex flex-col items-center justify-center w-20 h-16 rounded-lg transition-all',
-                  'bg-gradient-to-b from-amber-700 to-amber-800 border-2 border-amber-600',
-                  'hover:from-amber-600 hover:to-amber-700 hover:scale-105',
-                  'shadow-lg shadow-amber-900/50'
-                )}
-              >
-                <SkipForward className="w-6 h-6 text-amber-100" />
-                <span className="text-xs font-semibold text-amber-100">End Turn</span>
-              </button>
+              {(() => {
+                // Check if there are still potential actions available
+                const hasUnusedAction = !currentCombatant.hasActed && (canAttack || hasSpells || remainingMovement > 0)
+                const hasUnusedBonusAction = !currentCombatant.hasBonusActed && (
+                  canUseSecondWindNow ||
+                  canCunningDash ||
+                  canCunningDisengage ||
+                  canCunningHide
+                )
+                const hasActionsRemaining = hasUnusedAction || hasUnusedBonusAction
+
+                return (
+                  <button
+                    onClick={endTurn}
+                    className={cn(
+                      'flex flex-col items-center justify-center w-20 h-16 rounded-lg transition-all',
+                      hasActionsRemaining
+                        ? 'bg-gradient-to-b from-slate-600 to-slate-700 border-2 border-slate-500 hover:from-slate-500 hover:to-slate-600 shadow-lg shadow-slate-900/50'
+                        : 'bg-gradient-to-b from-amber-700 to-amber-800 border-2 border-amber-600 hover:from-amber-600 hover:to-amber-700 shadow-lg shadow-amber-900/50',
+                      'hover:scale-105'
+                    )}
+                  >
+                    <SkipForward className={cn('w-6 h-6', hasActionsRemaining ? 'text-slate-300' : 'text-amber-100')} />
+                    <span className={cn('text-xs font-semibold', hasActionsRemaining ? 'text-slate-300' : 'text-amber-100')}>End Turn</span>
+                  </button>
+                )
+              })()}
 
               {/* AI Notice */}
               {!isCharacter && (

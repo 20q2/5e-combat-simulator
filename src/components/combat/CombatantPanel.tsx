@@ -401,7 +401,7 @@ export function CombatantPanel() {
                   )}
                   {action.damage && (
                     <span className="text-rose-400 ml-1">
-                      ({action.damage})
+                      ({action.damage}{action.damageType && ` ${action.damageType}`})
                     </span>
                   )}
                 </div>

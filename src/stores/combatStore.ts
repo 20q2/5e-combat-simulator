@@ -16,7 +16,7 @@ import type {
   DamageType,
   CombatPopupType,
 } from '@/types'
-import { rollInitiative } from '@/engine/dice'
+import { rollInitiative, rollDie } from '@/engine/dice'
 import { getAbilityModifier } from '@/types'
 import { resolveAttack, canAttackTarget, getSpellSaveDC, getSpellAttackBonus, rollCombatantSavingThrow, rollDeathSave, selectWeaponForTarget, type AttackResult } from '@/engine/combat'
 import { rollAttack, rollDamage } from '@/engine/dice'
@@ -776,6 +776,21 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
       actorName: combatant.name,
       message: `moves ${pathCost} ft`,
     })
+
+    // Check for hazardous terrain damage
+    const destinationCell = grid.cells[to.y][to.x]
+    if (destinationCell.terrain === 'hazard') {
+      const hazardDamage = rollDie(4)
+      get().dealDamage(id, hazardDamage, 'Hazardous Terrain')
+      get().addDamagePopup(id, hazardDamage, 'fire', false)
+      get().addLogEntry({
+        type: 'damage',
+        actorName: 'Hazardous Terrain',
+        targetId: id,
+        targetName: combatant.name,
+        message: `${combatant.name} takes ${hazardDamage} fire damage from hazardous terrain`,
+      })
+    }
   },
 
   canMoveTo: (combatantId, to) => {
