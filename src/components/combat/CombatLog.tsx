@@ -18,7 +18,7 @@ import {
 
 function RoundDivider({ round }: { round: number }) {
   return (
-    <div className="flex items-center gap-2 py-2 text-xs text-slate-400">
+    <div className="flex items-center gap-2 py-2 text-xs text-slate-400 animate-slide-in-left">
       <div className="flex-1 h-px bg-slate-700" />
       <span className="font-medium">
         {round === 0 ? 'Initiative' : `Round ${round}`}
@@ -58,7 +58,7 @@ function LogEntry({ entry }: { entry: CombatLogEntry }) {
   const showActorName = entry.actorName && entry.actorName !== 'System'
 
   return (
-    <div className={cn('flex items-start gap-2 text-sm py-1 pl-1', color)}>
+    <div className={cn('flex items-start gap-2 text-sm py-1 pl-1 animate-slide-in-left', color)}>
       <Icon className="w-3.5 h-3.5 mt-0.5 shrink-0" />
       <div className="flex-1 min-w-0">
         <div>

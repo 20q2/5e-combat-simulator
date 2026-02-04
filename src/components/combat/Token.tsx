@@ -12,6 +12,7 @@ interface TokenProps {
   isDraggable: boolean
   isHoveredTarget?: boolean
   suppressTooltip?: boolean
+  visualScale?: number // 0.6-1.0 for tiny/small creatures visual scaling
   onClick: () => void
   onDragStart: (e: React.DragEvent) => void
   onDragEnd: (e: React.DragEvent) => void
@@ -25,6 +26,7 @@ export function Token({
   isDraggable,
   isHoveredTarget,
   suppressTooltip,
+  visualScale,
   onClick,
   onDragStart,
   onDragEnd,
@@ -62,10 +64,10 @@ export function Token({
     ? 'bg-violet-600 shadow-lg shadow-violet-500/30'
     : 'bg-rose-600 shadow-lg shadow-rose-500/30'
 
-  // Border color for image tokens
-  const borderColor = combatant.type === 'character'
-    ? 'border-violet-500'
-    : 'border-rose-500'
+  // Gradient border for team indicator
+  const teamGradient = combatant.type === 'character'
+    ? 'linear-gradient(135deg, #22c55e, #10b981, #059669)' // Green gradient for allies
+    : 'linear-gradient(135deg, #ef4444, #f97316, #eab308)' // Red-orange-yellow for enemies
 
   // HP bar color
   const hpBarColor = hpPercent > 50
@@ -124,15 +126,14 @@ export function Token({
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
     >
+      {/* Gradient border container */}
       <div
         draggable={isDraggable}
         onDragStart={handleDragStart}
         onDragEnd={onDragEnd}
         onClick={onClick}
         className={cn(
-          'w-full h-full rounded-full flex items-center justify-center transition-all cursor-pointer border-2 relative overflow-hidden',
-          tokenImage ? borderColor : bgColor,
-          tokenImage ? 'border-2' : 'border-white/20',
+          'w-full h-full rounded-full p-[2px] transition-all cursor-pointer',
           isCurrentTurn && 'ring-2 ring-emerald-400 ring-offset-1 ring-offset-slate-900',
           isHoveredTarget && 'ring-4 ring-rose-500 ring-offset-2 ring-offset-slate-900 scale-110 animate-pulse',
           // Concentration glow effect
@@ -142,7 +143,19 @@ export function Token({
           isDead && !isPlayingDeathAnimation && 'opacity-50 grayscale scale-[0.85]',
           isDraggable && 'cursor-grab active:cursor-grabbing hover:scale-110'
         )}
+        style={{
+          background: teamGradient,
+          // Apply visual scaling for tiny/small creatures
+          ...(visualScale && visualScale < 1 ? { transform: `scale(${visualScale})` } : {}),
+        }}
       >
+        {/* Inner token content */}
+        <div
+          className={cn(
+            'w-full h-full rounded-full flex items-center justify-center relative overflow-hidden',
+            tokenImage ? 'bg-slate-900' : bgColor
+          )}
+        >
         {/* Token image or label */}
         {tokenImage ? (
           <img
@@ -176,6 +189,7 @@ export function Token({
             <span className="text-[8px] text-white">✦</span>
           </div>
         )}
+        </div>
       </div>
 
       {/* Condition badges */}

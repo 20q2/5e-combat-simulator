@@ -2,6 +2,7 @@ import type { Grid, GridCell, Position } from '@/types'
 
 // ============================================
 // A* Pathfinding Implementation
+// (Supports multi-cell creatures and squeezing)
 // ============================================
 
 interface PathNode {
@@ -110,17 +111,20 @@ function heuristic(from: Position, to: Position): number {
 /**
  * Check if a cell blocks movement
  */
-export function blocksMovement(cell: GridCell): boolean {
+export function blocksMovement(cell: GridCell | undefined): boolean {
+  if (!cell) return true
   return cell.obstacle?.blocksMovement === true
 }
 
 /**
- * Check if a cell is passable for movement
+ * Check if a single cell is passable for movement
  */
 export function isPassable(
-  cell: GridCell,
+  cell: GridCell | undefined,
   occupiedPositions: Set<string>
 ): boolean {
+  if (!cell) return false
+
   // Check if blocked by obstacle
   if (blocksMovement(cell)) return false
 
@@ -129,6 +133,77 @@ export function isPassable(
   if (occupiedPositions.has(key)) return false
 
   return true
+}
+
+/**
+ * Check if an entire footprint is passable at a given anchor position
+ * @param footprintSize - number of cells per side (1 for medium, 2 for large, etc.)
+ */
+export function isFootprintPassable(
+  grid: Grid,
+  anchor: Position,
+  footprintSize: number,
+  occupiedPositions: Set<string>
+): boolean {
+  for (let dy = 0; dy < footprintSize; dy++) {
+    for (let dx = 0; dx < footprintSize; dx++) {
+      const x = anchor.x + dx
+      const y = anchor.y + dy
+
+      // Check bounds
+      if (x < 0 || x >= grid.width || y < 0 || y >= grid.height) {
+        return false
+      }
+
+      const cell = grid.cells[y]?.[x]
+      if (!isPassable(cell, occupiedPositions)) {
+        return false
+      }
+    }
+  }
+  return true
+}
+
+/**
+ * Check if a creature can squeeze at a given position
+ * Squeezing allows creatures to fit through spaces one size smaller
+ * @returns true if the creature can fit by squeezing
+ */
+export function canSqueezeAt(
+  grid: Grid,
+  anchor: Position,
+  footprintSize: number,
+  occupiedPositions: Set<string>
+): boolean {
+  // Only creatures > 1 square can squeeze
+  if (footprintSize <= 1) return false
+
+  // Squeeze footprint is 1 less (Large 2x2 -> 1x1, Huge 3x3 -> 2x2)
+  const squeezedSize = footprintSize - 1
+  return isFootprintPassable(grid, anchor, squeezedSize, occupiedPositions)
+}
+
+/**
+ * Check if a footprint can fit at a position (either normally or by squeezing)
+ * @returns { passable: boolean, squeezing: boolean }
+ */
+export function checkFootprintPassability(
+  grid: Grid,
+  anchor: Position,
+  footprintSize: number,
+  occupiedPositions: Set<string>
+): { passable: boolean; squeezing: boolean } {
+  // Check normal footprint first
+  if (isFootprintPassable(grid, anchor, footprintSize, occupiedPositions)) {
+    return { passable: true, squeezing: false }
+  }
+
+  // Check if can squeeze
+  if (canSqueezeAt(grid, anchor, footprintSize, occupiedPositions)) {
+    return { passable: true, squeezing: true }
+  }
+
+  return { passable: false, squeezing: false }
 }
 
 /**
@@ -217,23 +292,40 @@ export function getNeighbors(grid: Grid, pos: Position): Position[] {
 /**
  * A* pathfinding algorithm
  * Returns array of positions from start to end (inclusive), or null if no path exists
+ * @param footprintSize - number of cells per side (1 for medium, 2 for large, etc.)
  */
 export function findPath(
   grid: Grid,
   start: Position,
   end: Position,
   occupiedPositions: Set<string>,
-  maxCost?: number
+  maxCost?: number,
+  footprintSize: number = 1
 ): Position[] | null {
-  // Quick check: if end is blocked, no path possible
-  const endCell = grid.cells[end.y]?.[end.x]
-  if (!endCell || blocksMovement(endCell)) {
-    return null
+  // Quick check: if end footprint can't fit, no path possible
+  const endPassability = checkFootprintPassability(grid, end, footprintSize, occupiedPositions)
+  if (!endPassability.passable) {
+    // Also allow ending at occupied destination for attack range calculations
+    // Remove destination cells from occupied set and try again
+    const effectiveOccupied = new Set(occupiedPositions)
+    for (let dy = 0; dy < footprintSize; dy++) {
+      for (let dx = 0; dx < footprintSize; dx++) {
+        effectiveOccupied.delete(`${end.x + dx},${end.y + dy}`)
+      }
+    }
+    const retryPassability = checkFootprintPassability(grid, end, footprintSize, effectiveOccupied)
+    if (!retryPassability.passable) {
+      return null
+    }
   }
 
   // Allow moving to occupied destination if it's the target (for attack range calculations)
   const effectiveOccupied = new Set(occupiedPositions)
-  effectiveOccupied.delete(`${end.x},${end.y}`)
+  for (let dy = 0; dy < footprintSize; dy++) {
+    for (let dx = 0; dx < footprintSize; dx++) {
+      effectiveOccupied.delete(`${end.x + dx},${end.y + dy}`)
+    }
+  }
 
   const openSet = new PriorityQueue<PathNode>((a, b) => a.fCost - b.fCost)
   const closedSet = new Set<string>()
@@ -279,14 +371,16 @@ export function findPath(
       // Skip if already processed
       if (closedSet.has(neighborKey)) continue
 
-      // Skip if impassable (unless it's the destination)
-      const neighborCell = grid.cells[neighbor.y][neighbor.x]
-      if (neighborKey !== `${end.x},${end.y}` && !isPassable(neighborCell, effectiveOccupied)) {
+      // Check if footprint can fit at neighbor (normal or squeezing)
+      const isDestination = neighbor.x === end.x && neighbor.y === end.y
+      const passability = checkFootprintPassability(grid, neighbor, footprintSize, effectiveOccupied)
+
+      if (!passability.passable && !isDestination) {
         continue
       }
 
       // Calculate movement cost
-      const { cost: moveCost, newDiagonalCount } = getMovementCost(
+      const { cost: baseCost, newDiagonalCount } = getMovementCost(
         grid,
         { x: current.x, y: current.y },
         neighbor,
@@ -294,7 +388,10 @@ export function findPath(
       )
 
       // Skip if impassable
-      if (moveCost === Infinity) continue
+      if (baseCost === Infinity) continue
+
+      // Double cost if squeezing
+      const moveCost = passability.squeezing ? baseCost * 2 : baseCost
 
       const tentativeGCost = current.gCost + moveCost
 
@@ -362,12 +459,14 @@ export function calculatePathCost(grid: Grid, path: Position[]): number {
 /**
  * Get all reachable positions within a movement budget using BFS
  * Returns a map of position -> cost to reach
+ * @param footprintSize - number of cells per side (1 for medium, 2 for large, etc.)
  */
 export function getReachablePositions(
   grid: Grid,
   start: Position,
   movementBudget: number,
-  occupiedPositions: Set<string>
+  occupiedPositions: Set<string>,
+  footprintSize: number = 1
 ): Map<string, number> {
   const reachable = new Map<string, number>()
 
@@ -390,22 +489,23 @@ export function getReachablePositions(
 
     for (const neighbor of neighbors) {
       const neighborKey = `${neighbor.x},${neighbor.y}`
-      const neighborCell = grid.cells[neighbor.y]?.[neighbor.x]
 
-      if (!neighborCell) continue
+      // Check if footprint can fit at neighbor (normal or squeezing)
+      const passability = checkFootprintPassability(grid, neighbor, footprintSize, occupiedPositions)
+      if (!passability.passable) continue
 
-      // Check if passable
-      if (!isPassable(neighborCell, occupiedPositions)) continue
-
-      // Calculate cost
-      const { cost: moveCost, newDiagonalCount } = getMovementCost(
+      // Calculate base cost
+      const { cost: baseCost, newDiagonalCount } = getMovementCost(
         grid,
         current,
         neighbor,
         diagonalCount
       )
 
-      if (moveCost === Infinity) continue
+      if (baseCost === Infinity) continue
+
+      // Double cost if squeezing
+      const moveCost = passability.squeezing ? baseCost * 2 : baseCost
 
       const newCost = currentCost + moveCost
 

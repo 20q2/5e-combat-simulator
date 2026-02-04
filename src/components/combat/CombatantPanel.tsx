@@ -347,16 +347,26 @@ export function CombatantPanel() {
                   {character.equipment.meleeWeapon && (
                     <div className="text-sm">
                       {character.equipment.meleeWeapon.name}
-                      <span className="text-xs text-muted-foreground ml-2">
-                        ({character.equipment.meleeWeapon.damage} {character.equipment.meleeWeapon.damageType})
+                      <span className="text-xs text-sky-400 ml-1">
+                        {character.equipment.meleeWeapon.range
+                          ? `${character.equipment.meleeWeapon.range.normal}/${character.equipment.meleeWeapon.range.long} ft,`
+                          : 'reach 5 ft,'}
+                      </span>
+                      <span className="text-xs text-muted-foreground ml-1">
+                        {character.equipment.meleeWeapon.damage} {character.equipment.meleeWeapon.damageType}
                       </span>
                     </div>
                   )}
                   {character.equipment.rangedWeapon && (
                     <div className="text-sm">
                       {character.equipment.rangedWeapon.name}
-                      <span className="text-xs text-muted-foreground ml-2">
-                        ({character.equipment.rangedWeapon.damage} {character.equipment.rangedWeapon.damageType})
+                      {character.equipment.rangedWeapon.range && (
+                        <span className="text-xs text-sky-400 ml-1">
+                          {character.equipment.rangedWeapon.range.normal}/{character.equipment.rangedWeapon.range.long} ft,
+                        </span>
+                      )}
+                      <span className="text-xs text-muted-foreground ml-1">
+                        {character.equipment.rangedWeapon.damage} {character.equipment.rangedWeapon.damageType}
                       </span>
                     </div>
                   )}
@@ -396,12 +406,22 @@ export function CombatantPanel() {
                   <span className="font-medium">{action.name}</span>
                   {action.attackBonus !== undefined && (
                     <span className="text-muted-foreground ml-1">
-                      +{action.attackBonus} to hit
+                      +{action.attackBonus} to hit,
+                    </span>
+                  )}
+                  {action.reach && (
+                    <span className="text-sky-400 ml-1">
+                      reach {action.reach} ft,
+                    </span>
+                  )}
+                  {action.range && (
+                    <span className="text-sky-400 ml-1">
+                      {action.range.normal}/{action.range.long} ft,
                     </span>
                   )}
                   {action.damage && (
                     <span className="text-rose-400 ml-1">
-                      ({action.damage}{action.damageType && ` ${action.damageType}`})
+                      {action.damage} {action.damageType}
                     </span>
                   )}
                 </div>

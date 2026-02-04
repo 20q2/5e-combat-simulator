@@ -41,6 +41,7 @@ import {
   getMaxAttacksPerAction,
 } from '@/engine/classAbilities'
 import { getAoEAffectedCells } from '@/lib/aoeShapes'
+import { getCombatantSize, getOccupiedCells, getFootprintSize } from '@/lib/creatureSize'
 
 // Simplified input type for adding combatants
 type AddCombatantInput = {
@@ -308,10 +309,13 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
     const combatant = combatants.find((c) => c.id === id)
 
     if (combatant) {
-      // Clear grid cell
-      const { x, y } = combatant.position
-      if (grid.cells[y]?.[x]) {
-        grid.cells[y][x].occupiedBy = undefined
+      // Clear all grid cells occupied by this combatant's footprint
+      const size = getCombatantSize(combatant)
+      const cells = getOccupiedCells(combatant.position, size)
+      for (const cell of cells) {
+        if (grid.cells[cell.y]?.[cell.x]) {
+          grid.cells[cell.y][cell.x].occupiedBy = undefined
+        }
       }
     }
 
@@ -328,35 +332,45 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
 
     if (!combatant) return
 
-    // Check if position is valid and unoccupied
-    if (
-      position.x < 0 ||
-      position.x >= grid.width ||
-      position.y < 0 ||
-      position.y >= grid.height
-    ) {
-      return
+    // Get creature size and calculate footprint cells
+    const size = getCombatantSize(combatant)
+    const newCells = getOccupiedCells(position, size)
+
+    // Validate all cells in footprint
+    for (const cell of newCells) {
+      // Bounds check
+      if (cell.x < 0 || cell.x >= grid.width || cell.y < 0 || cell.y >= grid.height) {
+        return
+      }
+
+      const gridCell = grid.cells[cell.y]?.[cell.x]
+
+      // Check if blocked by obstacle
+      if (blocksMovement(gridCell)) {
+        return
+      }
+
+      // Check if occupied by another combatant
+      if (gridCell?.occupiedBy && gridCell.occupiedBy !== id) {
+        return
+      }
     }
 
-    const targetCell = grid.cells[position.y][position.x]
-
-    // Check if blocked by obstacle
-    if (blocksMovement(targetCell)) {
-      return
+    // Clear old position cells
+    const oldCells = getOccupiedCells(combatant.position, size)
+    for (const cell of oldCells) {
+      if (cell.x >= 0 && cell.y >= 0) {
+        const gridCell = grid.cells[cell.y]?.[cell.x]
+        if (gridCell) {
+          gridCell.occupiedBy = undefined
+        }
+      }
     }
 
-    if (targetCell.occupiedBy && targetCell.occupiedBy !== id) {
-      return // Cell is occupied by another combatant
+    // Mark new position cells
+    for (const cell of newCells) {
+      grid.cells[cell.y][cell.x].occupiedBy = id
     }
-
-    // Clear old position
-    const oldCell = grid.cells[combatant.position.y]?.[combatant.position.x]
-    if (oldCell) {
-      oldCell.occupiedBy = undefined
-    }
-
-    // Set new position
-    targetCell.occupiedBy = id
 
     set((state) => ({
       combatants: state.combatants.map((c) =>
@@ -721,15 +735,22 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
 
     if (!combatant) return
 
-    // Get occupied positions for pathfinding
-    const occupiedPositions = new Set(
-      combatants
-        .filter((c) => c.id !== id && c.position.x >= 0)
-        .map((c) => `${c.position.x},${c.position.y}`)
-    )
+    // Get creature size for footprint calculations
+    const size = getCombatantSize(combatant)
 
-    // Find path using A* pathfinding
-    const path = findPath(grid, combatant.position, to, occupiedPositions)
+    // Get occupied positions for pathfinding (all footprint cells of other combatants)
+    const occupiedPositions = new Set<string>()
+    combatants
+      .filter((c) => c.id !== id && c.position.x >= 0)
+      .forEach((c) => {
+        const cSize = getCombatantSize(c)
+        const cells = getOccupiedCells(c.position, cSize)
+        cells.forEach((cell) => occupiedPositions.add(`${cell.x},${cell.y}`))
+      })
+
+    // Find path using A* pathfinding with footprint awareness
+    const footprint = getFootprintSize(size)
+    const path = findPath(grid, combatant.position, to, occupiedPositions, undefined, footprint)
     if (!path) return
 
     // Calculate actual path cost (accounts for terrain)
@@ -757,14 +778,30 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
         // Find all enemies currently threatening this combatant
         const threateningEnemies = get().getThreateningEnemies(id)
 
+        // Get destination footprint cells
+        const destCells = getOccupiedCells(to, size)
+
         // For each threatening enemy, check if we're leaving their reach
         for (const enemy of threateningEnemies) {
-          const enemyDx = Math.abs(to.x - enemy.position.x)
-          const enemyDy = Math.abs(to.y - enemy.position.y)
-          const newDistanceToEnemy = Math.max(enemyDx, enemyDy)
+          const enemySize = getCombatantSize(enemy)
+          const enemyCells = getOccupiedCells(enemy.position, enemySize)
 
-          // If we're moving out of reach (distance > 1), trigger opportunity attack
-          if (newDistanceToEnemy > 1) {
+          // Check if any destination cell is adjacent to any enemy cell
+          let stillAdjacent = false
+          for (const destCell of destCells) {
+            for (const enemyCell of enemyCells) {
+              const dx = Math.abs(destCell.x - enemyCell.x)
+              const dy = Math.abs(destCell.y - enemyCell.y)
+              if (dx <= 1 && dy <= 1) {
+                stillAdjacent = true
+                break
+              }
+            }
+            if (stillAdjacent) break
+          }
+
+          // If we're moving out of reach (no longer adjacent), trigger opportunity attack
+          if (!stillAdjacent) {
             // Enemy makes opportunity attack
             get().performOpportunityAttack(enemy.id, id)
 
@@ -779,12 +816,19 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
       }
     }
 
-    // Clear old position
-    const oldCell = grid.cells[combatant.position.y][combatant.position.x]
-    oldCell.occupiedBy = undefined
+    // Clear old position cells (all footprint cells)
+    const oldCells = getOccupiedCells(combatant.position, size)
+    for (const cell of oldCells) {
+      if (grid.cells[cell.y]?.[cell.x]) {
+        grid.cells[cell.y][cell.x].occupiedBy = undefined
+      }
+    }
 
-    // Set new position
-    grid.cells[to.y][to.x].occupiedBy = id
+    // Mark new position cells (all footprint cells)
+    const newCells = getOccupiedCells(to, size)
+    for (const cell of newCells) {
+      grid.cells[cell.y][cell.x].occupiedBy = id
+    }
 
     set((state) => ({
       combatants: state.combatants.map((c) =>
@@ -823,32 +867,47 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
 
     if (!combatant) return false
 
-    // Check bounds
-    if (to.x < 0 || to.x >= grid.width || to.y < 0 || to.y >= grid.height) {
-      return false
+    // Get creature size for footprint calculations
+    const size = getCombatantSize(combatant)
+    const footprint = getFootprintSize(size)
+
+    // Check all footprint cells at destination
+    for (let dy = 0; dy < footprint; dy++) {
+      for (let dx = 0; dx < footprint; dx++) {
+        const checkX = to.x + dx
+        const checkY = to.y + dy
+
+        // Check bounds
+        if (checkX < 0 || checkX >= grid.width || checkY < 0 || checkY >= grid.height) {
+          return false
+        }
+
+        const targetCell = grid.cells[checkY][checkX]
+
+        // Check if blocked by obstacle
+        if (blocksMovement(targetCell)) {
+          return false
+        }
+
+        // Check if occupied by another combatant
+        if (targetCell.occupiedBy && targetCell.occupiedBy !== combatantId) {
+          return false
+        }
+      }
     }
 
-    const targetCell = grid.cells[to.y][to.x]
+    // Get occupied positions for pathfinding (all footprint cells of other combatants)
+    const occupiedPositions = new Set<string>()
+    combatants
+      .filter((c) => c.id !== combatantId && c.position.x >= 0)
+      .forEach((c) => {
+        const cSize = getCombatantSize(c)
+        const cells = getOccupiedCells(c.position, cSize)
+        cells.forEach((cell) => occupiedPositions.add(`${cell.x},${cell.y}`))
+      })
 
-    // Check if blocked by obstacle
-    if (blocksMovement(targetCell)) {
-      return false
-    }
-
-    // Check if occupied by another combatant
-    if (targetCell.occupiedBy && targetCell.occupiedBy !== combatantId) {
-      return false
-    }
-
-    // Get occupied positions for pathfinding
-    const occupiedPositions = new Set(
-      combatants
-        .filter((c) => c.id !== combatantId && c.position.x >= 0)
-        .map((c) => `${c.position.x},${c.position.y}`)
-    )
-
-    // Find path using A* pathfinding
-    const path = findPath(grid, combatant.position, to, occupiedPositions)
+    // Find path using A* pathfinding with footprint awareness
+    const path = findPath(grid, combatant.position, to, occupiedPositions, undefined, footprint)
     if (!path) return false
 
     // Calculate actual path cost
@@ -870,6 +929,10 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
 
     if (!combatant) return []
 
+    // Get creature size for footprint-aware pathfinding
+    const size = getCombatantSize(combatant)
+    const footprint = getFootprintSize(size)
+
     const speed =
       combatant.type === 'character'
         ? (combatant.data as Character).speed
@@ -877,19 +940,23 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
 
     const remainingMovement = speed - combatant.movementUsed
 
-    // Get occupied positions (excluding self)
-    const occupiedPositions = new Set(
-      combatants
-        .filter((c) => c.id !== combatantId && c.position.x >= 0)
-        .map((c) => `${c.position.x},${c.position.y}`)
-    )
+    // Get occupied positions (all footprint cells of other combatants)
+    const occupiedPositions = new Set<string>()
+    combatants
+      .filter((c) => c.id !== combatantId && c.position.x >= 0)
+      .forEach((c) => {
+        const cSize = getCombatantSize(c)
+        const cells = getOccupiedCells(c.position, cSize)
+        cells.forEach((cell) => occupiedPositions.add(`${cell.x},${cell.y}`))
+      })
 
-    // Use pathfinding-based reachability
+    // Use pathfinding-based reachability with footprint awareness
     const reachableMap = getReachableFromPathfinding(
       grid,
       combatant.position,
       remainingMovement,
-      occupiedPositions
+      occupiedPositions,
+      footprint
     )
 
     // Convert map to array of positions
@@ -1351,6 +1418,10 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
 
     if (!combatant || combatant.position.x < 0) return []
 
+    // Get combatant's footprint cells
+    const combatantSize = getCombatantSize(combatant)
+    const combatantCells = getOccupiedCells(combatant.position, combatantSize)
+
     return combatants.filter((c) => {
       // Must be a different combatant
       if (c.id === combatantId) return false
@@ -1360,11 +1431,22 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
       if (c.currentHp <= 0) return false
       // Must have reaction available
       if (c.hasReacted) return false
-      // Must be in melee range (within 5ft = 1 square diagonal)
-      const dx = Math.abs(c.position.x - combatant.position.x)
-      const dy = Math.abs(c.position.y - combatant.position.y)
-      const distance = Math.max(dx, dy)
-      return distance <= 1
+      // Must be in melee range (any cell of enemy adjacent to any cell of combatant)
+      const enemySize = getCombatantSize(c)
+      const enemyCells = getOccupiedCells(c.position, enemySize)
+
+      // Check if any enemy cell is adjacent to any combatant cell
+      for (const enemyCell of enemyCells) {
+        for (const combatantCell of combatantCells) {
+          const dx = Math.abs(enemyCell.x - combatantCell.x)
+          const dy = Math.abs(enemyCell.y - combatantCell.y)
+          // Adjacent means within 1 square (including diagonals)
+          if (dx <= 1 && dy <= 1) {
+            return true
+          }
+        }
+      }
+      return false
     })
   },
 

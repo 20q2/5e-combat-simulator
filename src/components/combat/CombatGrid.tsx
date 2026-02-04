@@ -7,6 +7,7 @@ import { calculateMovementDistance } from '@/lib/movement'
 import { findPath, calculatePathCost } from '@/lib/pathfinding'
 import { getAoEAffectedCells, aoeOriginatesFromCaster } from '@/lib/aoeShapes'
 import { hasLineOfSight } from '@/lib/lineOfSight'
+import { getCombatantSize, getFootprintSize, getVisualScale, getOccupiedCellKeys } from '@/lib/creatureSize'
 import type { Position, Character, Monster, GridCell as GridCellType } from '@/types'
 
 // Use Vite's glob import to load obstacle images
@@ -574,10 +575,14 @@ export function CombatGrid() {
   }
 
   // Check if a cell is occupied by another combatant
+  // Check if a cell is occupied by any combatant's footprint
   const isCellOccupied = (x: number, y: number, excludeId?: string) => {
-    return combatants.some(
-      (c) => c.id !== excludeId && c.position.x === x && c.position.y === y
-    )
+    return combatants.some((c) => {
+      if (c.id === excludeId) return false
+      if (c.position.x < 0 || c.position.y < 0) return false
+      const occupied = getOccupiedCellKeys(c.position, getCombatantSize(c))
+      return occupied.has(`${x},${y}`)
+    })
   }
 
   // Check if a combatant can be dragged
@@ -599,9 +604,33 @@ export function CombatGrid() {
   }
 
   // Check if drop is valid at position
+  // Check if a position is valid for dropping a combatant (checks entire footprint)
   const isValidDropPosition = (x: number, y: number) => {
     if (!draggingCombatantId) return false
-    if (isCellOccupied(x, y, draggingCombatantId)) return false
+
+    const draggingCombatant = combatants.find((c) => c.id === draggingCombatantId)
+    if (!draggingCombatant) return false
+
+    const size = getCombatantSize(draggingCombatant)
+    const footprint = getFootprintSize(size)
+
+    // Check all cells in the creature's footprint
+    for (let dy = 0; dy < footprint; dy++) {
+      for (let dx = 0; dx < footprint; dx++) {
+        const checkX = x + dx
+        const checkY = y + dy
+
+        // Bounds check
+        if (checkX >= grid.width || checkY >= grid.height) return false
+
+        // Obstacle check
+        const cell = grid.cells[checkY]?.[checkX]
+        if (cell?.obstacle?.blocksMovement) return false
+
+        // Occupancy check (another creature in this cell)
+        if (isCellOccupied(checkX, checkY, draggingCombatantId)) return false
+      }
+    }
 
     if (phase === 'setup') {
       return true
@@ -791,7 +820,7 @@ export function CombatGrid() {
                 y={y}
                 cell={cell}
                 isReachable={reachableSet.has(cellKey)}
-                isSelected={selectedCombatant?.position.x === x && selectedCombatant?.position.y === y}
+                isSelected={selectedCombatant ? getOccupiedCellKeys(selectedCombatant.position, getCombatantSize(selectedCombatant)).has(cellKey) : false}
                 isDragOver={isDragOver}
                 isValidDrop={isValidDrop}
                 isTargetable={isTargetable}
@@ -831,6 +860,12 @@ export function CombatGrid() {
           const canDrag = canDragCombatant(combatant.id)
           const isHovered = hoveredTokenId === combatant.id
 
+          // Get size-based token dimensions
+          const size = getCombatantSize(combatant)
+          const footprint = getFootprintSize(size)
+          const visualScale = getVisualScale(size)
+          const tokenSize = footprint * CELL_SIZE - 8
+
           return (
             <div
               key={combatant.id}
@@ -843,8 +878,8 @@ export function CombatGrid() {
               style={{
                 left: combatant.position.x * CELL_SIZE + 4,
                 top: combatant.position.y * CELL_SIZE + 4,
-                width: CELL_SIZE - 8,
-                height: CELL_SIZE - 8,
+                width: tokenSize,
+                height: tokenSize,
               }}
             >
               <Token
@@ -854,6 +889,7 @@ export function CombatGrid() {
                 isDraggable={canDrag}
                 isHoveredTarget={hoveredTargetId === combatant.id}
                 suppressTooltip={!!aoePreview}
+                visualScale={visualScale}
                 onClick={() => handleTokenClick(combatant.id)}
                 onDragStart={() => handleTokenDragStart(combatant.id)}
                 onDragEnd={handleTokenDragEnd}
