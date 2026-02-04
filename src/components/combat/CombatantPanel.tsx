@@ -4,6 +4,7 @@ import { cn } from '@/lib/utils'
 import { useCombatStore, getCurrentCombatant } from '@/stores/combatStore'
 import { getCombatantTokenImage } from '@/lib/tokenImages'
 import { getMaxAttacksPerAction } from '@/engine/classAbilities'
+import { canAttackTarget } from '@/engine/combat'
 import type { Character, Monster, Combatant } from '@/types'
 import { getAbilityModifier } from '@/types'
 import { Sword, Crosshair, Shield, Footprints, Zap, type LucideIcon } from 'lucide-react'
@@ -92,7 +93,7 @@ function ActionEconomyIndicator({ combatant }: { combatant: Combatant }) {
 }
 
 function TargetActionsPanel({ target, currentCombatant }: { target: Combatant; currentCombatant: Combatant }) {
-  const { getValidTargets, performAttack, selectCombatant } = useCombatStore()
+  const { getValidTargets, performAttack, selectCombatant, grid } = useCombatStore()
 
   // Get weapons for the current combatant
   const isCharacter = currentCombatant.type === 'character'
@@ -105,14 +106,35 @@ function TargetActionsPanel({ target, currentCombatant }: { target: Combatant; c
 
   // Check if target is in range
   const validTargets = getValidTargets(currentCombatant.id, meleeWeapon, monsterAction, rangedWeapon)
-  const isInRange = validTargets.some(t => t.id === target.id)
+  const isValidTarget = validTargets.some(t => t.id === target.id)
+
+  // Determine WHY the target can't be attacked (for better error messages)
+  const getTargetingIssue = (): 'none' | 'out_of_range' | 'no_line_of_sight' => {
+    if (isValidTarget) return 'none'
+
+    // Check melee weapon first
+    if (meleeWeapon || monsterAction) {
+      const meleeCheck = canAttackTarget(currentCombatant, target, grid, meleeWeapon, monsterAction)
+      if (meleeCheck.reason === 'no_line_of_sight') return 'no_line_of_sight'
+    }
+
+    // Check ranged weapon
+    if (rangedWeapon) {
+      const rangedCheck = canAttackTarget(currentCombatant, target, grid, rangedWeapon, undefined)
+      if (rangedCheck.reason === 'no_line_of_sight') return 'no_line_of_sight'
+    }
+
+    return 'out_of_range'
+  }
+
+  const targetingIssue = getTargetingIssue()
 
   // Check if we can attack (have attacks remaining)
   const maxAttacks = getMaxAttacksPerAction(currentCombatant)
   const attacksRemaining = maxAttacks - currentCombatant.attacksMadeThisTurn
-  // Can attack if: in range AND have attacks remaining AND (haven't used action OR mid-Attack action)
+  // Can attack if: valid target AND have attacks remaining AND (haven't used action OR mid-Attack action)
   // attacksMadeThisTurn > 0 means we're in the middle of an Attack action with Extra Attack
-  const canAttack = isInRange && attacksRemaining > 0 && (!currentCombatant.hasActed || currentCombatant.attacksMadeThisTurn > 0)
+  const canAttack = isValidTarget && attacksRemaining > 0 && (!currentCombatant.hasActed || currentCombatant.attacksMadeThisTurn > 0)
 
   // Determine which weapon would be used based on range
   const getWeaponInfo = () => {
@@ -163,10 +185,13 @@ function TargetActionsPanel({ target, currentCombatant }: { target: Combatant; c
             <span className="ml-auto text-xs opacity-75">({attacksRemaining} left)</span>
           )}
         </Button>
-        {!isInRange && (
+        {targetingIssue === 'out_of_range' && (
           <p className="text-xs text-muted-foreground italic">Target is out of range</p>
         )}
-        {isInRange && currentCombatant.hasActed && attacksRemaining === 0 && (
+        {targetingIssue === 'no_line_of_sight' && (
+          <p className="text-xs text-rose-400 italic">No line of sight (blocked by obstacle)</p>
+        )}
+        {isValidTarget && currentCombatant.hasActed && attacksRemaining === 0 && (
           <p className="text-xs text-muted-foreground italic">No attacks remaining this turn</p>
         )}
       </div>

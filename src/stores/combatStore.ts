@@ -72,6 +72,13 @@ interface CombatStore extends CombatState {
   setAoEPreview: (preview: CombatState['aoePreview']) => void
   setSelectedSpell: (spell: Spell | undefined) => void
 
+  // Projectile targeting
+  startProjectileTargeting: (spell: Spell) => void
+  assignProjectile: (targetId: string) => void
+  unassignProjectile: (targetId: string) => void
+  confirmProjectileTargeting: () => void
+  cancelProjectileTargeting: () => void
+
   // Movement
   moveCombatant: (id: string, to: Position) => void
   canMoveTo: (combatantId: string, to: Position) => boolean
@@ -433,6 +440,97 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
 
   setSelectedSpell: (spell) => {
     set({ selectedSpell: spell })
+  },
+
+  // Projectile targeting
+  startProjectileTargeting: (spell) => {
+    if (!spell.projectiles) return
+    set({
+      selectedSpell: spell,
+      selectedAction: 'spell',
+      projectileTargeting: {
+        spell,
+        totalProjectiles: spell.projectiles.count,
+        assignments: {},
+      },
+    })
+  },
+
+  assignProjectile: (targetId) => {
+    const { projectileTargeting } = get()
+    if (!projectileTargeting) return
+
+    const currentAssignments = projectileTargeting.assignments
+    const totalAssigned = Object.values(currentAssignments).reduce((sum, n) => sum + n, 0)
+
+    // Can't assign more than total projectiles
+    if (totalAssigned >= projectileTargeting.totalProjectiles) return
+
+    set({
+      projectileTargeting: {
+        ...projectileTargeting,
+        assignments: {
+          ...currentAssignments,
+          [targetId]: (currentAssignments[targetId] || 0) + 1,
+        },
+      },
+    })
+  },
+
+  unassignProjectile: (targetId) => {
+    const { projectileTargeting } = get()
+    if (!projectileTargeting) return
+
+    const current = projectileTargeting.assignments[targetId] || 0
+    if (current <= 0) return
+
+    const newAssignments = { ...projectileTargeting.assignments }
+    if (current === 1) {
+      delete newAssignments[targetId]
+    } else {
+      newAssignments[targetId] = current - 1
+    }
+
+    set({
+      projectileTargeting: {
+        ...projectileTargeting,
+        assignments: newAssignments,
+      },
+    })
+  },
+
+  confirmProjectileTargeting: () => {
+    const { projectileTargeting } = get()
+    if (!projectileTargeting) return
+
+    const assignments = Object.entries(projectileTargeting.assignments)
+      .filter(([_, count]) => count > 0)
+      .map(([targetId, count]) => ({ targetId, count }))
+
+    if (assignments.length > 0) {
+      const currentCombatant = getCurrentCombatant(get())
+      if (currentCombatant) {
+        get().castSpell(currentCombatant.id, projectileTargeting.spell, undefined, undefined, assignments)
+      }
+    }
+
+    set({
+      projectileTargeting: undefined,
+      selectedSpell: undefined,
+      selectedAction: undefined,
+      rangeHighlight: undefined,
+      hoveredTargetId: undefined,
+    })
+  },
+
+  cancelProjectileTargeting: () => {
+    set({
+      projectileTargeting: undefined,
+      selectedSpell: undefined,
+      selectedAction: undefined,
+      rangeHighlight: undefined,
+      hoveredTargetId: undefined,
+    })
   },
 
   moveCombatant: (id, to) => {

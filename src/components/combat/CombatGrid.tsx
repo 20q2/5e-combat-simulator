@@ -6,6 +6,7 @@ import { DamagePopup } from './DamagePopup'
 import { calculateMovementDistance } from '@/lib/movement'
 import { findPath, calculatePathCost } from '@/lib/pathfinding'
 import { getAoEAffectedCells, aoeOriginatesFromCaster } from '@/lib/aoeShapes'
+import { hasLineOfSight } from '@/lib/lineOfSight'
 import type { Position, Character, Monster, GridCell as GridCellType } from '@/types'
 
 // Use Vite's glob import to load obstacle images
@@ -73,6 +74,7 @@ interface GridCellProps {
   isTargetable: boolean
   isThreatened: boolean
   isInWeaponRange?: 'melee' | 'ranged' | 'spell'
+  isBlockedByLOS: boolean
   isInAoEPreview: boolean
   distance?: number
   onDragOver: (e: React.DragEvent) => void
@@ -113,6 +115,7 @@ function GridCell({
   isTargetable,
   isThreatened,
   isInWeaponRange,
+  isBlockedByLOS,
   isInAoEPreview,
   distance,
   onDragOver,
@@ -143,6 +146,8 @@ function GridCell({
         isInWeaponRange === 'melee' && 'bg-rose-900/30 border-rose-700/50',
         isInWeaponRange === 'ranged' && 'bg-orange-900/30 border-orange-700/50',
         isInWeaponRange === 'spell' && 'bg-violet-900/30 border-violet-700/50',
+        // LOS blocked cells - dimmed with strikethrough pattern
+        isBlockedByLOS && 'bg-slate-800/50 border-slate-600/50',
         // AoE preview highlighting (overrides weapon range)
         isInAoEPreview && 'bg-orange-500/50 border-orange-400 ring-1 ring-orange-400/50',
         // Terrain backgrounds
@@ -237,6 +242,13 @@ function GridCell({
           {distance}ft
         </span>
       )}
+
+      {/* LOS blocked indicator */}
+      {isBlockedByLOS && !hasObstacle && (
+        <span className="absolute inset-0 flex items-center justify-center text-slate-500 text-lg pointer-events-none opacity-60">
+          ⊘
+        </span>
+      )}
     </div>
   )
 }
@@ -267,6 +279,8 @@ export function CombatGrid() {
     setSelectedSpell,
     setAoEPreview,
     setRangeHighlight,
+    projectileTargeting,
+    assignProjectile,
   } = useCombatStore()
 
   const [draggingCombatantId, setDraggingCombatantId] = useState<string | null>(null)
@@ -385,10 +399,11 @@ export function CombatGrid() {
 
   // Calculate cells in weapon range for highlighting
   const weaponRangeData = useMemo(() => {
-    if (!rangeHighlight) return { cells: new Set<string>(), type: undefined as 'melee' | 'ranged' | 'spell' | undefined }
+    if (!rangeHighlight) return { cells: new Set<string>(), type: undefined as 'melee' | 'ranged' | 'spell' | undefined, blockedCells: new Set<string>() }
 
     const { origin, range, type } = rangeHighlight
     const cellsInRange = new Set<string>()
+    const blockedCells = new Set<string>() // Cells in range but blocked by LOS
     const rangeInSquares = Math.ceil(range / 5)
 
     for (let dy = -rangeInSquares; dy <= rangeInSquares; dy++) {
@@ -400,13 +415,24 @@ export function CombatGrid() {
         // Calculate distance using Chebyshev (D&D 5e diagonal = 5ft)
         const distance = Math.max(Math.abs(dx), Math.abs(dy)) * 5
         if (distance <= range && distance > 0) {
-          cellsInRange.add(`${x},${y}`)
+          // For ranged/spell attacks, check line of sight
+          if (type === 'ranged' || type === 'spell') {
+            const hasLOS = hasLineOfSight(grid, origin, { x, y })
+            if (hasLOS) {
+              cellsInRange.add(`${x},${y}`)
+            } else {
+              blockedCells.add(`${x},${y}`)
+            }
+          } else {
+            // Melee doesn't need LOS check
+            cellsInRange.add(`${x},${y}`)
+          }
         }
       }
     }
 
-    return { cells: cellsInRange, type }
-  }, [rangeHighlight, grid.width, grid.height])
+    return { cells: cellsInRange, type, blockedCells }
+  }, [rangeHighlight, grid])
 
   // Calculate AoE preview cells based on hovered position
   const aoeAffectedCells = useMemo(() => {
@@ -555,6 +581,19 @@ export function CombatGrid() {
   }
 
   const handleTokenClick = (combatantId: string) => {
+    // In projectile targeting mode, clicking an enemy token assigns a projectile
+    if (phase === 'combat' && projectileTargeting && currentTurnId) {
+      // Only allow targeting enemies (not self)
+      if (combatantId !== currentTurnId) {
+        const targetCombatant = combatants.find(c => c.id === combatantId)
+        // Only assign to living enemies
+        if (targetCombatant && targetCombatant.currentHp > 0) {
+          assignProjectile(combatantId)
+        }
+      }
+      return
+    }
+
     // In AoE spell mode, clicking a token casts the spell targeting that combatant
     if (phase === 'combat' && aoePreview && selectedSpell && currentTurnId) {
       const targetCombatant = combatants.find(c => c.id === combatantId)
@@ -654,6 +693,7 @@ export function CombatGrid() {
             const isTargetable = targetablePositions.has(cellKey)
             const isThreatened = threatenedPositions.has(cellKey) && selectedAction === 'move'
             const isInWeaponRange = weaponRangeData.cells.has(cellKey) ? weaponRangeData.type : undefined
+            const isBlockedByLOS = weaponRangeData.blockedCells.has(cellKey)
             const isInAoEPreview = aoeAffectedCells.has(cellKey)
             const distance = getDistanceToCell(x, y)
 
@@ -670,6 +710,7 @@ export function CombatGrid() {
                 isTargetable={isTargetable}
                 isThreatened={isThreatened}
                 isInWeaponRange={isInWeaponRange}
+                isBlockedByLOS={isBlockedByLOS}
                 isInAoEPreview={isInAoEPreview}
                 distance={distance}
                 onDragOver={(e) => handleCellDragOver(e, x, y)}

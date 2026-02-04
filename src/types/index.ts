@@ -524,6 +524,12 @@ export interface CombatState {
   aoePreview?: AoEPreview
   selectedSpell?: Spell
   damagePopups: DamagePopup[]
+  // Projectile targeting for multi-projectile spells (Magic Missile, etc.)
+  projectileTargeting?: {
+    spell: Spell
+    totalProjectiles: number
+    assignments: Record<string, number>  // targetId -> count
+  }
 }
 
 // ============================================

@@ -443,53 +443,25 @@ function SpellSelector({
 
 // Projectile target selector for multi-target spells (Magic Missile, etc.)
 function ProjectileTargetSelector({
-  spell,
   targets,
-  projectileCount,
-  onConfirm,
-  onCancel,
   onHover,
 }: {
-  spell: Spell
   targets: { id: string; name: string; hp: number; maxHp: number }[]
-  projectileCount: number
-  onConfirm: (assignments: { targetId: string; count: number }[]) => void
-  onCancel: () => void
   onHover?: (targetId: string | undefined) => void
 }) {
-  const [assignments, setAssignments] = useState<Record<string, number>>({})
+  const {
+    projectileTargeting,
+    assignProjectile,
+    unassignProjectile,
+    confirmProjectileTargeting,
+    cancelProjectileTargeting,
+  } = useCombatStore()
 
+  if (!projectileTargeting) return null
+
+  const { spell, totalProjectiles, assignments } = projectileTargeting
   const totalAssigned = Object.values(assignments).reduce((sum, n) => sum + n, 0)
-  const remaining = projectileCount - totalAssigned
-
-  const addProjectile = (targetId: string) => {
-    if (remaining <= 0) return
-    setAssignments((prev) => ({
-      ...prev,
-      [targetId]: (prev[targetId] || 0) + 1,
-    }))
-  }
-
-  const removeProjectile = (targetId: string) => {
-    setAssignments((prev) => {
-      const current = prev[targetId] || 0
-      if (current <= 0) return prev
-      if (current === 1) {
-        const { [targetId]: _, ...rest } = prev
-        return rest
-      }
-      return { ...prev, [targetId]: current - 1 }
-    })
-  }
-
-  const handleConfirm = () => {
-    const result = Object.entries(assignments)
-      .filter(([_, count]) => count > 0)
-      .map(([targetId, count]) => ({ targetId, count }))
-    if (result.length > 0) {
-      onConfirm(result)
-    }
-  }
+  const remaining = totalProjectiles - totalAssigned
 
   return (
     <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-80 bg-slate-900 border-2 border-violet-800 rounded-lg shadow-2xl p-3 z-50">
@@ -498,7 +470,7 @@ function ProjectileTargetSelector({
         {spell.name}
       </div>
       <div className="text-xs text-slate-400 mb-3">
-        Assign {projectileCount} projectiles to targets ({remaining} remaining)
+        Assign {totalProjectiles} projectiles to targets ({remaining} remaining)
       </div>
 
       <div className="space-y-1 max-h-48 overflow-y-auto mb-3">
@@ -517,7 +489,7 @@ function ProjectileTargetSelector({
               </div>
               <div className="flex items-center gap-1">
                 <button
-                  onClick={() => removeProjectile(target.id)}
+                  onClick={() => unassignProjectile(target.id)}
                   disabled={count === 0}
                   className={cn(
                     'w-6 h-6 rounded flex items-center justify-center text-sm font-bold transition-colors',
@@ -535,7 +507,7 @@ function ProjectileTargetSelector({
                   {count}
                 </span>
                 <button
-                  onClick={() => addProjectile(target.id)}
+                  onClick={() => assignProjectile(target.id)}
                   disabled={remaining === 0}
                   className={cn(
                     'w-6 h-6 rounded flex items-center justify-center text-sm font-bold transition-colors',
@@ -554,7 +526,7 @@ function ProjectileTargetSelector({
 
       <div className="flex gap-2">
         <button
-          onClick={handleConfirm}
+          onClick={confirmProjectileTargeting}
           disabled={totalAssigned === 0}
           className={cn(
             'flex-1 p-2 rounded text-sm font-medium transition-colors',
@@ -566,7 +538,7 @@ function ProjectileTargetSelector({
           Cast ({totalAssigned} projectiles)
         </button>
         <button
-          onClick={onCancel}
+          onClick={cancelProjectileTargeting}
           className="px-4 p-2 text-sm text-slate-400 hover:text-slate-200 transition-colors"
         >
           Cancel
@@ -705,12 +677,14 @@ export function ActionBar() {
     useCunningDash,
     useCunningDisengage,
     useCunningHide,
+    projectileTargeting,
+    startProjectileTargeting,
+    cancelProjectileTargeting,
   } = state
 
   const [isSelectingTarget, setIsSelectingTarget] = useState(false)
   const [isSelectingSpell, setIsSelectingSpell] = useState(false)
   const [isSelectingWeapon, setIsSelectingWeapon] = useState(false)
-  const [isSelectingProjectileTargets, setIsSelectingProjectileTargets] = useState(false)
   const [isExecutingAI, setIsExecutingAI] = useState(false)
 
   const currentCombatant = getCurrentCombatant(state)
@@ -724,7 +698,6 @@ export function ActionBar() {
     }
     if (selectedAction !== 'spell') {
       setIsSelectingSpell(false)
-      setIsSelectingProjectileTargets(false)
       setAoEPreview(undefined)
       setSelectedSpell(undefined)
     }
@@ -965,7 +938,7 @@ export function ActionBar() {
     setSelectedAction(undefined)
     setIsSelectingTarget(false)
     setIsSelectingWeapon(false)
-    setIsSelectingProjectileTargets(false)
+    cancelProjectileTargeting()
     setSelectedSpell(undefined)
     setIsSelectingSpell(false)
   }
@@ -1011,7 +984,7 @@ export function ActionBar() {
 
       // Check if this is a multi-projectile spell
       if (spell.projectiles) {
-        setIsSelectingProjectileTargets(true)
+        startProjectileTargeting(spell)
       } else {
         setIsSelectingTarget(true)
       }
@@ -1020,17 +993,6 @@ export function ActionBar() {
       setSelectedSpell(undefined)
       setSelectedAction(undefined)
     }
-  }
-
-  const handleProjectileConfirm = (assignments: { targetId: string; count: number }[]) => {
-    if (selectedSpell && currentCombatant) {
-      castSpell(currentCombatant.id, selectedSpell, undefined, undefined, assignments)
-    }
-    setIsSelectingProjectileTargets(false)
-    setSelectedSpell(undefined)
-    setSelectedAction(undefined)
-    setRangeHighlight(undefined)
-    setHoveredTarget(undefined)
   }
 
   const handleMoveClick = () => {
@@ -1180,7 +1142,7 @@ export function ActionBar() {
               )}
 
               {/* Target selector popup for monster attacks and spells */}
-              {isSelectingTarget && !isSelectingSpell && !isSelectingWeapon && !isSelectingProjectileTargets && (
+              {isSelectingTarget && !isSelectingSpell && !isSelectingWeapon && !projectileTargeting && (
                 <TargetSelector
                   targets={(selectedSpell ? spellTargets : validTargets).map((t) => ({
                     id: t.id,
@@ -1196,18 +1158,14 @@ export function ActionBar() {
               )}
 
               {/* Projectile target selector for multi-projectile spells */}
-              {isSelectingProjectileTargets && selectedSpell?.projectiles && (
+              {projectileTargeting && (
                 <ProjectileTargetSelector
-                  spell={selectedSpell}
                   targets={spellTargets.map((t) => ({
                     id: t.id,
                     name: t.name,
                     hp: t.currentHp,
                     maxHp: t.maxHp,
                   }))}
-                  projectileCount={selectedSpell.projectiles.count}
-                  onConfirm={handleProjectileConfirm}
-                  onCancel={handleCancelTarget}
                   onHover={setHoveredTarget}
                 />
               )}
