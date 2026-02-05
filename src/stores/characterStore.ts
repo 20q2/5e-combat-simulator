@@ -70,6 +70,7 @@ export interface CharacterDraft {
   masteredWeaponIds: string[]
   fightingStyle: FightingStyle | null
   additionalFightingStyle: FightingStyle | null  // For Champion level 10
+  selectedManeuverIds: string[]  // Battle Master maneuvers
   editingCharacterId: string | null // Set when editing an existing character
 }
 
@@ -114,6 +115,8 @@ interface CharacterState {
   toggleMasteredWeapon: (weaponId: string) => void
   setFightingStyle: (style: FightingStyle | null) => void
   setAdditionalFightingStyle: (style: FightingStyle | null) => void
+  setSelectedManeuvers: (maneuverIds: string[]) => void
+  toggleManeuver: (maneuverId: string) => void
   setAbilityBonusPlus2: (ability: AbilityName | null) => void
   setAbilityBonusPlus1: (ability: AbilityName | null) => void
   setAbilityBonusMode: (mode: AbilityBonusMode) => void
@@ -171,6 +174,7 @@ const initialDraft: CharacterDraft = {
   masteredWeaponIds: [],
   fightingStyle: null,
   additionalFightingStyle: null,
+  selectedManeuverIds: [],
   editingCharacterId: null,
 }
 
@@ -326,12 +330,17 @@ export const useCharacterStore = create<CharacterState>()(
             selectedCantrips: [],
             fightingStyle: null, // Reset fighting style when class changes
             additionalFightingStyle: null,
+            selectedManeuverIds: [], // Reset maneuvers when class changes
           },
         })),
 
       setSubclass: (subclassId) =>
         set((state) => ({
-          draft: { ...state.draft, subclassId },
+          draft: {
+            ...state.draft,
+            subclassId,
+            selectedManeuverIds: [], // Reset maneuvers when subclass changes
+          },
         })),
 
       setLevel: (level) =>
@@ -424,6 +433,25 @@ export const useCharacterStore = create<CharacterState>()(
         set((state) => ({
           draft: { ...state.draft, additionalFightingStyle: style },
         })),
+
+      setSelectedManeuvers: (maneuverIds) =>
+        set((state) => ({
+          draft: { ...state.draft, selectedManeuverIds: maneuverIds },
+        })),
+
+      toggleManeuver: (maneuverId) =>
+        set((state) => {
+          const current = state.draft.selectedManeuverIds
+          const isSelected = current.includes(maneuverId)
+          return {
+            draft: {
+              ...state.draft,
+              selectedManeuverIds: isSelected
+                ? current.filter((id) => id !== maneuverId)
+                : [...current, maneuverId],
+            },
+          }
+        }),
 
       setAbilityBonusPlus2: (ability) =>
         set((state) => ({
@@ -567,6 +595,7 @@ export const useCharacterStore = create<CharacterState>()(
             masteredWeaponIds: character.masteredWeaponIds ?? [],
             fightingStyle: character.fightingStyles?.[0] ?? null,
             additionalFightingStyle: character.fightingStyles?.[1] ?? null,
+            selectedManeuverIds: character.knownManeuverIds ?? [],
             editingCharacterId: character.id,
           },
           currentStep: 0,

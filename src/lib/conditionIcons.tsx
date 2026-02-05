@@ -164,6 +164,14 @@ export const conditionIcons: Record<ExtendedCondition, ConditionIconInfo> = {
     bgColor: 'bg-rose-900',
     label: 'Sapped',
   },
+
+  // Battle Master maneuver conditions
+  goaded: {
+    icon: Target,
+    color: 'text-red-300',
+    bgColor: 'bg-red-900',
+    label: 'Goaded',
+  },
 }
 
 export function getConditionIcon(condition: string): ConditionIconInfo | undefined {

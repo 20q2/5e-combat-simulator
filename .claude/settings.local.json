@@ -31,7 +31,10 @@
       "Bash(git commit -m \"$\\(cat <<''EOF''\nImprove character level selector UI\n\n- Add large centered level display with +/- buttons\n- Add quick-select buttons for common levels \\(1, 3, 5, 8, 10, 12, 15, 17, 20\\)\n- Show D&D tier indicator \\(Local Heroes, Heroes of the Realm, etc.\\)\n- Color-coded tier display\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
       "Bash(git commit:*)",
       "Bash(curl:*)",
-      "Bash(timeout:*)"
+      "Bash(timeout:*)",
+      "WebFetch(domain:roll20.net)",
+      "WebFetch(domain:dnd2024.wikidot.com)",
+      "WebFetch(domain:rpgbot.net)"
     ]
   }
 }

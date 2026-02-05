@@ -55,6 +55,8 @@ export type Condition =
   | 'shielded'
   // Weapon mastery conditions
   | 'sapped'  // Disadvantage on next attack (from Sap mastery)
+  // Battle Master maneuver conditions
+  | 'goaded'  // Disadvantage on attacks vs targets other than goader (from Goading Attack)
 
 // ============================================
 // Character Types
@@ -111,6 +113,8 @@ export type {
   SneakAttackFeature,
   ActionSurgeFeature,
   WeaponMasteryFeature,
+  CombatSuperiorityFeature,
+  RelentlessFeature,
   GenericClassFeature,
 } from './classFeature'
 
@@ -121,8 +125,18 @@ export {
   isSneakAttackFeature,
   isActionSurgeFeature,
   isWeaponMasteryFeature,
+  isCombatSuperiorityFeature,
+  isRelentlessFeature,
   isGenericClassFeature,
 } from './classFeature'
+
+// Maneuver types are defined in ./maneuver.ts
+export type {
+  ManeuverTrigger,
+  Maneuver,
+  ManeuverResult,
+  ManeuverContext,
+} from './maneuver'
 
 // Import ClassFeature and FightingStyle types for use in interfaces
 import type { ClassFeature, FightingStyle } from './classFeature'
@@ -350,6 +364,7 @@ export interface Character {
   }
   masteredWeaponIds?: string[]  // D&D 2024: IDs of weapons this character has mastered
   fightingStyles?: FightingStyle[]  // Selected fighting styles (primary + additional for Champion)
+  knownManeuverIds?: string[]  // Battle Master: IDs of known maneuvers
 }
 
 export interface ActiveCondition {
@@ -489,6 +504,10 @@ export interface Combatant {
   }
   // Magic Initiate feat tracking
   magicInitiateFreeUses: Record<string, boolean>  // spell ID -> has free use available (resets on long rest)
+  // Battle Master tracking
+  superiorityDiceRemaining: number  // Current number of superiority dice available
+  usedManeuverThisAttack: boolean  // Track if a maneuver was used on the current attack (for on-hit maneuvers)
+  goadedBy?: string  // ID of combatant who goaded this target (for Goading Attack disadvantage)
 }
 
 export interface GridCell {

@@ -95,6 +95,22 @@ export interface WeaponMasteryFeature extends ClassFeatureBase {
   masteredWeaponCountAtLevels?: Record<number, number>  // Level scaling (e.g., Fighter gets more at 4, 10, 16)
 }
 
+// Combat Superiority - Battle Master maneuvers and superiority dice
+export interface CombatSuperiorityFeature extends ClassFeatureBase {
+  type: 'combat_superiority'
+  superiorityDiceCount: number  // Base number of superiority dice (4 at level 3)
+  superiorityDieSize: number  // Die size: 8, 10, or 12
+  maneuversKnown: number  // Base number of maneuvers known (3 at level 3)
+  superiorityDiceAtLevels?: Record<number, number>  // Level scaling for dice count
+  superiorityDieSizeAtLevels?: Record<number, number>  // Level scaling for die size
+  maneuversKnownAtLevels?: Record<number, number>  // Level scaling for maneuvers known
+}
+
+// Relentless - Battle Master level 15 feature (regain 1 die on initiative if empty)
+export interface RelentlessFeature extends ClassFeatureBase {
+  type: 'relentless'
+}
+
 // ============================================
 // Union Type
 // ============================================
@@ -109,6 +125,8 @@ export type ClassFeature =
   | ExtraAttackFeature
   | ImprovedCriticalFeature
   | WeaponMasteryFeature
+  | CombatSuperiorityFeature
+  | RelentlessFeature
   | GenericClassFeature
 
 // ============================================
@@ -153,4 +171,12 @@ export function isGenericClassFeature(f: ClassFeature): f is GenericClassFeature
 
 export function isWeaponMasteryFeature(f: ClassFeature): f is WeaponMasteryFeature {
   return f.type === 'weapon_mastery'
+}
+
+export function isCombatSuperiorityFeature(f: ClassFeature): f is CombatSuperiorityFeature {
+  return f.type === 'combat_superiority'
+}
+
+export function isRelentlessFeature(f: ClassFeature): f is RelentlessFeature {
+  return f.type === 'relentless'
 }

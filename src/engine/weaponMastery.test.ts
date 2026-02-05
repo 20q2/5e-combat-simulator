@@ -92,6 +92,9 @@ function createCharacterCombatant(
     deathSaves: { successes: 0, failures: 0 },
     isStable: false,
     magicInitiateFreeUses: {},
+    superiorityDiceRemaining: 0,
+    usedManeuverThisAttack: false,
+    goadedBy: undefined,
   } as Combatant
 }
 
@@ -133,6 +136,9 @@ function createMonsterCombatant(overrides: Partial<Combatant> = {}): Combatant {
     deathSaves: { successes: 0, failures: 0 },
     isStable: false,
     magicInitiateFreeUses: {},
+    superiorityDiceRemaining: 0,
+    usedManeuverThisAttack: false,
+    goadedBy: undefined,
     ...overrides,
   } as Combatant
 }

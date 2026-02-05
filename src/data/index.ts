@@ -73,3 +73,12 @@ export {
   type OriginFeatId,
   type OriginFeatBenefit,
 } from './originFeats'
+
+// Maneuvers (Battle Master)
+export {
+  MANEUVERS,
+  getManeuverById,
+  getAllManeuvers,
+  getManeuversByTrigger,
+  getManeuversByIds,
+} from './maneuvers'

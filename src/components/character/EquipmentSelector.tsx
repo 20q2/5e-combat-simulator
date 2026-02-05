@@ -9,6 +9,7 @@ import type { Weapon, Armor } from '@/types'
 import { Swords, Shield, Target, Shirt, HardHat, ShieldPlus } from 'lucide-react'
 import { WeaponMasterySelector } from './WeaponMasterySelector'
 import { FightingStyleSelector } from './FightingStyleSelector'
+import { ManeuverSelector } from './ManeuverSelector'
 
 // Parse dice notation and return average
 function parseDiceAverage(diceNotation: string): number {
@@ -333,6 +334,9 @@ export function EquipmentSelector() {
 
       {/* Fighting Style - Only shown for classes with Fighting Style feature */}
       <FightingStyleSelector />
+
+      {/* Battle Master Maneuvers - Only shown for Battle Master subclass */}
+      <ManeuverSelector />
 
       {/* Armor */}
       <Card>

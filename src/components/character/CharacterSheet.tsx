@@ -289,6 +289,7 @@ export function CharacterSheet() {
         draft.fightingStyle,
         draft.additionalFightingStyle,
       ].filter((s): s is FightingStyle => s !== null),
+      knownManeuverIds: draft.selectedManeuverIds.length > 0 ? draft.selectedManeuverIds : undefined,
     }
 
     saveCharacter(character)

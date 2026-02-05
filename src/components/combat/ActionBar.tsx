@@ -37,6 +37,11 @@ import {
   canUseCunningAction,
   getMaxAttacksPerAction,
 } from '@/engine/classAbilities'
+import {
+  hasCombatSuperiority,
+  getMaxSuperiorityDice,
+  getSuperiorityDieSize,
+} from '@/engine/maneuvers'
 
 // Parse spell range string to number (in feet)
 // e.g., "120 feet" → 120, "Touch" → 5, "Self" → 0
@@ -1031,6 +1036,12 @@ export function ActionBar() {
   const canUseActionSurgeNow = hasActionSurge && currentCombatant.hasActed && canUseActionSurge(currentCombatant, currentCombatant.classFeatureUses)
   const actionSurgeUses = hasActionSurge ? getActionSurgeUses(currentCombatant, currentCombatant.classFeatureUses) : 0
 
+  // Check for Combat Superiority (Battle Master subclass)
+  const hasBattleMaster = isCharacter && hasCombatSuperiority(currentCombatant)
+  const maxSupDice = hasBattleMaster ? getMaxSuperiorityDice(currentCombatant) : 0
+  const supDiceRemaining = currentCombatant.superiorityDiceRemaining
+  const supDieSize = hasBattleMaster ? getSuperiorityDieSize(currentCombatant) : 0
+
   // Check for Cunning Action (Rogue class feature, level 2+)
   const hasCunningActionFeature = isCharacter && hasCunningAction(currentCombatant)
   const canCunningDash = hasCunningActionFeature && canUseCunningAction(currentCombatant, 'dash')
@@ -1542,6 +1553,25 @@ export function ActionBar() {
                   tooltip={`Take an additional action this turn (${actionSurgeUses} use remaining)`}
                   badge={actionSurgeUses > 0 ? actionSurgeUses : undefined}
                 />
+              )}
+
+              {/* Superiority Dice (Battle Master) */}
+              {hasBattleMaster && (
+                <>
+                  <div className="w-px h-10 bg-slate-700" />
+                  <div className="flex flex-col items-center justify-center px-2">
+                    <div className="text-xs text-muted-foreground uppercase tracking-wide">Sup. Dice</div>
+                    <div className="flex items-center gap-1">
+                      <span className={cn(
+                        "font-bold text-sm",
+                        supDiceRemaining > 0 ? "text-amber-400" : "text-slate-500"
+                      )}>
+                        {supDiceRemaining}/{maxSupDice}
+                      </span>
+                      <span className="text-xs text-muted-foreground">d{supDieSize}</span>
+                    </div>
+                  </div>
+                </>
               )}
 
               {/* Cunning Action (Rogue, level 2+) */}

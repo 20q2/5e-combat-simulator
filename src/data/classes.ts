@@ -258,11 +258,17 @@ export const classes: CharacterClass[] = [
         features: [
           {
             id: 'combat-superiority',
-            type: 'generic',
+            type: 'combat_superiority',
             name: 'Combat Superiority',
             level: 3,
-            description: 'You learn three maneuvers of your choice. You have four superiority dice, which are d8s. A superiority die is expended when you use it. You regain all expended superiority dice when you finish a short or long rest. You gain another superiority die at 7th level and one more at 15th level.',
+            description: 'You learn maneuvers that are fueled by special dice called superiority dice. You have four d8 superiority dice, and you regain all expended dice when you finish a short or long rest.',
             trigger: 'passive',
+            superiorityDiceCount: 4,
+            superiorityDieSize: 8,
+            maneuversKnown: 3,
+            superiorityDiceAtLevels: { 7: 5, 15: 6 },
+            superiorityDieSizeAtLevels: { 10: 10, 18: 12 },
+            maneuversKnownAtLevels: { 7: 5, 10: 7, 15: 9 },
           },
           {
             id: 'student-of-war',
@@ -281,16 +287,8 @@ export const classes: CharacterClass[] = [
             trigger: 'passive',
           },
           {
-            id: 'improved-combat-superiority',
-            type: 'generic',
-            name: 'Improved Combat Superiority',
-            level: 10,
-            description: 'Your superiority dice turn into d10s. At 18th level, they turn into d12s.',
-            trigger: 'passive',
-          },
-          {
             id: 'relentless',
-            type: 'generic',
+            type: 'relentless',
             name: 'Relentless',
             level: 15,
             description: 'When you roll initiative and have no superiority dice remaining, you regain one superiority die.',

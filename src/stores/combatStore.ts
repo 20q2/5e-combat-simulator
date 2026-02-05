@@ -44,6 +44,10 @@ import {
   applyOnHitMasteryEffect,
   applyGrazeOnMiss,
 } from '@/engine/weaponMastery'
+import {
+  initializeSuperiorityDice,
+  checkRelentless,
+} from '@/engine/maneuvers'
 import { getAoEAffectedCells } from '@/lib/aoeShapes'
 import { getCombatantSize, getOccupiedCells, getFootprintSize } from '@/lib/creatureSize'
 
@@ -161,6 +165,10 @@ interface CombatStore extends CombatState {
   useCunningDash: () => void
   useCunningDisengage: () => void
   useCunningHide: () => void
+
+  // Battle Master maneuvers
+  useSuperiority: (combatantId: string) => void
+  getSuperiorityDiceRemaining: (combatantId: string) => number
 
   // Turn management
   useAction: () => void
@@ -351,12 +359,18 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
       vexedBy: undefined,
       // Magic Initiate free uses
       magicInitiateFreeUses: {},
+      // Battle Master tracking
+      superiorityDiceRemaining: 0,
+      usedManeuverThisAttack: false,
+      goadedBy: undefined,
     }
 
     // Initialize racial and class ability uses for characters
     if (input.type === 'character') {
       combatant.racialAbilityUses = initializeRacialAbilityUses(combatant)
       combatant.classFeatureUses = initializeClassFeatureUses(combatant)
+      // Initialize superiority dice for Battle Masters
+      combatant.superiorityDiceRemaining = initializeSuperiorityDice(combatant)
       // Initialize Magic Initiate free spell uses (one free cast per level 1 spell per long rest)
       const character = input.data as Character
       if (character.magicInitiateChoices) {
@@ -497,7 +511,19 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
         message: `rolls initiative: ${roll.breakdown}`,
       })
 
-      return { ...c, initiative: roll.total }
+      // Check Relentless feature for Battle Masters with 0 dice
+      let superiorityDiceRemaining = c.superiorityDiceRemaining
+      if (checkRelentless(c)) {
+        superiorityDiceRemaining = 1
+        get().addLogEntry({
+          type: 'other',
+          actorId: c.id,
+          actorName: c.name,
+          message: 'Relentless triggers: regains 1 superiority die',
+        })
+      }
+
+      return { ...c, initiative: roll.total, superiorityDiceRemaining }
     })
 
     // Sort by initiative (highest first)
@@ -2613,6 +2639,27 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
       ),
       selectedAction: undefined,
     }))
+  },
+
+  // Battle Master maneuvers
+  useSuperiority: (combatantId) => {
+    const { combatants } = get()
+    const combatant = combatants.find((c) => c.id === combatantId)
+    if (!combatant || combatant.superiorityDiceRemaining <= 0) return
+
+    set((state) => ({
+      combatants: state.combatants.map((c) =>
+        c.id === combatantId
+          ? { ...c, superiorityDiceRemaining: c.superiorityDiceRemaining - 1 }
+          : c
+      ),
+    }))
+  },
+
+  getSuperiorityDiceRemaining: (combatantId) => {
+    const { combatants } = get()
+    const combatant = combatants.find((c) => c.id === combatantId)
+    return combatant?.superiorityDiceRemaining ?? 0
   },
 
   useAction: () => {
