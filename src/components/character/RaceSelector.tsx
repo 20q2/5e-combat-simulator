@@ -20,6 +20,7 @@ import {
 import type { Race, RacialAbility, DarkvisionAbility, DragonAncestry } from '@/types'
 import { isDarkvisionAbility, DRAGON_ANCESTRIES } from '@/types'
 import { OriginFeatSelector } from './OriginFeatSelector'
+import { MagicInitiateSpellSelector } from './MagicInitiateSpellSelector'
 import {
   Eye,
   Shield,
@@ -383,17 +384,27 @@ function RacialChoices({ raceId }: { raceId: string }) {
     setTieflingLegacy,
     setGoliathGiantAncestry,
     setHumanOriginFeat,
+    setHumanMagicInitiate,
   } = useCharacterStore()
 
   // ==================== HUMAN ====================
   if (raceId === 'human') {
     return (
-      <OriginFeatSelector
-        title="Origin Feat"
-        description="As a Human, you gain an Origin feat of your choice."
-        selectedFeat={draft.humanOriginFeat}
-        onSelectFeat={setHumanOriginFeat}
-      />
+      <div className="space-y-4">
+        <OriginFeatSelector
+          title="Origin Feat"
+          description="As a Human, you gain an Origin feat of your choice."
+          selectedFeat={draft.humanOriginFeat}
+          onSelectFeat={setHumanOriginFeat}
+        />
+        {draft.humanOriginFeat === 'magic-initiate' && (
+          <MagicInitiateSpellSelector
+            title="Magic Initiate Spells (Human)"
+            value={draft.humanMagicInitiate}
+            onChange={setHumanMagicInitiate}
+          />
+        )}
+      </div>
     )
   }
 

@@ -4,6 +4,7 @@ import { getAllBackgrounds, getBackgroundById, ORIGIN_FEATS, isRepeatableFeat } 
 import { useCharacterStore } from '@/stores/characterStore'
 import type { Background } from '@/data/backgrounds'
 import { OriginFeatSelector } from './OriginFeatSelector'
+import { MagicInitiateSpellSelector } from './MagicInitiateSpellSelector'
 import {
   Award,
   BookOpen,
@@ -132,6 +133,7 @@ export function BackgroundSelector() {
     draft,
     setBackground,
     setBackgroundOriginFeat,
+    setBackgroundMagicInitiate,
   } = useCharacterStore()
 
   const backgrounds = getAllBackgrounds()
@@ -212,6 +214,13 @@ export function BackgroundSelector() {
               conflictMessage={conflictMessage}
               defaultFeatId={selectedBackground.defaultOriginFeat}
             />
+            {draft.backgroundOriginFeat === 'magic-initiate' && (
+              <MagicInitiateSpellSelector
+                title="Magic Initiate Spells (Background)"
+                value={draft.backgroundMagicInitiate}
+                onChange={setBackgroundMagicInitiate}
+              />
+            )}
           </>
         ) : (
           <Card className="h-full flex items-center justify-center">

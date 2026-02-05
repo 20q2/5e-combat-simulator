@@ -21,6 +21,7 @@ import {
   getBackgroundById,
 } from '@/data'
 import type { OriginFeatId } from '@/data/originFeats'
+import type { MagicInitiateChoice } from '@/stores/characterStore'
 import {
   useCharacterStore,
   calculateFinalAbilityScores,
@@ -231,6 +232,15 @@ export function CharacterSheet() {
     }
     originFeats.push(draft.backgroundOriginFeat)
 
+    // Collect Magic Initiate spell choices
+    const magicInitiateChoices: MagicInitiateChoice[] = []
+    if (draft.humanOriginFeat === 'magic-initiate' && draft.humanMagicInitiate) {
+      magicInitiateChoices.push(draft.humanMagicInitiate)
+    }
+    if (draft.backgroundOriginFeat === 'magic-initiate' && draft.backgroundMagicInitiate) {
+      magicInitiateChoices.push(draft.backgroundMagicInitiate)
+    }
+
     const character: Character = {
       id: `char-${Date.now()}`,
       name: draft.name,
@@ -239,6 +249,7 @@ export function CharacterSheet() {
       subclass,
       background,
       originFeats,
+      magicInitiateChoices: magicInitiateChoices.length > 0 ? magicInitiateChoices : undefined,
       level: draft.level,
       abilityScores: finalAbilityScores,
       maxHp: hp,
@@ -260,7 +271,15 @@ export function CharacterSheet() {
       conditions: [],
       deathSaves: { successes: 0, failures: 0 },
       spellSlots,
-      knownSpells: [...cantrips, ...spells].filter((s): s is NonNullable<typeof s> => s !== undefined),
+      knownSpells: [
+        ...cantrips,
+        ...spells,
+        // Add Magic Initiate spells
+        ...magicInitiateChoices.flatMap((choice) => [
+          ...choice.cantrips.map((id) => getSpellById(id)),
+          choice.levelOneSpell ? getSpellById(choice.levelOneSpell) : undefined,
+        ]),
+      ].filter((s): s is NonNullable<typeof s> => s !== undefined),
       masteredWeaponIds: draft.masteredWeaponIds.length > 0 ? draft.masteredWeaponIds : undefined,
     }
 

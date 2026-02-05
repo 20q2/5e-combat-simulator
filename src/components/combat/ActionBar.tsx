@@ -394,13 +394,28 @@ function SpellSelector({
   spells,
   onSelect,
   onCancel,
+  spellSlots,
+  magicInitiateFreeUses,
 }: {
   spells: Spell[]
   onSelect: (spell: Spell) => void
   onCancel: () => void
+  spellSlots?: Character['spellSlots']
+  magicInitiateFreeUses: Record<string, boolean>
 }) {
   const cantrips = spells.filter((s) => s.level === 0)
   const leveledSpells = spells.filter((s) => s.level > 0)
+
+  // Check if a spell can be cast (has free use or spell slot)
+  const canCastSpell = (spell: Spell): { canCast: boolean; hasFreeUse: boolean; hasSlot: boolean } => {
+    if (spell.level === 0) return { canCast: true, hasFreeUse: false, hasSlot: false } // Cantrips always castable
+
+    const hasFreeUse = magicInitiateFreeUses[spell.id] === true
+    const slotLevel = spell.level as keyof NonNullable<typeof spellSlots>
+    const hasSlot = spellSlots?.[slotLevel]?.current ? spellSlots[slotLevel].current > 0 : false
+
+    return { canCast: hasFreeUse || hasSlot, hasFreeUse, hasSlot }
+  }
 
   return (
     <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-80 bg-slate-900 border-2 border-violet-800 rounded-lg shadow-2xl p-3 z-50">
@@ -428,16 +443,42 @@ function SpellSelector({
         <div>
           <div className="text-xs text-slate-400 mb-1">Spells</div>
           <div className="grid grid-cols-2 gap-1 max-h-32 overflow-y-auto">
-            {leveledSpells.map((spell) => (
-              <button
-                key={spell.id}
-                onClick={() => onSelect(spell)}
-                className="flex justify-between items-center p-2 rounded bg-slate-800 hover:bg-violet-900/50 transition-colors text-left"
-              >
-                <span className="text-xs text-slate-200 truncate">{spell.name}</span>
-                <span className="text-[10px] text-amber-400 ml-1">Lv{spell.level}</span>
-              </button>
-            ))}
+            {leveledSpells.map((spell) => {
+              const { canCast, hasFreeUse, hasSlot } = canCastSpell(spell)
+              return (
+                <button
+                  key={spell.id}
+                  onClick={() => canCast && onSelect(spell)}
+                  disabled={!canCast}
+                  className={cn(
+                    "flex justify-between items-center p-2 rounded transition-colors text-left",
+                    canCast
+                      ? "bg-slate-800 hover:bg-violet-900/50"
+                      : "bg-slate-800/50 opacity-50 cursor-not-allowed"
+                  )}
+                  title={
+                    hasFreeUse
+                      ? "Free cast (Magic Initiate)"
+                      : hasSlot
+                      ? `Uses level ${spell.level} slot`
+                      : "No spell slots or free uses available"
+                  }
+                >
+                  <span className="text-xs text-slate-200 truncate">{spell.name}</span>
+                  <div className="flex items-center gap-1 ml-1">
+                    {hasFreeUse && (
+                      <span className="text-[10px] text-emerald-400 font-medium">FREE</span>
+                    )}
+                    <span className={cn(
+                      "text-[10px]",
+                      hasFreeUse ? "text-slate-500" : "text-amber-400"
+                    )}>
+                      Lv{spell.level}
+                    </span>
+                  </div>
+                </button>
+              )
+            })}
           </div>
         </div>
       )}
@@ -1207,12 +1248,6 @@ export function ActionBar() {
 
             {/* Main Action Buttons */}
             <div className="relative flex-1 flex items-center justify-center gap-2">
-              {/* Spell Slots Display (BG3-style) - floats on top edge of bar */}
-              {isCharacter && character?.spellSlots && (
-                <div className="absolute -top-4 left-1/2 -translate-x-1/2 z-10">
-                  <SpellSlotDisplay spellSlots={character.spellSlots} compact />
-                </div>
-              )}
 
               {/* Action Buttons */}
               {/* Spell selector popup */}
@@ -1221,6 +1256,8 @@ export function ActionBar() {
                   spells={availableSpells}
                   onSelect={handleSpellSelect}
                   onCancel={handleCancelTarget}
+                  spellSlots={character?.spellSlots}
+                  magicInitiateFreeUses={currentCombatant.magicInitiateFreeUses}
                 />
               )}
 
@@ -1300,17 +1337,26 @@ export function ActionBar() {
                 actionType="action"
               />
 
-              <ActionButton
-                icon={<Sparkles className="w-5 h-5" />}
-                label="Spell"
-                onClick={handleSpellClick}
-                active={selectedAction === 'spell'}
-                disabled={currentCombatant.hasActed || !hasSpells}
-                variant="spell"
-                tooltip={!hasSpells ? 'No spells available' : `Cast a spell`}
-                badge={hasSpells ? availableSpells.length : undefined}
-                actionType="action"
-              />
+              {/* Spell button with slot display above it */}
+              <div className="relative">
+                {/* Spell Slots Display - positioned above the Spell button */}
+                {isCharacter && character?.spellSlots && (
+                  <div className="absolute -top-12 left-1/2 -translate-x-1/2 z-10">
+                    <SpellSlotDisplay spellSlots={character.spellSlots} compact />
+                  </div>
+                )}
+                <ActionButton
+                  icon={<Sparkles className="w-5 h-5" />}
+                  label="Spell"
+                  onClick={handleSpellClick}
+                  active={selectedAction === 'spell'}
+                  disabled={currentCombatant.hasActed || !hasSpells}
+                  variant="spell"
+                  tooltip={!hasSpells ? 'No spells available' : `Cast a spell`}
+                  badge={hasSpells ? availableSpells.length : undefined}
+                  actionType="action"
+                />
+              </div>
 
               <div className="w-px h-10 bg-slate-700" />
 

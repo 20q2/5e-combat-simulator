@@ -324,6 +324,9 @@ export function EquipmentSelector() {
         </CardContent>
       </Card>
 
+      {/* Weapon Mastery - Only shown for Fighter and Ranger */}
+      <WeaponMasterySelector />
+
       {/* Armor */}
       <Card>
         <CardHeader>
@@ -442,9 +445,6 @@ export function EquipmentSelector() {
           )}
         </CardContent>
       </Card>
-
-      {/* Weapon Mastery - Only shown for Fighter and Ranger */}
-      <WeaponMasterySelector />
     </div>
   )
 }

@@ -60,6 +60,37 @@ export function getSecondWindFeature(combatant: Combatant): SecondWindFeature | 
 }
 
 /**
+ * Get the effective max uses for Second Wind based on character level
+ */
+export function getSecondWindMaxUses(combatant: Combatant): number {
+  const feature = getSecondWindFeature(combatant)
+  if (!feature) return 0
+  if (feature.maxUses === undefined) return -1 // Unlimited
+
+  // If no level scaling, use base maxUses
+  if (!feature.maxUsesAtLevels) return feature.maxUses
+
+  // Get character level
+  if (combatant.type !== 'character') return feature.maxUses
+  const character = combatant.data as Character
+  const level = character.level
+
+  // Find the highest threshold that applies
+  let effectiveMax = feature.maxUses
+  const thresholds = Object.keys(feature.maxUsesAtLevels)
+    .map(Number)
+    .sort((a, b) => a - b)
+
+  for (const threshold of thresholds) {
+    if (level >= threshold) {
+      effectiveMax = feature.maxUsesAtLevels[threshold]
+    }
+  }
+
+  return effectiveMax
+}
+
+/**
  * Check if Second Wind can be used (has uses remaining and hasn't used bonus action)
  */
 export function canUseSecondWind(
@@ -71,8 +102,9 @@ export function canUseSecondWind(
   if (combatant.hasBonusActed) return false
 
   // Check uses remaining
-  if (feature.maxUses !== undefined) {
-    const uses = classFeatureUses[feature.id] ?? feature.maxUses
+  const maxUses = getSecondWindMaxUses(combatant)
+  if (maxUses !== -1) {
+    const uses = classFeatureUses[feature.id] ?? maxUses
     if (uses <= 0) return false
   }
 
@@ -107,8 +139,9 @@ export function getSecondWindUses(
 ): number {
   const feature = getSecondWindFeature(combatant)
   if (!feature) return 0
-  if (feature.maxUses === undefined) return -1 // Unlimited
-  return classFeatureUses[feature.id] ?? feature.maxUses
+  const maxUses = getSecondWindMaxUses(combatant)
+  if (maxUses === -1) return -1 // Unlimited
+  return classFeatureUses[feature.id] ?? maxUses
 }
 
 // ============================================
@@ -444,7 +477,12 @@ export function initializeClassFeatureUses(combatant: Combatant): Record<string,
 
   for (const feature of features) {
     if (feature.maxUses !== undefined) {
-      uses[feature.id] = feature.maxUses
+      // Handle Second Wind level scaling
+      if (isSecondWindFeature(feature)) {
+        uses[feature.id] = getSecondWindMaxUses(combatant)
+      } else {
+        uses[feature.id] = feature.maxUses
+      }
     }
   }
 

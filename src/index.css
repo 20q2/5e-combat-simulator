@@ -151,3 +151,45 @@ body {
 .animate-tooltip-enter {
   animation: tooltip-enter 0.15s ease-out forwards;
 }
+
+/* Custom Scrollbar - Modern floating style */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: hsl(217.2 32.6% 28%) transparent;
+}
+
+/* Webkit browsers (Chrome, Safari, Edge) */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+  border-radius: 8px;
+  margin: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: hsl(217.2 32.6% 24%);
+  border-radius: 8px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  transition: background 0.2s ease;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(217.2 32.6% 32%);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-thumb:active {
+  background: hsl(263 70% 50%);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}

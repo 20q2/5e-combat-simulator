@@ -312,6 +312,7 @@ export interface Spell {
 
 // Import Background type for Character interface
 import type { Background, OriginFeatId } from '@/data'
+import type { MagicInitiateChoice } from '@/stores/characterStore'
 
 export interface Character {
   id: string
@@ -321,6 +322,7 @@ export interface Character {
   subclass?: Subclass
   background?: Background
   originFeats: OriginFeatId[] // All origin feats (from background, and from human racial if applicable)
+  magicInitiateChoices?: MagicInitiateChoice[] // Spell choices for Magic Initiate feat(s)
   level: number
   abilityScores: AbilityScores
   maxHp: number
@@ -480,6 +482,8 @@ export interface Combatant {
     attackerId: string
     expiresOnRound: number
   }
+  // Magic Initiate feat tracking
+  magicInitiateFreeUses: Record<string, boolean>  // spell ID -> has free use available (resets on long rest)
 }
 
 export interface GridCell {

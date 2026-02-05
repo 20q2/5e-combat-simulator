@@ -20,6 +20,17 @@ export type TieflingLegacy = 'abyssal' | 'chthonic' | 'infernal'
 export type GoliathGiantAncestry = 'cloud' | 'fire' | 'frost' | 'hill' | 'stone' | 'storm'
 export type KeenSensesSkill = 'insight' | 'perception' | 'survival'
 
+// Magic Initiate feat spell choices
+export type MagicInitiateSpellList = 'cleric' | 'druid' | 'wizard'
+export type MagicInitiateAbility = 'intelligence' | 'wisdom' | 'charisma'
+
+export interface MagicInitiateChoice {
+  spellList: MagicInitiateSpellList
+  spellcastingAbility: MagicInitiateAbility
+  cantrips: string[] // spell IDs (max 2)
+  levelOneSpell: string | null // spell ID
+}
+
 // Re-export for backward compatibility
 export type OriginFeat = OriginFeatId
 
@@ -40,9 +51,11 @@ export interface CharacterDraft {
   tieflingLegacy: TieflingLegacy | null
   goliathGiantAncestry: GoliathGiantAncestry | null
   humanOriginFeat: OriginFeat | null
+  humanMagicInitiate: MagicInitiateChoice | null // Spell choices if human picked Magic Initiate
   // Background
   backgroundId: string | null
   backgroundOriginFeat: OriginFeat | null
+  backgroundMagicInitiate: MagicInitiateChoice | null // Spell choices if background feat is Magic Initiate
   classId: string | null
   subclassId: string | null
   level: number
@@ -78,8 +91,10 @@ interface CharacterState {
   setTieflingLegacy: (legacy: TieflingLegacy | null) => void
   setGoliathGiantAncestry: (ancestry: GoliathGiantAncestry | null) => void
   setHumanOriginFeat: (feat: OriginFeat | null) => void
+  setHumanMagicInitiate: (choice: MagicInitiateChoice | null) => void
   setBackground: (backgroundId: string | null) => void
   setBackgroundOriginFeat: (feat: OriginFeat | null) => void
+  setBackgroundMagicInitiate: (choice: MagicInitiateChoice | null) => void
   setClass: (classId: string | null) => void
   setSubclass: (subclassId: string | null) => void
   setLevel: (level: number) => void
@@ -130,8 +145,10 @@ const initialDraft: CharacterDraft = {
   tieflingLegacy: null,
   goliathGiantAncestry: null,
   humanOriginFeat: null,
+  humanMagicInitiate: null,
   backgroundId: null,
   backgroundOriginFeat: null,
+  backgroundMagicInitiate: null,
   classId: null,
   subclassId: null,
   level: 1,
@@ -248,7 +265,17 @@ export const useCharacterStore = create<CharacterState>()(
 
       setHumanOriginFeat: (feat) =>
         set((state) => ({
-          draft: { ...state.draft, humanOriginFeat: feat },
+          draft: {
+            ...state.draft,
+            humanOriginFeat: feat,
+            // Clear magic initiate choices if feat changes
+            humanMagicInitiate: feat === 'magic-initiate' ? state.draft.humanMagicInitiate : null,
+          },
+        })),
+
+      setHumanMagicInitiate: (choice) =>
+        set((state) => ({
+          draft: { ...state.draft, humanMagicInitiate: choice },
         })),
 
       setBackground: (backgroundId) =>
@@ -263,7 +290,17 @@ export const useCharacterStore = create<CharacterState>()(
 
       setBackgroundOriginFeat: (feat) =>
         set((state) => ({
-          draft: { ...state.draft, backgroundOriginFeat: feat },
+          draft: {
+            ...state.draft,
+            backgroundOriginFeat: feat,
+            // Clear magic initiate choices if feat changes
+            backgroundMagicInitiate: feat === 'magic-initiate' ? state.draft.backgroundMagicInitiate : null,
+          },
+        })),
+
+      setBackgroundMagicInitiate: (choice) =>
+        set((state) => ({
+          draft: { ...state.draft, backgroundMagicInitiate: choice },
         })),
 
       setClass: (classId) =>

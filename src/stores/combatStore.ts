@@ -337,12 +337,23 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
       usedCleaveThisTurn: false,
       usedNickThisTurn: false,
       vexedBy: undefined,
+      // Magic Initiate free uses
+      magicInitiateFreeUses: {},
     }
 
     // Initialize racial and class ability uses for characters
     if (input.type === 'character') {
       combatant.racialAbilityUses = initializeRacialAbilityUses(combatant)
       combatant.classFeatureUses = initializeClassFeatureUses(combatant)
+      // Initialize Magic Initiate free spell uses (one free cast per level 1 spell per long rest)
+      const character = input.data as Character
+      if (character.magicInitiateChoices) {
+        for (const choice of character.magicInitiateChoices) {
+          if (choice.levelOneSpell) {
+            combatant.magicInitiateFreeUses[choice.levelOneSpell] = true
+          }
+        }
+      }
     }
 
     // Update grid cell occupancy immutably
@@ -1885,50 +1896,78 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
 
     // Check and consume spell slot for leveled spells (not cantrips)
     if (spell.level > 0) {
-      const spellSlots = character.spellSlots
-      if (!spellSlots) {
+      // Check if Magic Initiate free use is available for this spell
+      const hasMagicInitiateFreeUse = caster.magicInitiateFreeUses[spell.id] === true
+
+      if (hasMagicInitiateFreeUse) {
+        // Use the free Magic Initiate cast
+        set((state) => ({
+          combatants: state.combatants.map((c) =>
+            c.id === casterId
+              ? {
+                  ...c,
+                  magicInitiateFreeUses: {
+                    ...c.magicInitiateFreeUses,
+                    [spell.id]: false,
+                  },
+                }
+              : c
+          ),
+        }))
+
         get().addLogEntry({
           type: 'spell',
           actorId: casterId,
           actorName: caster.name,
-          message: `${caster.name} cannot cast ${spell.name} - no spell slots!`,
+          message: `${caster.name} uses Magic Initiate free cast of ${spell.name}!`,
         })
-        return false
-      }
+      } else {
+        // No free use available, check spell slots
+        const spellSlots = character.spellSlots
+        if (!spellSlots) {
+          get().addLogEntry({
+            type: 'spell',
+            actorId: casterId,
+            actorName: caster.name,
+            message: `${caster.name} cannot cast ${spell.name} - no spell slots!`,
+          })
+          return false
+        }
 
-      const slotLevel = spell.level as keyof typeof spellSlots
-      const slot = spellSlots[slotLevel]
-      if (!slot || slot.current <= 0) {
+        const slotLevel = spell.level as keyof typeof spellSlots
+        const slot = spellSlots[slotLevel]
+        if (!slot || slot.current <= 0) {
+          get().addLogEntry({
+            type: 'spell',
+            actorId: casterId,
+            actorName: caster.name,
+            message: `${caster.name} cannot cast ${spell.name} - no level ${spell.level} spell slots remaining!`,
+          })
+          return false
+        }
+
+        // Decrement the spell slot
+        const updatedSpellSlots = {
+          ...spellSlots,
+          [slotLevel]: { ...slot, current: slot.current - 1 },
+        }
+
+        // Update character's spell slots in combatants
+        set((state) => ({
+          combatants: state.combatants.map((c) =>
+            c.id === casterId && c.type === 'character'
+              ? { ...c, data: { ...(c.data as Character), spellSlots: updatedSpellSlots } }
+              : c
+          ),
+        }))
+
         get().addLogEntry({
           type: 'spell',
           actorId: casterId,
           actorName: caster.name,
-          message: `${caster.name} cannot cast ${spell.name} - no level ${spell.level} spell slots remaining!`,
+          message: `${caster.name} uses a level ${spell.level} spell slot (${slot.current - 1}/${slot.max} remaining)`,
         })
-        return false
       }
-
-      // Decrement the spell slot
-      const updatedSpellSlots = {
-        ...spellSlots,
-        [slotLevel]: { ...slot, current: slot.current - 1 },
-      }
-
-      // Update character's spell slots in combatants
-      set((state) => ({
-        combatants: state.combatants.map((c) =>
-          c.id === casterId && c.type === 'character'
-            ? { ...c, data: { ...(c.data as Character), spellSlots: updatedSpellSlots } }
-            : c
-        ),
-      }))
-
-      get().addLogEntry({
-        type: 'spell',
-        actorId: casterId,
-        actorName: caster.name,
-        message: `${caster.name} uses a level ${spell.level} spell slot (${slot.current - 1}/${slot.max} remaining)`,
-      })
     }
 
     // Log spell cast

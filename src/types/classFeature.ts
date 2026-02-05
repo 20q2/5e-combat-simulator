@@ -30,6 +30,7 @@ export interface SecondWindFeature extends ClassFeatureBase {
   type: 'second_wind'
   healDice: string  // "1d10"
   healBonusPerLevel: boolean  // Add class level to heal
+  maxUsesAtLevels?: Record<number, number>  // Level scaling (e.g., {1: 2, 4: 3, 10: 4})
 }
 
 // Fighting Style - passive combat bonuses
