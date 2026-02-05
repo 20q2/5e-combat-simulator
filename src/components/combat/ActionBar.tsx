@@ -1221,6 +1221,7 @@ export function ActionBar() {
             type: spell.areaOfEffect.type,
             size: spell.areaOfEffect.size,
             origin: currentCombatant.position,
+            originType: spell.areaOfEffect.origin,
           })
         } else {
           setAoEPreview(undefined)

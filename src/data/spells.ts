@@ -316,7 +316,7 @@ export const spells: Spell[] = [
       dice: '2d8',
     },
     savingThrow: 'constitution',
-    areaOfEffect: { type: 'cube', size: 15 },
+    areaOfEffect: { type: 'cube', size: 15, origin: 'self' },
   },
   {
     id: 'sleep',

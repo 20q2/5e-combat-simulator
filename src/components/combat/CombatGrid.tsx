@@ -582,6 +582,7 @@ export function CombatGrid() {
       size: aoePreview.size,
       origin: aoePreview.origin,
       target: targetPosition,
+      originType: aoePreview.originType,
     })
   }, [aoePreview, hoveredCell])
 

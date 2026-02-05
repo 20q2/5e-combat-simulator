@@ -2097,6 +2097,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
           size: spell.areaOfEffect.size,
           origin: caster.position,
           target: aoeTargetPosition,
+          originType: spell.areaOfEffect.origin,
         }
         const affectedCells = getAoEAffectedCells(aoeConfig)
 

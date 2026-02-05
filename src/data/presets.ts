@@ -1,4 +1,5 @@
 import type { Character, AbilityScores, TerrainDefinition } from '@/types'
+import type { FightingStyle } from '@/types/classFeature'
 import { getRaceById, getClassById, getWeaponById, getArmorById, getSpellById, getClassFeaturesByLevel } from './index'
 import encounterData from './encounters.json'
 
@@ -12,14 +13,18 @@ function createPresetCharacter(config: {
   abilityScores: AbilityScores
   meleeWeaponId?: string
   rangedWeaponId?: string
+  offhandWeaponId?: string
   armorId?: string
   shieldId?: string
   spellIds?: string[]
+  masteredWeaponIds?: string[]
+  fightingStyles?: FightingStyle[]
 }): Character | null {
   const race = getRaceById(config.raceId)
   const charClass = getClassById(config.classId)
   const meleeWeapon = config.meleeWeaponId ? getWeaponById(config.meleeWeaponId) : undefined
   const rangedWeapon = config.rangedWeaponId ? getWeaponById(config.rangedWeaponId) : undefined
+  const offhandWeapon = config.offhandWeaponId ? getWeaponById(config.offhandWeaponId) : undefined
   const armor = config.armorId ? getArmorById(config.armorId) : undefined
   const shield = config.shieldId ? getArmorById(config.shieldId) : undefined
 
@@ -106,6 +111,7 @@ function createPresetCharacter(config: {
     equipment: {
       meleeWeapon,
       rangedWeapon,
+      offhandWeapon,
       armor,
       shield,
       items: [],
@@ -115,6 +121,8 @@ function createPresetCharacter(config: {
     features,
     conditions: [],
     deathSaves: { successes: 0, failures: 0 },
+    masteredWeaponIds: config.masteredWeaponIds,
+    fightingStyles: config.fightingStyles,
   }
 }
 
@@ -132,6 +140,21 @@ export const presetCharacters = [
     rangedWeaponId: 'longbow',
     armorId: 'chain-mail',
     shieldId: 'shield',
+  }),
+
+  // Human Fighter Level 5 - Extra Attack & Weapon Mastery
+  createPresetCharacter({
+    id: 'preset-fighter-5',
+    name: 'Kira Steelstrike',
+    raceId: 'human',
+    classId: 'fighter',
+    level: 5,
+    abilityScores: { strength: 16, dexterity: 14, constitution: 16, intelligence: 10, wisdom: 12, charisma: 8 },
+    meleeWeaponId: 'greatsword',
+    rangedWeaponId: 'longbow',
+    armorId: 'chain-mail',
+    masteredWeaponIds: ['greatsword', 'longbow', 'halberd'],
+    fightingStyles: ['great_weapon'],
   }),
 
   // Elf Rogue - Sneaky striker

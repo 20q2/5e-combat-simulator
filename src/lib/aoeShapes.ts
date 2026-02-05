@@ -8,6 +8,7 @@ export interface AoEConfig {
   size: number // in feet
   origin: Position // caster position for cones/lines, or ignored for sphere/cube
   target: Position // cursor/target position
+  originType?: 'self' | 'point' // 'self' means AoE must touch caster (Thunder Wave), 'point' means freely placeable
 }
 
 /**
@@ -205,6 +206,81 @@ function getCubeAffectedCells(
 }
 
 /**
+ * Calculate cells affected by a self-originating cube AoE (like Thunder Wave)
+ * The cube must have one edge touching the caster's space and extends outward
+ * Direction is determined by where the player is aiming
+ */
+function getSelfOriginCubeAffectedCells(
+  origin: Position,
+  target: Position,
+  sizeFeet: number
+): Set<string> {
+  const cells = new Set<string>()
+
+  // If target is at origin, default to extending north
+  const effectiveTarget = (target.x === origin.x && target.y === origin.y)
+    ? { x: origin.x, y: origin.y - 1 }
+    : target
+
+  // Get direction from origin to target
+  const angle = Math.atan2(effectiveTarget.y - origin.y, effectiveTarget.x - origin.x)
+  const direction = snapToDirection(angle)
+
+  const sizeSquares = Math.ceil(sizeFeet / 5)
+
+  // Direction vectors for where the cube extends
+  const dirVectors: Record<Direction, { dx: number; dy: number }> = {
+    N: { dx: 0, dy: -1 },
+    NE: { dx: 1, dy: -1 },
+    E: { dx: 1, dy: 0 },
+    SE: { dx: 1, dy: 1 },
+    S: { dx: 0, dy: 1 },
+    SW: { dx: -1, dy: 1 },
+    W: { dx: -1, dy: 0 },
+    NW: { dx: -1, dy: -1 },
+  }
+
+  const dir = dirVectors[direction]
+
+  // For cardinal directions, the cube extends straight out
+  // For diagonal directions, it extends at a 45-degree angle
+  const isCardinal = direction === 'N' || direction === 'S' || direction === 'E' || direction === 'W'
+
+  if (isCardinal) {
+    // Cardinal: cube extends in primary direction, centered perpendicular
+    const halfWidth = Math.floor(sizeSquares / 2)
+
+    for (let primary = 1; primary <= sizeSquares; primary++) {
+      for (let perp = -halfWidth; perp <= halfWidth; perp++) {
+        let x: number, y: number
+        if (dir.dx !== 0) {
+          // East/West: primary is X, perpendicular is Y
+          x = origin.x + dir.dx * primary
+          y = origin.y + perp
+        } else {
+          // North/South: primary is Y, perpendicular is X
+          x = origin.x + perp
+          y = origin.y + dir.dy * primary
+        }
+        cells.add(`${x},${y}`)
+      }
+    }
+  } else {
+    // Diagonal: cube extends diagonally, filling a square area
+    for (let dx = 0; dx < sizeSquares; dx++) {
+      for (let dy = 0; dy < sizeSquares; dy++) {
+        const x = origin.x + (dx + 1) * dir.dx
+        const y = origin.y + (dy + 1) * dir.dy
+        cells.add(`${x},${y}`)
+      }
+    }
+  }
+
+  return cells
+}
+
+
+/**
  * Calculate cells affected by a line AoE
  * Line from origin toward target, 5 feet wide (1 cell)
  * Snaps to 8 directions like cones
@@ -254,7 +330,7 @@ function getLineAffectedCells(
  * Main function to get affected cells for any AoE type
  */
 export function getAoEAffectedCells(config: AoEConfig): Set<string> {
-  const { type, size, origin, target } = config
+  const { type, size, origin, target, originType } = config
 
   switch (type) {
     case 'cone':
@@ -263,6 +339,10 @@ export function getAoEAffectedCells(config: AoEConfig): Set<string> {
     case 'cylinder':
       return getSphereAffectedCells(target, size)
     case 'cube':
+      // Self-origin cubes (like Thunder Wave) extend from the caster
+      if (originType === 'self') {
+        return getSelfOriginCubeAffectedCells(origin, target, size)
+      }
       return getCubeAffectedCells(target, size)
     case 'line':
       return getLineAffectedCells(origin, target, size)

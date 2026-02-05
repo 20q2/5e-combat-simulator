@@ -291,6 +291,7 @@ export interface Spell {
   areaOfEffect?: {
     type: 'cone' | 'cube' | 'cylinder' | 'line' | 'sphere'
     size: number
+    origin?: 'self' | 'point' // 'self' means AoE must touch caster (like Thunder Wave), 'point' means freely placeable
   }
   // Multi-projectile spells (Magic Missile, Scorching Ray, Eldritch Blast, etc.)
   projectiles?: {
@@ -532,6 +533,7 @@ export interface AoEPreview {
   type: 'cone' | 'cube' | 'cylinder' | 'line' | 'sphere'
   size: number
   origin: Position // Caster position
+  originType?: 'self' | 'point' // 'self' means AoE must touch caster (Thunder Wave)
 }
 
 export type CombatPopupType =
