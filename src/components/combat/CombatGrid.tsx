@@ -33,6 +33,17 @@ function getMapBackgroundImage(filename: string | undefined): string | null {
 
 const CELL_SIZE = 56 // pixels
 
+// Parse spell range string to number (in feet)
+// e.g., "120 feet" → 120, "Touch" → 5, "Self" → 0
+function parseSpellRangeForGrid(range: string): number {
+  const lowerRange = range.toLowerCase()
+  if (lowerRange === 'self' || lowerRange.startsWith('self')) return 0
+  if (lowerRange === 'touch') return 5
+  const match = range.match(/(\d+)\s*(feet|ft|foot)?/i)
+  if (match) return parseInt(match[1], 10)
+  return 0
+}
+
 // Get the direction arrow for a path segment
 function getPathArrow(from: Position, to: Position): string {
   const dx = to.x - from.x
@@ -408,15 +419,58 @@ export function CombatGrid() {
     return new Set(reachablePositions.map((p) => `${p.x},${p.y}`))
   }, [reachablePositions])
 
-  // Calculate targetable positions and valid target IDs (enemy positions when in attack mode)
-  const { targetablePositions, validTargetIds, attackerWeapons } = useMemo(() => {
-    if (phase !== 'combat' || selectedAction !== 'attack' || !currentTurnId) {
-      return { targetablePositions: new Set<string>(), validTargetIds: new Set<string>(), attackerWeapons: null }
+  // Calculate targetable positions and valid target IDs (enemy positions when in attack/spell targeting mode)
+  const { targetablePositions, validTargetIds, attackerWeapons, isSpellTargeting: _isSpellTargeting } = useMemo(() => {
+    if (phase !== 'combat' || !currentTurnId) {
+      return { targetablePositions: new Set<string>(), validTargetIds: new Set<string>(), attackerWeapons: null, isSpellTargeting: false }
     }
 
     const attacker = combatants.find(c => c.id === currentTurnId)
     if (!attacker) {
-      return { targetablePositions: new Set<string>(), validTargetIds: new Set<string>(), attackerWeapons: null }
+      return { targetablePositions: new Set<string>(), validTargetIds: new Set<string>(), attackerWeapons: null, isSpellTargeting: false }
+    }
+
+    // Check if we're targeting with a single-target attack spell (not AoE, not projectile)
+    const isSpellAttackTargeting = selectedSpell &&
+      (selectedSpell.attackType || selectedSpell.savingThrow || selectedSpell.damage) &&
+      !selectedSpell.areaOfEffect &&
+      !selectedSpell.projectiles &&
+      !aoePreview
+
+    if (isSpellAttackTargeting) {
+      // Spell targeting - find enemies within spell range
+      const spellRange = parseSpellRangeForGrid(selectedSpell.range)
+      const enemies = combatants.filter(c =>
+        c.id !== currentTurnId &&
+        c.currentHp > 0 &&
+        c.position.x >= 0
+      )
+
+      // For character casters, only target monsters; for monster casters, only target characters
+      const validEnemies = enemies.filter(c =>
+        (attacker.type === 'character' && c.type === 'monster') ||
+        (attacker.type === 'monster' && c.type === 'character')
+      )
+
+      // Filter by range
+      const inRangeTargets = validEnemies.filter(c => {
+        const dx = Math.abs(c.position.x - attacker.position.x)
+        const dy = Math.abs(c.position.y - attacker.position.y)
+        const distance = Math.max(dx, dy) * 5 // Simple grid distance in feet
+        return distance <= spellRange
+      })
+
+      return {
+        targetablePositions: new Set(inRangeTargets.map(t => `${t.position.x},${t.position.y}`)),
+        validTargetIds: new Set(inRangeTargets.map(t => t.id)),
+        attackerWeapons: null,
+        isSpellTargeting: true
+      }
+    }
+
+    // Weapon attack targeting
+    if (selectedAction !== 'attack') {
+      return { targetablePositions: new Set<string>(), validTargetIds: new Set<string>(), attackerWeapons: null, isSpellTargeting: false }
     }
 
     let meleeWeapon = undefined
@@ -436,9 +490,10 @@ export function CombatGrid() {
     return {
       targetablePositions: new Set(validTargets.map(t => `${t.position.x},${t.position.y}`)),
       validTargetIds: new Set(validTargets.map(t => t.id)),
-      attackerWeapons: { meleeWeapon, rangedWeapon, monsterAction }
+      attackerWeapons: { meleeWeapon, rangedWeapon, monsterAction },
+      isSpellTargeting: false
     }
-  }, [phase, selectedAction, currentTurnId, combatants, getValidTargets])
+  }, [phase, selectedAction, currentTurnId, combatants, getValidTargets, selectedSpell, aoePreview])
 
   // Calculate threatened positions (cells adjacent to enemies - opportunity attack zones)
   const threatenedPositions = useMemo(() => {
@@ -716,6 +771,17 @@ export function CombatGrid() {
       return
     }
 
+    // In single-target spell mode, clicking a valid target casts the spell
+    if (phase === 'combat' && selectedSpell && !aoePreview && !projectileTargeting && currentTurnId && validTargetIds.has(combatantId)) {
+      setHoveredTarget(undefined)
+      castSpell(currentTurnId, selectedSpell, combatantId)
+      // Clear spell state
+      setSelectedSpell(undefined)
+      setRangeHighlight(undefined)
+      setSelectedAction(undefined)
+      return
+    }
+
     // In attack mode, clicking a valid target performs the attack
     if (phase === 'combat' && selectedAction === 'attack' && currentTurnId && validTargetIds.has(combatantId)) {
       setHoveredTarget(undefined)
@@ -921,8 +987,8 @@ export function CombatGrid() {
                   if (hovered) {
                     setHoveredCell(combatant.position)
                   }
-                  // Highlight valid targets when hovering in attack mode
-                  if (selectedAction === 'attack' && validTargetIds.has(combatant.id)) {
+                  // Highlight valid targets when hovering in attack or spell targeting mode
+                  if ((selectedAction === 'attack' || (selectedSpell && !aoePreview && !projectileTargeting)) && validTargetIds.has(combatant.id)) {
                     setHoveredTarget(hovered ? combatant.id : undefined)
                   }
                 }}

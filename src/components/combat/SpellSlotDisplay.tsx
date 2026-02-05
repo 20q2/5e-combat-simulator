@@ -64,6 +64,7 @@ interface SpellSlotLevelProps {
 }
 
 function SpellSlotLevel({ level, max, current, onClick, compact = false }: SpellSlotLevelProps) {
+  const hasAvailableSlots = current > 0
   const slots = []
   for (let i = 0; i < max; i++) {
     const isAvailable = i < current
@@ -82,20 +83,13 @@ function SpellSlotLevel({ level, max, current, onClick, compact = false }: Spell
     )
   }
 
-  return (
-    <div
-      className={cn(
-        'flex flex-col items-center gap-0.5 px-2 py-0.5 rounded transition-colors',
-        onClick && 'cursor-pointer hover:bg-slate-800/50',
-        compact && 'px-1.5'
-      )}
-      onClick={onClick}
-      title={`Level ${level} Spell Slots: ${current}/${max}`}
-    >
+  const content = (
+    <>
       {/* Roman numeral label */}
       <span className={cn(
-        'font-bold text-slate-400',
-        compact ? 'text-[9px]' : 'text-[10px]'
+        'font-bold transition-colors',
+        compact ? 'text-[9px]' : 'text-[10px]',
+        hasAvailableSlots ? 'text-violet-300' : 'text-slate-500'
       )}>
         {romanNumerals[level]}
       </span>
@@ -103,6 +97,38 @@ function SpellSlotLevel({ level, max, current, onClick, compact = false }: Spell
       <div className={cn('flex gap-0.5', compact && 'gap-px')}>
         {slots}
       </div>
+    </>
+  )
+
+  if (onClick && hasAvailableSlots) {
+    return (
+      <button
+        type="button"
+        className={cn(
+          'flex flex-col items-center gap-0.5 rounded transition-all',
+          'border border-transparent',
+          'hover:bg-violet-900/50 hover:border-violet-600/50',
+          'active:scale-95',
+          compact ? 'px-1.5 py-0.5' : 'px-2 py-0.5'
+        )}
+        onClick={onClick}
+        title={`Cast level ${level} spell (${current}/${max} slots)`}
+      >
+        {content}
+      </button>
+    )
+  }
+
+  return (
+    <div
+      className={cn(
+        'flex flex-col items-center gap-0.5 px-2 py-0.5 rounded',
+        !hasAvailableSlots && 'opacity-50',
+        compact && 'px-1.5'
+      )}
+      title={`Level ${level} Spell Slots: ${current}/${max}${!hasAvailableSlots ? ' (no slots available)' : ''}`}
+    >
+      {content}
     </div>
   )
 }

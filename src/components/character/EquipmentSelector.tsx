@@ -8,6 +8,7 @@ import { getAbilityModifier } from '@/types'
 import type { Weapon, Armor } from '@/types'
 import { Swords, Shield, Target, Shirt, HardHat, ShieldPlus } from 'lucide-react'
 import { WeaponMasterySelector } from './WeaponMasterySelector'
+import { FightingStyleSelector } from './FightingStyleSelector'
 
 // Parse dice notation and return average
 function parseDiceAverage(diceNotation: string): number {
@@ -134,7 +135,7 @@ function ArmorCard({
 }
 
 export function EquipmentSelector() {
-  const { draft, setMeleeWeapon, setRangedWeapon, setArmor, setShield } = useCharacterStore()
+  const { draft, setMeleeWeapon, setRangedWeapon, setOffhandWeapon, setArmor, setShield } = useCharacterStore()
 
   const selectedClass = draft.classId ? getClassById(draft.classId) : null
   const weapons = getAllWeapons()
@@ -194,6 +195,7 @@ export function EquipmentSelector() {
   const selectedArmor = draft.armorId ? getArmorById(draft.armorId) ?? null : null
 
   const hasTwoHandedWeapon = selectedMeleeWeapon?.properties.includes('two-handed') ?? false
+  const mainWeaponIsLight = selectedMeleeWeapon?.properties.includes('light') ?? false
 
   // Calculate preview AC
   const previewAC = calculateAC(
@@ -205,14 +207,16 @@ export function EquipmentSelector() {
   // Group weapons by type
   const meleeWeapons = availableWeapons.filter((w) => w.type === 'melee')
   const rangedWeapons = availableWeapons.filter((w) => w.type === 'ranged')
+  const lightMeleeWeapons = meleeWeapons.filter((w) => w.properties.includes('light'))
 
-  // Handle melee weapon selection - auto-unequip shield if two-handed
+  // Handle melee weapon selection - auto-unequip shield/offhand if two-handed
   const handleMeleeWeaponSelect = (weaponId: string | null) => {
     setMeleeWeapon(weaponId)
     if (weaponId) {
       const weapon = meleeWeapons.find((w) => w.id === weaponId)
-      if (weapon?.properties.includes('two-handed') && draft.shieldEquipped) {
-        setShield(false)
+      if (weapon?.properties.includes('two-handed')) {
+        if (draft.shieldEquipped) setShield(false)
+        if (draft.offhandWeaponId) setOffhandWeapon(null)
       }
     }
   }
@@ -327,6 +331,9 @@ export function EquipmentSelector() {
       {/* Weapon Mastery - Only shown for Fighter and Ranger */}
       <WeaponMasterySelector />
 
+      {/* Fighting Style - Only shown for classes with Fighting Style feature */}
+      <FightingStyleSelector />
+
       {/* Armor */}
       <Card>
         <CardHeader>
@@ -416,33 +423,77 @@ export function EquipmentSelector() {
           </div>
 
           {/* Shield */}
-          {shield && (
-            <div className="mt-4 pt-4 border-t">
-              <div className="flex items-center gap-4">
-                <Label className="flex items-center gap-1.5">
-                  <ShieldPlus className="w-4 h-4 text-blue-400" />
-                  Shield (+2 AC)
-                </Label>
+          {/* Offhand */}
+          <div className="mt-4 pt-4 border-t">
+            <Label className="flex items-center gap-1.5 mb-3">
+              <ShieldPlus className="w-4 h-4 text-blue-400" />
+              Offhand
+            </Label>
+            {hasTwoHandedWeapon ? (
+              <p className="text-sm text-muted-foreground">Cannot use offhand with two-handed weapon</p>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {/* None option */}
                 <button
-                  onClick={() => setShield(!draft.shieldEquipped)}
-                  disabled={!canUseShield || hasTwoHandedWeapon}
+                  onClick={() => {
+                    setShield(false)
+                    setOffhandWeapon(null)
+                  }}
                   className={cn(
-                    'px-4 py-2 rounded-lg border-2 transition-all',
-                    draft.shieldEquipped ? 'border-primary bg-primary/5' : 'border-border',
-                    canUseShield && !hasTwoHandedWeapon ? 'hover:border-primary/50' : 'opacity-50 cursor-not-allowed'
+                    'px-3 py-2 rounded-lg border-2 transition-all text-sm',
+                    !draft.shieldEquipped && !draft.offhandWeaponId
+                      ? 'border-primary bg-primary/5'
+                      : 'border-border hover:border-primary/50'
                   )}
                 >
-                  {draft.shieldEquipped ? 'Equipped' : 'Not Equipped'}
+                  None
                 </button>
-                {!canUseShield && (
-                  <span className="text-xs text-destructive">Not proficient</span>
+
+                {/* Shield option */}
+                {shield && (
+                  <button
+                    onClick={() => setShield(true)}
+                    disabled={!canUseShield}
+                    className={cn(
+                      'px-3 py-2 rounded-lg border-2 transition-all text-sm',
+                      draft.shieldEquipped
+                        ? 'border-primary bg-primary/5'
+                        : 'border-border',
+                      canUseShield ? 'hover:border-primary/50' : 'opacity-50 cursor-not-allowed'
+                    )}
+                  >
+                    Shield (+2 AC)
+                    {!canUseShield && <span className="text-xs text-destructive ml-1">(not proficient)</span>}
+                  </button>
                 )}
-                {canUseShield && hasTwoHandedWeapon && (
-                  <span className="text-xs text-destructive">Cannot use with two-handed weapon</span>
-                )}
+
+                {/* Light weapons for dual wielding */}
+                {lightMeleeWeapons.map((weapon) => (
+                  <button
+                    key={weapon.id}
+                    onClick={() => setOffhandWeapon(weapon.id)}
+                    disabled={!mainWeaponIsLight}
+                    title={!mainWeaponIsLight ? 'Main weapon must be light for two-weapon fighting' : weapon.name}
+                    className={cn(
+                      'px-3 py-2 rounded-lg border-2 transition-all text-sm',
+                      draft.offhandWeaponId === weapon.id
+                        ? 'border-primary bg-primary/5'
+                        : 'border-border',
+                      mainWeaponIsLight ? 'hover:border-primary/50' : 'opacity-50 cursor-not-allowed'
+                    )}
+                  >
+                    {weapon.name}
+                    <span className="text-xs text-muted-foreground ml-1">({weapon.damage})</span>
+                  </button>
+                ))}
               </div>
-            </div>
-          )}
+            )}
+            {!mainWeaponIsLight && !hasTwoHandedWeapon && lightMeleeWeapons.length > 0 && (
+              <p className="text-xs text-muted-foreground mt-2">
+                Equip a light main weapon to dual wield
+              </p>
+            )}
+          </div>
         </CardContent>
       </Card>
     </div>

@@ -77,9 +77,9 @@ export const classes: CharacterClass[] = [
         type: 'fighting_style',
         name: 'Fighting Style',
         level: 1,
-        description: 'Dueling: +2 damage when wielding a melee weapon in one hand with no other weapons.',
+        description: 'You adopt a particular style of fighting as your specialty.',
         trigger: 'passive',
-        style: 'dueling',
+        availableStyles: ['archery', 'defense', 'dueling', 'great_weapon', 'protection', 'two_weapon'],
       },
       {
         id: 'second-wind',
@@ -227,7 +227,7 @@ export const classes: CharacterClass[] = [
           },
           {
             id: 'additional-fighting-style',
-            type: 'generic',
+            type: 'additional_fighting_style',
             name: 'Additional Fighting Style',
             level: 10,
             description: 'You can choose a second option from the Fighting Style class feature.',
@@ -1095,9 +1095,9 @@ export const classes: CharacterClass[] = [
         type: 'fighting_style',
         name: 'Fighting Style',
         level: 2,
-        description: 'Archery: +2 to ranged attack rolls.',
+        description: 'You adopt a particular style of fighting as your specialty.',
         trigger: 'passive',
-        style: 'archery',
+        availableStyles: ['archery', 'defense', 'dueling', 'two_weapon'],
       },
       {
         id: 'spellcasting-ranger',

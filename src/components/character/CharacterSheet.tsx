@@ -32,7 +32,7 @@ import { getAbilityModifier, getProficiencyBonus } from '@/types'
 import { getCharacterTokenImage } from '@/lib/tokenImages'
 import { CharacterSaveSuccess } from './CharacterSaveSuccess'
 import type { Character, AbilityName } from '@/types'
-import type { ClassFeature, FightingStyleFeature, SneakAttackFeature, ImprovedCriticalFeature, ExtraAttackFeature, CunningActionFeature } from '@/types/classFeature'
+import type { ClassFeature, FightingStyleFeature, FightingStyle, SneakAttackFeature, ImprovedCriticalFeature, ExtraAttackFeature, CunningActionFeature } from '@/types/classFeature'
 import type { RacialAbility } from '@/types/race'
 import {
   Swords,
@@ -77,8 +77,10 @@ function formatModifier(mod: number): string {
 
 function getFeatureDetail(feature: ClassFeature, level: number): string | null {
   switch (feature.type) {
-    case 'fighting_style':
-      return FIGHTING_STYLE_NAMES[(feature as FightingStyleFeature).style] || null
+    case 'fighting_style': {
+      const style = (feature as FightingStyleFeature).style
+      return style ? (FIGHTING_STYLE_NAMES[style] || null) : null
+    }
     case 'sneak_attack': {
       const sneakAttack = feature as SneakAttackFeature
       const dice = sneakAttack.diceScaling[level] || sneakAttack.baseDice
@@ -134,6 +136,7 @@ export function CharacterSheet() {
   const characterClass = draft.classId ? getClassById(draft.classId) ?? null : null
   const meleeWeapon = draft.meleeWeaponId ? getWeaponById(draft.meleeWeaponId) ?? null : null
   const rangedWeapon = draft.rangedWeaponId ? getWeaponById(draft.rangedWeaponId) ?? null : null
+  const offhandWeapon = draft.offhandWeaponId ? getWeaponById(draft.offhandWeaponId) ?? null : null
   const armor = draft.armorId ? getArmorById(draft.armorId) ?? null : null
   const subclass = characterClass?.subclasses.find((s) => s.id === draft.subclassId)
   const background = draft.backgroundId ? getBackgroundById(draft.backgroundId) ?? null : null
@@ -242,7 +245,7 @@ export function CharacterSheet() {
     }
 
     const character: Character = {
-      id: `char-${Date.now()}`,
+      id: draft.editingCharacterId ?? `char-${Date.now()}`,
       name: draft.name,
       race,
       class: characterClass,
@@ -263,6 +266,7 @@ export function CharacterSheet() {
       equipment: {
         meleeWeapon: meleeWeapon ?? undefined,
         rangedWeapon: rangedWeapon ?? undefined,
+        offhandWeapon: offhandWeapon ?? undefined,
         armor: armor ?? undefined,
         shield: draft.shieldEquipped ? getArmorById('shield') : undefined,
         items: [],
@@ -281,6 +285,10 @@ export function CharacterSheet() {
         ]),
       ].filter((s): s is NonNullable<typeof s> => s !== undefined),
       masteredWeaponIds: draft.masteredWeaponIds.length > 0 ? draft.masteredWeaponIds : undefined,
+      fightingStyles: [
+        draft.fightingStyle,
+        draft.additionalFightingStyle,
+      ].filter((s): s is FightingStyle => s !== null),
     }
 
     saveCharacter(character)

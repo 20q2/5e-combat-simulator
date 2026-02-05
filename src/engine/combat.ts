@@ -12,6 +12,7 @@ import {
 import {
   getDuelingBonus,
   getArcheryBonus,
+  getDefenseBonus,
   canSneakAttack,
   rollSneakAttackDamage,
   getCriticalRange,
@@ -86,14 +87,20 @@ export function getCharacterDamageBonus(character: Character, weapon: Weapon): n
 }
 
 /**
- * Get the AC of a combatant
+ * Get the AC of a combatant (includes Defense fighting style bonus)
  */
 export function getCombatantAC(combatant: Combatant): number {
+  let baseAC: number
   if (combatant.type === 'character') {
-    return (combatant.data as Character).ac
+    baseAC = (combatant.data as Character).ac
   } else {
-    return (combatant.data as Monster).ac
+    baseAC = (combatant.data as Monster).ac
   }
+
+  // Add Defense fighting style bonus (+1 AC when wearing armor)
+  const defenseBonus = getDefenseBonus(combatant)
+
+  return baseAC + defenseBonus
 }
 
 /**

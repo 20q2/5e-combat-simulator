@@ -236,6 +236,18 @@ function checkCombatEnd(combatants: Combatant[]): 'victory' | 'defeat' | null {
   return null
 }
 
+/**
+ * Check if a combatant is dead (not just unconscious)
+ * Monsters die at 0 HP, characters die at 3 death save failures
+ */
+export function isDead(combatant: Combatant): boolean {
+  if (combatant.type === 'monster') {
+    return combatant.currentHp <= 0
+  }
+  // Characters are dead only with 3 death save failures
+  return combatant.deathSaves.failures >= 3
+}
+
 function getAvailableReactionSpells(
   combatant: Combatant,
   trigger: 'on_hit' | 'on_magic_missile' | 'enemy_casts_spell' | 'take_damage'
@@ -852,10 +864,11 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
     // Get creature size for footprint calculations
     const size = getCombatantSize(combatant)
 
-    // Get occupied positions for pathfinding (all footprint cells of other combatants)
+    // Get occupied positions for pathfinding (all footprint cells of other living combatants)
+    // Dead creatures are corpses - their spaces are passable
     const occupiedPositions = new Set<string>()
     combatants
-      .filter((c) => c.id !== id && c.position.x >= 0)
+      .filter((c) => c.id !== id && c.position.x >= 0 && !isDead(c))
       .forEach((c) => {
         const cSize = getCombatantSize(c)
         const cells = getOccupiedCells(c.position, cSize)
@@ -1080,10 +1093,11 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
       }
     }
 
-    // Get occupied positions for pathfinding (all footprint cells of other combatants)
+    // Get occupied positions for pathfinding (all footprint cells of other living combatants)
+    // Dead creatures are corpses - their spaces are passable
     const occupiedPositions = new Set<string>()
     combatants
-      .filter((c) => c.id !== combatantId && c.position.x >= 0)
+      .filter((c) => c.id !== combatantId && c.position.x >= 0 && !isDead(c))
       .forEach((c) => {
         const cSize = getCombatantSize(c)
         const cells = getOccupiedCells(c.position, cSize)
@@ -1124,10 +1138,11 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
 
     const remainingMovement = speed - combatant.movementUsed
 
-    // Get occupied positions (all footprint cells of other combatants)
+    // Get occupied positions (all footprint cells of other living combatants)
+    // Dead creatures are corpses - their spaces are passable
     const occupiedPositions = new Set<string>()
     combatants
-      .filter((c) => c.id !== combatantId && c.position.x >= 0)
+      .filter((c) => c.id !== combatantId && c.position.x >= 0 && !isDead(c))
       .forEach((c) => {
         const cSize = getCombatantSize(c)
         const cells = getOccupiedCells(c.position, cSize)
@@ -1193,21 +1208,20 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
         }
       }
 
-      // Track if we need to clear grid occupancy for a dead monster
-      let monsterDied = false
-      const { x, y } = target.position
+      // Track if creature died this damage application
+      let creatureDied = false
 
       // Check for falling unconscious (characters) or dying (monsters)
       if (newHp === 0 && wasConscious) {
         if (target.type === 'monster') {
-          // Monsters die immediately at 0 HP
+          // Monsters die immediately at 0 HP - they become corpses (prone, space is passable)
           get().addLogEntry({
             type: 'death',
             actorId: targetId,
             actorName: target.name,
             message: `${target.name} has been slain!`,
           })
-          monsterDied = true
+          creatureDied = true
         } else {
           // Characters fall unconscious
           get().addLogEntry({
@@ -1222,7 +1236,8 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
       // If already unconscious and takes damage, add death save failure
       if (target.currentHp === 0 && !target.isStable && target.type === 'character') {
         const newFailures = target.deathSaves.failures + 1
-        if (newFailures >= 3) {
+        const characterDied = newFailures >= 3
+        if (characterDied) {
           get().addLogEntry({
             type: 'death',
             actorId: targetId,
@@ -1240,16 +1255,29 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
         return {
           combatants: state.combatants.map((c) =>
             c.id === targetId
-              ? { ...c, deathSaves: { ...c.deathSaves, failures: newFailures } }
+              ? {
+                  ...c,
+                  deathSaves: { ...c.deathSaves, failures: newFailures },
+                  // Add prone condition when character dies (becomes corpse)
+                  conditions: characterDied
+                    ? [...c.conditions.filter(cond => cond.condition !== 'prone'), { condition: 'prone' as const, duration: -1 }]
+                    : c.conditions,
+                }
               : c
           ),
         }
       }
 
-      // Build grid updates for dead monsters
-      const gridUpdates: Array<{ x: number; y: number; occupiedBy: string | undefined }> = []
-      if (monsterDied && x >= 0 && y >= 0 && state.grid.cells[y]?.[x]) {
-        gridUpdates.push({ x, y, occupiedBy: undefined })
+      // Build conditions array for the updated combatant
+      let newConditions = target.conditions
+      if (newHp === 0 && wasConscious) {
+        if (target.type === 'character') {
+          // Characters fall unconscious (not dead yet)
+          newConditions = [...newConditions, { condition: 'unconscious' as const, duration: -1 }]
+        } else if (creatureDied) {
+          // Monsters die and become corpses (prone)
+          newConditions = [...newConditions.filter(c => c.condition !== 'prone'), { condition: 'prone' as const, duration: -1 }]
+        }
       }
 
       return {
@@ -1259,14 +1287,11 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
                 ...c,
                 currentHp: newHp,
                 racialAbilityUses: updatedRacialAbilityUses,
-                // Only add unconscious condition for characters, not monsters (they're dead)
-                conditions: newHp === 0 && wasConscious && c.type === 'character'
-                  ? [...c.conditions, { condition: 'unconscious' as const, duration: -1 }]
-                  : c.conditions,
+                conditions: newConditions,
               }
             : c
         ),
-        grid: gridUpdates.length > 0 ? updateGridOccupancy(state.grid, gridUpdates) : state.grid,
+        // Note: Dead creatures remain on the grid as corpses (their space becomes passable via isDead check)
       }
     })
 
@@ -1889,8 +1914,22 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
     const { combatants } = get()
     const caster = combatants.find((c) => c.id === casterId)
 
-    if (!caster || caster.hasActed) return false
+    if (!caster) return false
     if (caster.type !== 'character') return false // Only characters can cast spells for now
+
+    // Check action economy based on casting time
+    const isBonusActionSpell = spell.castingTime.toLowerCase().includes('bonus action')
+    const isReactionSpell = spell.castingTime.toLowerCase().includes('reaction')
+
+    // Reaction spells can't be cast proactively (need a trigger)
+    if (isReactionSpell) return false
+
+    // Check if the appropriate action is available
+    if (isBonusActionSpell) {
+      if (caster.hasBonusActed) return false
+    } else {
+      if (caster.hasActed) return false
+    }
 
     const character = caster.data as Character
 
@@ -2029,12 +2068,13 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
         })
       }
 
-      // Mark action as used
-      set((state) => ({
-        combatants: state.combatants.map((c) =>
-          c.id === casterId ? { ...c, hasActed: true } : c
-        ),
-      }))
+      // Mark the appropriate action type as used
+      const isBonusActionSpell = spell.castingTime.toLowerCase().includes('bonus action')
+      if (isBonusActionSpell) {
+        get().useBonusAction()
+      } else {
+        get().useAction()
+      }
 
       return true
     }
@@ -2237,8 +2277,10 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
       }
     }
 
-    // Mark action as used (cantrips are still actions)
-    if (spell.level === 0 || spell.castingTime === '1 action') {
+    // Mark the appropriate action type as used (isBonusActionSpell defined at start of function)
+    if (isBonusActionSpell) {
+      get().useBonusAction()
+    } else {
       get().useAction()
     }
 

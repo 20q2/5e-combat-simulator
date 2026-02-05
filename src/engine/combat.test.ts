@@ -6,8 +6,7 @@ import {
   getCombatantAC,
   resolveAttack,
 } from './combat'
-import type { Combatant, Character, Monster, Weapon, ActiveCondition } from '@/types'
-import type { ClassFeature } from '@/types/classFeature'
+import type { Combatant, Character, Monster, Weapon } from '@/types'
 
 // ============================================
 // Test Helpers

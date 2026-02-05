@@ -157,10 +157,36 @@ export function getFightingStyleFeature(combatant: Combatant): FightingStyleFeat
 
 /**
  * Get the active fighting style for a combatant
+ * Reads from Character.fightingStyles (player-selected) first, falls back to feature.style
  */
 export function getFightingStyle(combatant: Combatant): FightingStyle | undefined {
+  if (combatant.type !== 'character') return undefined
+  const character = combatant.data as Character
+
+  // Read from the character's selected fighting styles (primary)
+  if (character.fightingStyles && character.fightingStyles.length > 0) {
+    return character.fightingStyles[0]
+  }
+
+  // Fallback to feature's hardcoded style (for backwards compatibility)
   const feature = getFightingStyleFeature(combatant)
   return feature?.style
+}
+
+/**
+ * Get all fighting styles for a combatant (for Champion with additional style)
+ */
+export function getAllFightingStyles(combatant: Combatant): FightingStyle[] {
+  if (combatant.type !== 'character') return []
+  const character = combatant.data as Character
+  return character.fightingStyles ?? []
+}
+
+/**
+ * Check if combatant has a specific fighting style
+ */
+export function hasFightingStyle(combatant: Combatant, style: FightingStyle): boolean {
+  return getAllFightingStyles(combatant).includes(style)
 }
 
 /**

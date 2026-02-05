@@ -389,6 +389,14 @@ function WeaponTargetSelector({
   )
 }
 
+// Helper to check spell casting time type
+function getSpellActionType(spell: Spell): 'action' | 'bonus' | 'reaction' {
+  const castingTime = spell.castingTime.toLowerCase()
+  if (castingTime.includes('reaction')) return 'reaction'
+  if (castingTime.includes('bonus')) return 'bonus'
+  return 'action'
+}
+
 // Spell selector modal
 function SpellSelector({
   spells,
@@ -396,59 +404,124 @@ function SpellSelector({
   onCancel,
   spellSlots,
   magicInitiateFreeUses,
+  selectedSlotLevel,
+  hasActed,
+  hasBonusActed,
 }: {
   spells: Spell[]
-  onSelect: (spell: Spell) => void
+  onSelect: (spell: Spell, castAtLevel?: number) => void
   onCancel: () => void
   spellSlots?: Character['spellSlots']
   magicInitiateFreeUses: Record<string, boolean>
+  selectedSlotLevel?: number  // If set, only show spells that can be cast at this level
+  hasActed: boolean
+  hasBonusActed: boolean
 }) {
-  const cantrips = spells.filter((s) => s.level === 0)
-  const leveledSpells = spells.filter((s) => s.level > 0)
+  // Filter spells based on selected slot level
+  const filteredSpells = selectedSlotLevel
+    ? spells.filter((s) => s.level > 0 && s.level <= selectedSlotLevel)
+    : spells
 
-  // Check if a spell can be cast (has free use or spell slot)
-  const canCastSpell = (spell: Spell): { canCast: boolean; hasFreeUse: boolean; hasSlot: boolean } => {
-    if (spell.level === 0) return { canCast: true, hasFreeUse: false, hasSlot: false } // Cantrips always castable
+  const cantrips = selectedSlotLevel ? [] : spells.filter((s) => s.level === 0)
+  const leveledSpells = filteredSpells.filter((s) => s.level > 0)
+
+  // Check if a spell can be cast (has free use or spell slot, and action economy)
+  const canCastSpell = (spell: Spell, atLevel?: number): { canCast: boolean; hasFreeUse: boolean; hasSlot: boolean; actionType: 'action' | 'bonus' | 'reaction'; disableReason?: string } => {
+    const actionType = getSpellActionType(spell)
+
+    // Reaction spells can't be cast proactively - show but disable
+    if (actionType === 'reaction') {
+      return { canCast: false, hasFreeUse: false, hasSlot: false, actionType, disableReason: 'Requires a trigger' }
+    }
+
+    // Check action economy
+    if (actionType === 'bonus' && hasBonusActed) {
+      return { canCast: false, hasFreeUse: false, hasSlot: false, actionType, disableReason: 'Bonus action already used' }
+    }
+    if (actionType === 'action' && hasActed) {
+      return { canCast: false, hasFreeUse: false, hasSlot: false, actionType, disableReason: 'Action already used' }
+    }
+
+    // Cantrips don't need spell slots
+    if (spell.level === 0) {
+      return { canCast: true, hasFreeUse: false, hasSlot: false, actionType }
+    }
 
     const hasFreeUse = magicInitiateFreeUses[spell.id] === true
-    const slotLevel = spell.level as keyof NonNullable<typeof spellSlots>
+
+    // If casting at a specific level (upcasting), check that slot level
+    const checkLevel = atLevel ?? spell.level
+    const slotLevel = checkLevel as keyof NonNullable<typeof spellSlots>
     const hasSlot = spellSlots?.[slotLevel]?.current ? spellSlots[slotLevel].current > 0 : false
 
-    return { canCast: hasFreeUse || hasSlot, hasFreeUse, hasSlot }
+    const canCast = hasFreeUse || hasSlot
+    return {
+      canCast,
+      hasFreeUse,
+      hasSlot,
+      actionType,
+      disableReason: canCast ? undefined : 'No spell slots available'
+    }
+  }
+
+  const handleSpellSelect = (spell: Spell) => {
+    // If we selected a specific slot level, cast at that level
+    onSelect(spell, selectedSlotLevel)
   }
 
   return (
     <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-80 bg-slate-900 border-2 border-violet-800 rounded-lg shadow-2xl p-3 z-50">
-      <div className="text-sm font-semibold text-violet-300 mb-2">Select Spell</div>
+      <div className="text-sm font-semibold text-violet-300 mb-2">
+        {selectedSlotLevel ? `Cast with Level ${selectedSlotLevel} Slot` : 'Select Spell'}
+      </div>
 
       {cantrips.length > 0 && (
         <div className="mb-3">
           <div className="text-xs text-slate-400 mb-1">Cantrips</div>
           <div className="grid grid-cols-2 gap-1">
-            {cantrips.map((spell) => (
-              <button
-                key={spell.id}
-                onClick={() => onSelect(spell)}
-                className="flex justify-between items-center p-2 rounded bg-slate-800 hover:bg-violet-900/50 transition-colors text-left"
-              >
-                <span className="text-xs text-slate-200 truncate">{spell.name}</span>
-                <span className="text-[10px] text-violet-400 ml-1">{spell.damage?.dice || spell.range}</span>
-              </button>
-            ))}
+            {cantrips.map((spell) => {
+              const { canCast, actionType, disableReason } = canCastSpell(spell)
+              return (
+                <button
+                  key={spell.id}
+                  onClick={() => canCast && handleSpellSelect(spell)}
+                  disabled={!canCast}
+                  className={cn(
+                    "flex justify-between items-center p-2 rounded transition-colors text-left",
+                    canCast
+                      ? "bg-slate-800 hover:bg-violet-900/50"
+                      : "bg-slate-800/50 opacity-50 cursor-not-allowed"
+                  )}
+                  title={disableReason}
+                >
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    {/* Action type indicator */}
+                    {actionType === 'action' && <Circle className="w-2.5 h-2.5 fill-emerald-500 text-emerald-400 shrink-0" />}
+                    {actionType === 'bonus' && <Triangle className="w-2.5 h-2.5 fill-amber-500 text-amber-400 shrink-0" />}
+                    {actionType === 'reaction' && <Square className="w-2.5 h-2.5 fill-violet-500 text-violet-400 shrink-0" />}
+                    <span className="text-xs text-slate-200 truncate">{spell.name}</span>
+                  </div>
+                  <span className="text-[10px] text-violet-400 ml-1 shrink-0">{spell.damage?.dice || spell.range}</span>
+                </button>
+              )
+            })}
           </div>
         </div>
       )}
 
       {leveledSpells.length > 0 && (
         <div>
-          <div className="text-xs text-slate-400 mb-1">Spells</div>
+          <div className="text-xs text-slate-400 mb-1">
+            {selectedSlotLevel ? `Spells (level 1-${selectedSlotLevel})` : 'Spells'}
+          </div>
           <div className="grid grid-cols-2 gap-1 max-h-32 overflow-y-auto">
             {leveledSpells.map((spell) => {
-              const { canCast, hasFreeUse, hasSlot } = canCastSpell(spell)
+              const { canCast, hasFreeUse, actionType, disableReason } = canCastSpell(spell, selectedSlotLevel)
+              const isUpcast = selectedSlotLevel && spell.level < selectedSlotLevel
               return (
                 <button
                   key={spell.id}
-                  onClick={() => canCast && onSelect(spell)}
+                  onClick={() => canCast && handleSpellSelect(spell)}
                   disabled={!canCast}
                   className={cn(
                     "flex justify-between items-center p-2 rounded transition-colors text-left",
@@ -457,21 +530,32 @@ function SpellSelector({
                       : "bg-slate-800/50 opacity-50 cursor-not-allowed"
                   )}
                   title={
-                    hasFreeUse
+                    disableReason
+                      ? disableReason
+                      : hasFreeUse
                       ? "Free cast (Magic Initiate)"
-                      : hasSlot
-                      ? `Uses level ${spell.level} slot`
-                      : "No spell slots or free uses available"
+                      : isUpcast
+                      ? `Upcast from level ${spell.level} to level ${selectedSlotLevel}`
+                      : `Uses level ${spell.level} slot`
                   }
                 >
-                  <span className="text-xs text-slate-200 truncate">{spell.name}</span>
-                  <div className="flex items-center gap-1 ml-1">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    {/* Action type indicator */}
+                    {actionType === 'action' && <Circle className="w-2.5 h-2.5 fill-emerald-500 text-emerald-400 shrink-0" />}
+                    {actionType === 'bonus' && <Triangle className="w-2.5 h-2.5 fill-amber-500 text-amber-400 shrink-0" />}
+                    {actionType === 'reaction' && <Square className="w-2.5 h-2.5 fill-violet-500 text-violet-400 shrink-0" />}
+                    <span className="text-xs text-slate-200 truncate">{spell.name}</span>
+                  </div>
+                  <div className="flex items-center gap-1 ml-1 shrink-0">
                     {hasFreeUse && (
                       <span className="text-[10px] text-emerald-400 font-medium">FREE</span>
                     )}
+                    {isUpcast && !hasFreeUse && actionType !== 'reaction' && (
+                      <span className="text-[10px] text-amber-400">↑</span>
+                    )}
                     <span className={cn(
                       "text-[10px]",
-                      hasFreeUse ? "text-slate-500" : "text-amber-400"
+                      actionType === 'reaction' ? "text-violet-400/70" : hasFreeUse ? "text-slate-500" : "text-violet-400"
                     )}>
                       Lv{spell.level}
                     </span>
@@ -480,6 +564,12 @@ function SpellSelector({
               )
             })}
           </div>
+        </div>
+      )}
+
+      {leveledSpells.length === 0 && cantrips.length === 0 && (
+        <div className="text-xs text-slate-500 italic py-4 text-center">
+          No spells available at this level
         </div>
       )}
 
@@ -741,6 +831,7 @@ export function ActionBar() {
   const [isSelectingSpell, setIsSelectingSpell] = useState(false)
   const [isSelectingWeapon, setIsSelectingWeapon] = useState(false)
   const [isExecutingAI, setIsExecutingAI] = useState(false)
+  const [selectedSlotLevel, setSelectedSlotLevel] = useState<number | undefined>(undefined)
 
   const currentCombatant = getCurrentCombatant(state)
 
@@ -755,6 +846,7 @@ export function ActionBar() {
       setIsSelectingSpell(false)
       setAoEPreview(undefined)
       setSelectedSpell(undefined)
+      setSelectedSlotLevel(undefined)
     }
   }, [selectedAction, setRangeHighlight])
 
@@ -1075,6 +1167,7 @@ export function ActionBar() {
     cancelProjectileTargeting()
     setSelectedSpell(undefined)
     setIsSelectingSpell(false)
+    setSelectedSlotLevel(undefined)
   }
 
   const handleSpellClick = () => {
@@ -1082,15 +1175,33 @@ export function ActionBar() {
       setSelectedAction(undefined)
       setIsSelectingSpell(false)
       setSelectedSpell(undefined)
+      setSelectedSlotLevel(undefined)
     } else {
       setSelectedAction('spell')
       setIsSelectingSpell(true)
+      setSelectedSlotLevel(undefined)  // Show all spells when clicking Spell button
     }
   }
 
-  const handleSpellSelect = (spell: Spell) => {
+  const handleSlotLevelClick = (level: number) => {
+    // If already selecting spells at this level, cancel
+    if (selectedAction === 'spell' && selectedSlotLevel === level) {
+      setSelectedAction(undefined)
+      setIsSelectingSpell(false)
+      setSelectedSlotLevel(undefined)
+    } else {
+      // Open spell selector filtered to this slot level
+      setSelectedAction('spell')
+      setIsSelectingSpell(true)
+      setSelectedSlotLevel(level)
+    }
+  }
+
+  const handleSpellSelect = (spell: Spell, _castAtLevel?: number) => {
+    // Note: _castAtLevel is available for future upcasting implementation
     setSelectedSpell(spell)
     setIsSelectingSpell(false)
+    setSelectedSlotLevel(undefined)
 
     if (spell.damage || spell.attackType || spell.savingThrow) {
       // Set range highlight for the spell
@@ -1258,6 +1369,9 @@ export function ActionBar() {
                   onCancel={handleCancelTarget}
                   spellSlots={character?.spellSlots}
                   magicInitiateFreeUses={currentCombatant.magicInitiateFreeUses}
+                  selectedSlotLevel={selectedSlotLevel}
+                  hasActed={currentCombatant.hasActed}
+                  hasBonusActed={currentCombatant.hasBonusActed}
                 />
               )}
 
@@ -1341,8 +1455,12 @@ export function ActionBar() {
               <div className="relative">
                 {/* Spell Slots Display - positioned above the Spell button */}
                 {isCharacter && character?.spellSlots && (
-                  <div className="absolute -top-12 left-1/2 -translate-x-1/2 z-10">
-                    <SpellSlotDisplay spellSlots={character.spellSlots} compact />
+                  <div className="absolute -top-14 left-1/2 -translate-x-1/2 z-10">
+                    <SpellSlotDisplay
+                      spellSlots={character.spellSlots}
+                      onSlotClick={!currentCombatant.hasActed ? handleSlotLevelClick : undefined}
+                      compact
+                    />
                   </div>
                 )}
                 <ActionButton

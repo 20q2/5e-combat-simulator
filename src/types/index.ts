@@ -106,6 +106,7 @@ export type {
   ClassFeatureTrigger,
   SecondWindFeature,
   FightingStyleFeature,
+  AdditionalFightingStyleFeature,
   FightingStyle,
   SneakAttackFeature,
   ActionSurgeFeature,
@@ -116,14 +117,15 @@ export type {
 export {
   isSecondWindFeature,
   isFightingStyleFeature,
+  isAdditionalFightingStyleFeature,
   isSneakAttackFeature,
   isActionSurgeFeature,
   isWeaponMasteryFeature,
   isGenericClassFeature,
 } from './classFeature'
 
-// Import ClassFeature type for use in CharacterClass interface
-import type { ClassFeature } from './classFeature'
+// Import ClassFeature and FightingStyle types for use in interfaces
+import type { ClassFeature, FightingStyle } from './classFeature'
 
 export interface CharacterClass {
   id: string
@@ -233,6 +235,7 @@ export interface Armor {
 export interface Equipment {
   meleeWeapon?: Weapon
   rangedWeapon?: Weapon
+  offhandWeapon?: Weapon // Light weapon for two-weapon fighting
   armor?: Armor
   shield?: Armor
   items: EquipmentItem[]
@@ -345,6 +348,7 @@ export interface Character {
     failures: number
   }
   masteredWeaponIds?: string[]  // D&D 2024: IDs of weapons this character has mastered
+  fightingStyles?: FightingStyle[]  // Selected fighting styles (primary + additional for Champion)
 }
 
 export interface ActiveCondition {

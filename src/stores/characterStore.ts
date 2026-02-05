@@ -7,6 +7,7 @@ import type {
   CharacterClass,
   Armor,
   DragonAncestry,
+  FightingStyle,
 } from '@/types'
 import { getAbilityModifier } from '@/types'
 import type { OriginFeatId } from '@/data/originFeats'
@@ -63,9 +64,13 @@ export interface CharacterDraft {
   selectedCantrips: string[]
   meleeWeaponId: string | null
   rangedWeaponId: string | null
+  offhandWeaponId: string | null // Light weapon for two-weapon fighting
   armorId: string | null
   shieldEquipped: boolean
   masteredWeaponIds: string[]
+  fightingStyle: FightingStyle | null
+  additionalFightingStyle: FightingStyle | null  // For Champion level 10
+  editingCharacterId: string | null // Set when editing an existing character
 }
 
 interface CharacterState {
@@ -102,10 +107,13 @@ interface CharacterState {
   toggleCantrip: (spellId: string) => void
   setMeleeWeapon: (weaponId: string | null) => void
   setRangedWeapon: (weaponId: string | null) => void
+  setOffhandWeapon: (weaponId: string | null) => void
   setArmor: (armorId: string | null) => void
   setShield: (equipped: boolean) => void
   setMasteredWeapons: (weaponIds: string[]) => void
   toggleMasteredWeapon: (weaponId: string) => void
+  setFightingStyle: (style: FightingStyle | null) => void
+  setAdditionalFightingStyle: (style: FightingStyle | null) => void
   setAbilityBonusPlus2: (ability: AbilityName | null) => void
   setAbilityBonusPlus1: (ability: AbilityName | null) => void
   setAbilityBonusMode: (mode: AbilityBonusMode) => void
@@ -118,6 +126,7 @@ interface CharacterState {
   saveCharacter: (character: Character) => void
   deleteCharacter: (characterId: string) => void
   loadCharacter: (characterId: string) => Character | undefined
+  loadCharacterForEditing: (characterId: string) => boolean
 }
 
 const STANDARD_ARRAY = [15, 14, 13, 12, 10, 8]
@@ -156,9 +165,13 @@ const initialDraft: CharacterDraft = {
   selectedCantrips: [],
   meleeWeaponId: null,
   rangedWeaponId: null,
+  offhandWeaponId: null,
   armorId: null,
   shieldEquipped: false,
   masteredWeaponIds: [],
+  fightingStyle: null,
+  additionalFightingStyle: null,
+  editingCharacterId: null,
 }
 
 export const useCharacterStore = create<CharacterState>()(
@@ -311,6 +324,8 @@ export const useCharacterStore = create<CharacterState>()(
             subclassId: null, // Reset subclass when class changes
             selectedSpellIds: [],
             selectedCantrips: [],
+            fightingStyle: null, // Reset fighting style when class changes
+            additionalFightingStyle: null,
           },
         })),
 
@@ -356,6 +371,16 @@ export const useCharacterStore = create<CharacterState>()(
           draft: { ...state.draft, rangedWeaponId: weaponId },
         })),
 
+      setOffhandWeapon: (weaponId) =>
+        set((state) => ({
+          draft: {
+            ...state.draft,
+            offhandWeaponId: weaponId,
+            // Clear shield if equipping offhand weapon
+            shieldEquipped: weaponId ? false : state.draft.shieldEquipped,
+          },
+        })),
+
       setArmor: (armorId) =>
         set((state) => ({
           draft: { ...state.draft, armorId },
@@ -363,7 +388,12 @@ export const useCharacterStore = create<CharacterState>()(
 
       setShield: (equipped) =>
         set((state) => ({
-          draft: { ...state.draft, shieldEquipped: equipped },
+          draft: {
+            ...state.draft,
+            shieldEquipped: equipped,
+            // Clear offhand weapon if equipping shield
+            offhandWeaponId: equipped ? null : state.draft.offhandWeaponId,
+          },
         })),
 
       setMasteredWeapons: (weaponIds) =>
@@ -384,6 +414,16 @@ export const useCharacterStore = create<CharacterState>()(
             },
           }
         }),
+
+      setFightingStyle: (style) =>
+        set((state) => ({
+          draft: { ...state.draft, fightingStyle: style },
+        })),
+
+      setAdditionalFightingStyle: (style) =>
+        set((state) => ({
+          draft: { ...state.draft, additionalFightingStyle: style },
+        })),
 
       setAbilityBonusPlus2: (ability) =>
         set((state) => ({
@@ -486,6 +526,53 @@ export const useCharacterStore = create<CharacterState>()(
 
       loadCharacter: (characterId) => {
         return get().savedCharacters.find((c) => c.id === characterId)
+      },
+
+      loadCharacterForEditing: (characterId) => {
+        const character = get().savedCharacters.find((c) => c.id === characterId)
+        if (!character) return false
+
+        // Map Character back to CharacterDraft
+        set({
+          draft: {
+            name: character.name,
+            abilityScoreMethod: 'point-buy', // Can't know original method, default to point-buy
+            baseAbilityScores: character.abilityScores, // Use final scores as base
+            abilityBonusMode: 'standard',
+            abilityBonusPlus2: null, // Already applied to abilityScores
+            abilityBonusPlus1: null,
+            abilityBonusPlus1Trio: [],
+            raceId: character.race.id,
+            dragonbornAncestry: null, // These would need to be stored on Character to restore
+            elfLineage: null,
+            elfKeenSensesSkill: null,
+            gnomeLineage: null,
+            tieflingLegacy: null,
+            goliathGiantAncestry: null,
+            humanOriginFeat: null,
+            humanMagicInitiate: null,
+            backgroundId: character.background?.id ?? null,
+            backgroundOriginFeat: null,
+            backgroundMagicInitiate: null,
+            classId: character.class.id,
+            subclassId: character.subclass?.id ?? null,
+            level: character.level,
+            selectedSpellIds: character.knownSpells?.map(s => s.id) ?? [],
+            selectedCantrips: character.knownSpells?.filter(s => s.level === 0).map(s => s.id) ?? [],
+            meleeWeaponId: character.equipment.meleeWeapon?.id ?? null,
+            rangedWeaponId: character.equipment.rangedWeapon?.id ?? null,
+            offhandWeaponId: character.equipment.offhandWeapon?.id ?? null,
+            armorId: character.equipment.armor?.id ?? null,
+            shieldEquipped: !!character.equipment.shield,
+            masteredWeaponIds: character.masteredWeaponIds ?? [],
+            fightingStyle: character.fightingStyles?.[0] ?? null,
+            additionalFightingStyle: character.fightingStyles?.[1] ?? null,
+            editingCharacterId: character.id,
+          },
+          currentStep: 0,
+        })
+
+        return true
       },
     }),
     {

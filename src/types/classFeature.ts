@@ -44,7 +44,13 @@ export type FightingStyle =
 
 export interface FightingStyleFeature extends ClassFeatureBase {
   type: 'fighting_style'
-  style: FightingStyle
+  style?: FightingStyle  // Optional - selected by player during character creation
+  availableStyles?: FightingStyle[]  // Styles available to choose from (if selectable)
+}
+
+// Additional Fighting Style - Champion subclass level 10 feature
+export interface AdditionalFightingStyleFeature extends ClassFeatureBase {
+  type: 'additional_fighting_style'
 }
 
 // Sneak Attack - Rogue conditional bonus damage
@@ -96,6 +102,7 @@ export interface WeaponMasteryFeature extends ClassFeatureBase {
 export type ClassFeature =
   | SecondWindFeature
   | FightingStyleFeature
+  | AdditionalFightingStyleFeature
   | SneakAttackFeature
   | ActionSurgeFeature
   | CunningActionFeature
@@ -114,6 +121,10 @@ export function isSecondWindFeature(f: ClassFeature): f is SecondWindFeature {
 
 export function isFightingStyleFeature(f: ClassFeature): f is FightingStyleFeature {
   return f.type === 'fighting_style'
+}
+
+export function isAdditionalFightingStyleFeature(f: ClassFeature): f is AdditionalFightingStyleFeature {
+  return f.type === 'additional_fighting_style'
 }
 
 export function isSneakAttackFeature(f: ClassFeature): f is SneakAttackFeature {

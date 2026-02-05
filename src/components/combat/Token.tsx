@@ -138,9 +138,9 @@ export function Token({
           isHoveredTarget && 'ring-4 ring-rose-500 ring-offset-2 ring-offset-slate-900 scale-110 animate-pulse',
           // Concentration glow effect
           isConcentrating && !isSelected && !isHoveredTarget && 'ring-2 ring-purple-400/70 ring-offset-1 ring-offset-slate-900',
-          // Death state: play animation when just died, otherwise just show dead state
+          // Death state: play animation when just died, otherwise show dead state (prone/rotated 90deg)
           isPlayingDeathAnimation && 'animate-death',
-          isDead && !isPlayingDeathAnimation && 'opacity-50 grayscale scale-[0.85]',
+          isDead && !isPlayingDeathAnimation && 'opacity-50 grayscale scale-[0.85] rotate-90',
           isDraggable && 'cursor-grab active:cursor-grabbing hover:scale-110'
         )}
         style={{
@@ -156,22 +156,23 @@ export function Token({
             tokenImage ? 'bg-slate-900' : bgColor
           )}
         >
-        {/* Token image or label */}
-        {tokenImage ? (
-          <img
-            src={tokenImage}
-            alt={combatant.name}
-            className="w-full h-full object-cover rounded-full"
-            draggable={false}
-          />
-        ) : (
-          <span className="text-white text-xs font-bold truncate px-1 select-none">
-            {combatant.name.substring(0, 3).toUpperCase()}
-          </span>
-        )}
+          {/* Token image or label */}
+          {tokenImage ? (
+            <img
+              src={tokenImage}
+              alt={combatant.name}
+              className="w-full h-full object-cover rounded-full"
+              draggable={false}
+            />
+          ) : (
+            <span className="text-white text-xs font-bold truncate px-1 select-none">
+              {combatant.name.substring(0, 3).toUpperCase()}
+            </span>
+          )}
+        </div>
 
-        {/* HP bar */}
-        <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-3/4 h-1.5 bg-slate-900 rounded-full overflow-hidden border border-slate-600">
+        {/* HP bar - positioned outside the clipped circle to be fully visible */}
+        <div className="absolute -bottom-0.5 left-1/2 -translate-x-1/2 w-3/4 h-1.5 bg-slate-900 rounded-full overflow-hidden border border-slate-600 shadow-md">
           <div
             className={cn('h-full transition-all', hpBarColor)}
             style={{ width: `${hpPercent}%` }}
@@ -189,7 +190,6 @@ export function Token({
             <span className="text-[8px] text-white">✦</span>
           </div>
         )}
-        </div>
       </div>
 
       {/* Condition badges */}

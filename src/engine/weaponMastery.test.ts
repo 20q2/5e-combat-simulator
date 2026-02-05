@@ -73,6 +73,7 @@ function createCharacterCombatant(
     name: character.name,
     maxHp: 44,
     currentHp: 44,
+    temporaryHp: 0,
     position: { x: 5, y: 5 },
     initiative: 15,
     conditions: [],
@@ -88,6 +89,9 @@ function createCharacterCombatant(
     hasUsedActionSurge: false,
     usedCleaveThisTurn: false,
     usedNickThisTurn: false,
+    deathSaves: { successes: 0, failures: 0 },
+    isStable: false,
+    magicInitiateFreeUses: {},
   } as Combatant
 }
 
@@ -110,6 +114,7 @@ function createMonsterCombatant(overrides: Partial<Combatant> = {}): Combatant {
     name: 'Goblin',
     maxHp: 7,
     currentHp: 7,
+    temporaryHp: 0,
     position: { x: 6, y: 5 },
     initiative: 12,
     conditions: [],
@@ -125,6 +130,9 @@ function createMonsterCombatant(overrides: Partial<Combatant> = {}): Combatant {
     hasUsedActionSurge: false,
     usedCleaveThisTurn: false,
     usedNickThisTurn: false,
+    deathSaves: { successes: 0, failures: 0 },
+    isStable: false,
+    magicInitiateFreeUses: {},
     ...overrides,
   } as Combatant
 }
@@ -145,10 +153,13 @@ function createWeaponMasteryFeature(count: number = 3, scaling?: Record<number, 
 function createGrid(): Grid {
   const cells = Array(10).fill(null).map((_, y) =>
     Array(10).fill(null).map((_, x) => ({
+      x,
+      y,
       position: { x, y },
-      terrain: 'normal' as const,
+      terrain: undefined,
       obstacle: undefined,
       occupiedBy: undefined,
+      elevation: 0,
     }))
   )
   return { width: 10, height: 10, cells }
