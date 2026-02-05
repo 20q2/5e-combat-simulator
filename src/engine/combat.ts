@@ -2,6 +2,7 @@ import { rollAttack, rollDamage, rollD20, type D20RollResult, type DiceRollResul
 import { getAbilityModifier } from '@/types'
 import type { Combatant, Character, Monster, Weapon, MonsterAction, Condition, Grid, Position, AbilityName } from '@/types'
 import { hasLineOfSight } from '@/lib/lineOfSight'
+import { getDistanceBetweenPositions } from '@/lib/distance'
 import {
   checkSavageAttacks,
   rollSavageAttacksDamage,
@@ -96,12 +97,20 @@ export function getCombatantAC(combatant: Combatant): number {
 }
 
 /**
+ * Calculate distance in feet between two combatants using 5-10 diagonal rule
+ */
+function getDistanceFeet(a: Combatant, b: Combatant): number {
+  return getDistanceBetweenPositions(a.position, b.position)
+}
+
+/**
  * Check if attacker has advantage or disadvantage
  */
 export function getAttackAdvantage(
   attacker: Combatant,
   target: Combatant,
-  baseAdvantage: 'normal' | 'advantage' | 'disadvantage' = 'normal'
+  baseAdvantage: 'normal' | 'advantage' | 'disadvantage' = 'normal',
+  isRangedAttack: boolean = false
 ): 'normal' | 'advantage' | 'disadvantage' {
   let hasAdvantage = baseAdvantage === 'advantage'
   let hasDisadvantage = baseAdvantage === 'disadvantage'
@@ -132,13 +141,21 @@ export function getAttackAdvantage(
     hasDisadvantage = true
   }
   if (target.conditions.some((c) => c.condition === 'prone')) {
-    // Attacks within 5ft of prone target have advantage, ranged have disadvantage
-    // For simplicity, we'll assume melee attacks get advantage
-    hasAdvantage = true
+    // D&D 5e prone rules:
+    // - Melee attacks within 5ft have advantage
+    // - Ranged attacks and attacks from more than 5ft have disadvantage
+    const distance = getDistanceFeet(attacker, target)
+    if (isRangedAttack || distance > 5) {
+      hasDisadvantage = true
+    } else {
+      hasAdvantage = true
+    }
   }
 
-  // Check if target is dodging (simplified - target used dodge action)
-  // This would need to be tracked separately
+  // Check if target is dodging - gives disadvantage to attacks against them
+  if (target.conditions.some((c) => c.condition === 'dodging')) {
+    hasDisadvantage = true
+  }
 
   // Advantage and disadvantage cancel out
   if (hasAdvantage && hasDisadvantage) {
@@ -194,8 +211,11 @@ export function resolveAttack(options: MeleeAttackOptions): AttackResult {
     damageType = 'bludgeoning'
   }
 
+  // Determine if this is a ranged attack for advantage calculations
+  const isRangedAttack = weapon?.type === 'ranged' || (monsterAction?.range?.normal ?? 0) > 5
+
   // Determine advantage/disadvantage
-  const finalAdvantage = getAttackAdvantage(attacker, target, advantage)
+  const finalAdvantage = getAttackAdvantage(attacker, target, advantage, isRangedAttack)
 
   // Roll the attack
   const targetAC = getCombatantAC(target)

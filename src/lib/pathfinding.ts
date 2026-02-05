@@ -1,4 +1,5 @@
 import type { Grid, GridCell, Position } from '@/types'
+import { getPathfindingHeuristic } from './distance'
 
 // ============================================
 // A* Pathfinding Implementation
@@ -100,12 +101,9 @@ function calculateAdjacentCost(from: Position, to: Position, diagonalCount: numb
  * This is admissible (never overestimates) for 5-10 rule
  */
 function heuristic(from: Position, to: Position): number {
-  const dx = Math.abs(to.x - from.x)
-  const dy = Math.abs(to.y - from.y)
-  const diagonals = Math.min(dx, dy)
-  const straights = Math.abs(dx - dy)
-  // Estimate: average 7.5ft per diagonal (5+10)/2, 5ft per straight
-  return diagonals * 7.5 + straights * 5
+  const dx = to.x - from.x
+  const dy = to.y - from.y
+  return getPathfindingHeuristic(dx, dy)
 }
 
 /**

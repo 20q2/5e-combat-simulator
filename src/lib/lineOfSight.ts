@@ -1,4 +1,5 @@
 import type { Grid, GridCell, Position } from '@/types'
+import { calculateMovementDistance } from './movement'
 
 /**
  * Line of Sight / Cover System
@@ -94,10 +95,8 @@ export function canTargetWithRangedAttack(
   target: Position,
   range: number
 ): { canTarget: boolean; blockedBy?: Position } {
-  // Calculate distance (using simple Chebyshev for range)
-  const dx = Math.abs(target.x - attacker.x)
-  const dy = Math.abs(target.y - attacker.y)
-  const distance = Math.max(dx, dy) * 5 // Convert to feet
+  // Calculate distance using D&D 5e 5-10 diagonal rule
+  const distance = calculateMovementDistance(attacker, target)
 
   // Check range
   if (distance > range) {

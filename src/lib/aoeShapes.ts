@@ -1,4 +1,5 @@
 import type { Position } from '@/types'
+import { getDistanceFeet } from './distance'
 
 export type AoEType = 'cone' | 'cube' | 'cylinder' | 'line' | 'sphere'
 
@@ -7,18 +8,6 @@ export interface AoEConfig {
   size: number // in feet
   origin: Position // caster position for cones/lines, or ignored for sphere/cube
   target: Position // cursor/target position
-}
-
-/**
- * Calculate distance in feet using D&D 5e 5-10-5 diagonal rule
- * First diagonal costs 5ft, second costs 10ft, alternating
- */
-function getDistanceFeet(dx: number, dy: number): number {
-  const absDx = Math.abs(dx)
-  const absDy = Math.abs(dy)
-  const diagonals = Math.min(absDx, absDy)
-  const straights = Math.max(absDx, absDy) - diagonals
-  return (straights + diagonals + Math.floor(diagonals / 2)) * 5
 }
 
 /**

@@ -31,6 +31,7 @@ export type DamageType =
   | 'thunder'
 
 export type Condition =
+  // Standard D&D 5e conditions
   | 'blinded'
   | 'charmed'
   | 'deafened'
@@ -46,6 +47,12 @@ export type Condition =
   | 'stunned'
   | 'unconscious'
   | 'exhaustion'
+  // Combat action-based conditions (tracked for mechanics)
+  | 'dodging'
+  | 'disengaging'
+  | 'dashing'
+  | 'hidden'
+  | 'shielded'
 
 // ============================================
 // Character Types

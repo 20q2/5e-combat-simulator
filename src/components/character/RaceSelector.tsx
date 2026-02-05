@@ -8,18 +8,18 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
-import { getAllRaces, getRaceById, ORIGIN_FEATS } from '@/data'
+import { getAllRaces, getRaceById } from '@/data'
 import {
   useCharacterStore,
   type ElfLineage,
   type GnomeLineage,
   type TieflingLegacy,
   type GoliathGiantAncestry,
-  type OriginFeat,
   type KeenSensesSkill,
 } from '@/stores/characterStore'
 import type { Race, RacialAbility, DarkvisionAbility, DragonAncestry } from '@/types'
 import { isDarkvisionAbility, DRAGON_ANCESTRIES } from '@/types'
+import { OriginFeatSelector } from './OriginFeatSelector'
 import {
   Eye,
   Shield,
@@ -37,7 +37,6 @@ import {
   Skull,
   Crown,
   Footprints,
-  Award,
 } from 'lucide-react'
 
 // ==================== CHOICE DATA ====================
@@ -388,62 +387,13 @@ function RacialChoices({ raceId }: { raceId: string }) {
 
   // ==================== HUMAN ====================
   if (raceId === 'human') {
-    const selectedFeat = ORIGIN_FEATS.find(f => f.id === draft.humanOriginFeat)
-
     return (
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-lg flex items-center gap-2">
-            <Award className="w-5 h-5 text-amber-400" />
-            Origin Feat
-          </CardTitle>
-          <CardDescription>
-            As a Human, you gain an Origin feat of your choice.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div>
-            <Label className="text-sm mb-2 block">Choose Feat</Label>
-            <Select
-              value={draft.humanOriginFeat ?? ''}
-              onValueChange={(v) => setHumanOriginFeat((v as OriginFeat) || null)}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Select an origin feat" />
-              </SelectTrigger>
-              <SelectContent>
-                {ORIGIN_FEATS.map((feat) => (
-                  <SelectItem key={feat.id} value={feat.id}>
-                    {feat.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          {selectedFeat && (
-            <div className="p-3 bg-muted/50 rounded-lg space-y-3">
-              <div className="flex items-center gap-2">
-                <Award className="w-4 h-4 text-amber-400" />
-                <span className="font-semibold">{selectedFeat.name}</span>
-              </div>
-              <div className="space-y-2">
-                {selectedFeat.benefits.map((benefit, index) => (
-                  <div key={index} className="pl-1">
-                    <div className="flex items-start gap-2">
-                      <Sparkles className="w-3.5 h-3.5 mt-0.5 text-amber-400 shrink-0" />
-                      <div>
-                        <span className="font-medium text-sm">{benefit.name}</span>
-                        <p className="text-sm text-muted-foreground">{benefit.description}</p>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      <OriginFeatSelector
+        title="Origin Feat"
+        description="As a Human, you gain an Origin feat of your choice."
+        selectedFeat={draft.humanOriginFeat}
+        onSelectFeat={setHumanOriginFeat}
+      />
     )
   }
 

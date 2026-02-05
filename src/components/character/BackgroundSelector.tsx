@@ -1,23 +1,15 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Label } from '@/components/ui/label'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { cn } from '@/lib/utils'
 import { getAllBackgrounds, getBackgroundById, ORIGIN_FEATS, isRepeatableFeat } from '@/data'
-import { useCharacterStore, type OriginFeat } from '@/stores/characterStore'
+import { useCharacterStore } from '@/stores/characterStore'
 import type { Background } from '@/data/backgrounds'
+import { OriginFeatSelector } from './OriginFeatSelector'
 import {
   Award,
   BookOpen,
   Info,
   Sparkles,
   Briefcase,
-  AlertCircle,
 } from 'lucide-react'
 
 function BackgroundCard({
@@ -135,112 +127,6 @@ function BackgroundDetails({ background }: { background: Background }) {
   )
 }
 
-function OriginFeatSelector({
-  background,
-  selectedFeat,
-  onSelectFeat,
-  disabledFeatId,
-}: {
-  background: Background
-  selectedFeat: OriginFeat | null
-  onSelectFeat: (feat: OriginFeat | null) => void
-  disabledFeatId: OriginFeat | null // Human origin feat that can't be selected (unless repeatable)
-}) {
-  const selectedFeatData = selectedFeat
-    ? ORIGIN_FEATS.find((f) => f.id === selectedFeat)
-    : null
-
-  // Filter out the feat that humans already selected (unless repeatable)
-  const availableFeats = ORIGIN_FEATS.filter((feat) => {
-    if (feat.id === disabledFeatId && !isRepeatableFeat(feat.id)) {
-      return false
-    }
-    return true
-  })
-
-  const isHumanConflict = disabledFeatId !== null && !isRepeatableFeat(disabledFeatId)
-
-  return (
-    <Card>
-      <CardHeader className="pb-3">
-        <CardTitle className="text-lg flex items-center gap-2">
-          <Award className="w-5 h-5 text-amber-400" />
-          Origin Feat
-        </CardTitle>
-        <CardDescription>
-          Choose an origin feat for your background. The default is {ORIGIN_FEATS.find((f) => f.id === background.defaultOriginFeat)?.name}.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        {isHumanConflict && (
-          <div className="flex items-start gap-2 p-3 bg-amber-500/10 border border-amber-500/20 rounded-lg">
-            <AlertCircle className="w-4 h-4 text-amber-400 mt-0.5 shrink-0" />
-            <p className="text-sm text-amber-200">
-              As a Human, you already selected{' '}
-              <span className="font-medium">
-                {ORIGIN_FEATS.find((f) => f.id === disabledFeatId)?.name}
-              </span>{' '}
-              as your racial feat. Choose a different feat here.
-            </p>
-          </div>
-        )}
-
-        <div>
-          <Label className="text-sm mb-2 block">Choose Feat</Label>
-          <Select
-            value={selectedFeat ?? ''}
-            onValueChange={(v) => onSelectFeat((v as OriginFeat) || null)}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="Select an origin feat" />
-            </SelectTrigger>
-            <SelectContent>
-              {availableFeats.map((feat) => (
-                <SelectItem key={feat.id} value={feat.id}>
-                  {feat.name}
-                  {feat.id === background.defaultOriginFeat && (
-                    <span className="text-muted-foreground ml-2">(default)</span>
-                  )}
-                  {feat.repeatable && (
-                    <span className="text-green-400 ml-2">(repeatable)</span>
-                  )}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        {selectedFeatData && (
-          <div className="p-3 bg-muted/50 rounded-lg space-y-3">
-            <div className="flex items-center gap-2">
-              <Award className="w-4 h-4 text-amber-400" />
-              <span className="font-semibold">{selectedFeatData.name}</span>
-              {selectedFeatData.repeatable && (
-                <span className="text-xs bg-green-500/20 text-green-400 px-1.5 py-0.5 rounded">
-                  Repeatable
-                </span>
-              )}
-            </div>
-            <div className="space-y-2">
-              {selectedFeatData.benefits.map((benefit, index) => (
-                <div key={index} className="pl-1">
-                  <div className="flex items-start gap-2">
-                    <Sparkles className="w-3.5 h-3.5 mt-0.5 text-amber-400 shrink-0" />
-                    <div>
-                      <span className="font-medium text-sm">{benefit.name}</span>
-                      <p className="text-sm text-muted-foreground">{benefit.description}</p>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  )
-}
-
 export function BackgroundSelector() {
   const {
     draft,
@@ -274,10 +160,16 @@ export function BackgroundSelector() {
   }
 
   // Get the feat that's blocked (human racial feat, unless repeatable)
-  const blockedFeatId =
+  const disabledFeatIds =
     draft.raceId === 'human' && draft.humanOriginFeat
-      ? draft.humanOriginFeat
-      : null
+      ? [draft.humanOriginFeat]
+      : []
+
+  // Build conflict message if needed
+  const conflictMessage =
+    disabledFeatIds.length > 0 && !isRepeatableFeat(disabledFeatIds[0])
+      ? `As a Human, you already selected ${ORIGIN_FEATS.find((f) => f.id === disabledFeatIds[0])?.name} as your racial feat. Choose a different feat here.`
+      : undefined
 
   return (
     <div className="grid md:grid-cols-2 gap-6">
@@ -312,10 +204,13 @@ export function BackgroundSelector() {
           <>
             <BackgroundDetails background={selectedBackground} />
             <OriginFeatSelector
-              background={selectedBackground}
+              title="Origin Feat"
+              description={`Choose an origin feat for your background. The default is ${ORIGIN_FEATS.find((f) => f.id === selectedBackground.defaultOriginFeat)?.name}.`}
               selectedFeat={draft.backgroundOriginFeat}
               onSelectFeat={setBackgroundOriginFeat}
-              disabledFeatId={blockedFeatId}
+              disabledFeatIds={disabledFeatIds}
+              conflictMessage={conflictMessage}
+              defaultFeatId={selectedBackground.defaultOriginFeat}
             />
           </>
         ) : (

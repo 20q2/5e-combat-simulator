@@ -43,6 +43,44 @@ import {
 import { getAoEAffectedCells } from '@/lib/aoeShapes'
 import { getCombatantSize, getOccupiedCells, getFootprintSize } from '@/lib/creatureSize'
 
+/**
+ * Helper to immutably update grid cell occupancy.
+ * Creates new arrays only for the rows that change, preserving referential equality for unchanged rows.
+ */
+function updateGridOccupancy(
+  grid: Grid,
+  updates: Array<{ x: number; y: number; occupiedBy: string | undefined }>
+): Grid {
+  if (updates.length === 0) return grid
+
+  // Group updates by row for efficient row-level cloning
+  const updatesByRow = new Map<number, Array<{ x: number; occupiedBy: string | undefined }>>()
+  for (const update of updates) {
+    if (!updatesByRow.has(update.y)) {
+      updatesByRow.set(update.y, [])
+    }
+    updatesByRow.get(update.y)!.push({ x: update.x, occupiedBy: update.occupiedBy })
+  }
+
+  // Create new cells array with updated rows
+  const newCells = grid.cells.map((row, y) => {
+    const rowUpdates = updatesByRow.get(y)
+    if (!rowUpdates) return row // No changes to this row, keep reference
+
+    // Clone the row and apply updates
+    const newRow = row.map((cell, x) => {
+      const update = rowUpdates.find((u) => u.x === x)
+      if (update) {
+        return { ...cell, occupiedBy: update.occupiedBy }
+      }
+      return cell
+    })
+    return newRow
+  })
+
+  return { ...grid, cells: newCells }
+}
+
 // Simplified input type for adding combatants
 type AddCombatantInput = {
   name: string
@@ -299,29 +337,32 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
       combatant.classFeatureUses = initializeClassFeatureUses(combatant)
     }
 
-    set((state) => ({
-      combatants: [...state.combatants, combatant],
-    }))
-
-    // Update grid cell occupancy
+    // Update grid cell occupancy immutably
     const { grid } = get()
     const { x, y } = combatant.position
+    const gridUpdates: Array<{ x: number; y: number; occupiedBy: string | undefined }> = []
     if (x >= 0 && x < grid.width && y >= 0 && y < grid.height) {
-      grid.cells[y][x].occupiedBy = combatant.id
+      gridUpdates.push({ x, y, occupiedBy: combatant.id })
     }
+
+    set((state) => ({
+      combatants: [...state.combatants, combatant],
+      grid: updateGridOccupancy(state.grid, gridUpdates),
+    }))
   },
 
   removeCombatant: (id) => {
     const { combatants, grid } = get()
     const combatant = combatants.find((c) => c.id === id)
 
+    // Build updates to clear all grid cells occupied by this combatant's footprint
+    const gridUpdates: Array<{ x: number; y: number; occupiedBy: string | undefined }> = []
     if (combatant) {
-      // Clear all grid cells occupied by this combatant's footprint
       const size = getCombatantSize(combatant)
       const cells = getOccupiedCells(combatant.position, size)
       for (const cell of cells) {
         if (grid.cells[cell.y]?.[cell.x]) {
-          grid.cells[cell.y][cell.x].occupiedBy = undefined
+          gridUpdates.push({ x: cell.x, y: cell.y, occupiedBy: undefined })
         }
       }
     }
@@ -329,6 +370,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
     set((state) => ({
       combatants: state.combatants.filter((c) => c.id !== id),
       turnOrder: state.turnOrder.filter((tid) => tid !== id),
+      grid: updateGridOccupancy(state.grid, gridUpdates),
       selectedCombatantId: state.selectedCombatantId === id ? undefined : state.selectedCombatantId,
     }))
   },
@@ -363,26 +405,27 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
       }
     }
 
+    // Build grid updates for old and new position cells
+    const gridUpdates: Array<{ x: number; y: number; occupiedBy: string | undefined }> = []
+
     // Clear old position cells
     const oldCells = getOccupiedCells(combatant.position, size)
     for (const cell of oldCells) {
-      if (cell.x >= 0 && cell.y >= 0) {
-        const gridCell = grid.cells[cell.y]?.[cell.x]
-        if (gridCell) {
-          gridCell.occupiedBy = undefined
-        }
+      if (cell.x >= 0 && cell.y >= 0 && grid.cells[cell.y]?.[cell.x]) {
+        gridUpdates.push({ x: cell.x, y: cell.y, occupiedBy: undefined })
       }
     }
 
     // Mark new position cells
     for (const cell of newCells) {
-      grid.cells[cell.y][cell.x].occupiedBy = id
+      gridUpdates.push({ x: cell.x, y: cell.y, occupiedBy: id })
     }
 
     set((state) => ({
       combatants: state.combatants.map((c) =>
         c.id === id ? { ...c, position } : c
       ),
+      grid: updateGridOccupancy(state.grid, gridUpdates),
     }))
   },
 
@@ -469,8 +512,43 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
       })
     }
 
+    // Get the next combatant and expire their conditions
+    const nextCombatantId = turnOrder[nextIndex]
+    const combatantsWithExpiredConditions = updatedCombatants.map((c) => {
+      if (c.id !== nextCombatantId) return c
+
+      // Decrement condition durations and remove expired ones
+      // Duration -1 or undefined means indefinite (e.g., unconscious), don't decrement those
+      const expiredConditions: string[] = []
+      const newConditions = c.conditions
+        .map((cond) => {
+          if (cond.duration === undefined || cond.duration === -1) return cond // Indefinite condition
+          const newDuration = cond.duration - 1
+          if (newDuration <= 0) {
+            expiredConditions.push(cond.condition)
+            return null
+          }
+          return { ...cond, duration: newDuration }
+        })
+        .filter((cond): cond is NonNullable<typeof cond> => cond !== null)
+
+      // Log expired conditions
+      if (expiredConditions.length > 0) {
+        expiredConditions.forEach((condition) => {
+          get().addLogEntry({
+            type: 'other',
+            actorId: c.id,
+            actorName: c.name,
+            message: `${c.name}'s ${condition} effect expires`,
+          })
+        })
+      }
+
+      return { ...c, conditions: newConditions }
+    })
+
     set({
-      combatants: updatedCombatants,
+      combatants: combatantsWithExpiredConditions,
       currentTurnIndex: nextIndex,
       round: newRound,
       selectedAction: undefined,
@@ -478,7 +556,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
     })
 
     // Auto-skip dead combatants (monsters at 0 HP or characters who have died)
-    const nextCombatant = updatedCombatants.find((c) => c.id === turnOrder[nextIndex])
+    const nextCombatant = combatantsWithExpiredConditions.find((c) => c.id === turnOrder[nextIndex])
     if (nextCombatant) {
       const isDead = nextCombatant.currentHp <= 0 && (
         nextCombatant.type === 'monster' || // Monsters are dead at 0 HP
@@ -691,7 +769,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
                 ...c,
                 conditions: [
                   ...c.conditions,
-                  { condition: 'shielded' as any, duration: 1, source: 'Shield spell' }
+                  { condition: 'shielded', duration: 1, source: 'Shield spell' }
                 ]
               }
             : c
@@ -883,18 +961,21 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
     // Get creature size for footprint calculations
     const size = getCombatantSize(combatant)
 
+    // Build grid updates for old and new position cells
+    const gridUpdates: Array<{ x: number; y: number; occupiedBy: string | undefined }> = []
+
     // Clear old position cells (all footprint cells)
     const oldCells = getOccupiedCells(combatant.position, size)
     for (const cell of oldCells) {
       if (grid.cells[cell.y]?.[cell.x]) {
-        grid.cells[cell.y][cell.x].occupiedBy = undefined
+        gridUpdates.push({ x: cell.x, y: cell.y, occupiedBy: undefined })
       }
     }
 
     // Mark new position cells (all footprint cells)
     const newCells = getOccupiedCells(to, size)
     for (const cell of newCells) {
-      grid.cells[cell.y][cell.x].occupiedBy = id
+      gridUpdates.push({ x: cell.x, y: cell.y, occupiedBy: id })
     }
 
     set((state) => ({
@@ -903,6 +984,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
           ? { ...c, position: to, movementUsed: c.movementUsed + pathCost }
           : c
       ),
+      grid: updateGridOccupancy(state.grid, gridUpdates),
       movementAnimation: undefined,
       pendingMovement: undefined,
     }))
@@ -1082,6 +1164,10 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
         }
       }
 
+      // Track if we need to clear grid occupancy for a dead monster
+      let monsterDied = false
+      const { x, y } = target.position
+
       // Check for falling unconscious (characters) or dying (monsters)
       if (newHp === 0 && wasConscious) {
         if (target.type === 'monster') {
@@ -1092,12 +1178,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
             actorName: target.name,
             message: `${target.name} has been slain!`,
           })
-          // Clear grid occupancy for dead monsters
-          const { grid } = get()
-          const { x, y } = target.position
-          if (x >= 0 && y >= 0 && grid.cells[y]?.[x]) {
-            grid.cells[y][x].occupiedBy = undefined
-          }
+          monsterDied = true
         } else {
           // Characters fall unconscious
           get().addLogEntry({
@@ -1136,6 +1217,12 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
         }
       }
 
+      // Build grid updates for dead monsters
+      const gridUpdates: Array<{ x: number; y: number; occupiedBy: string | undefined }> = []
+      if (monsterDied && x >= 0 && y >= 0 && state.grid.cells[y]?.[x]) {
+        gridUpdates.push({ x, y, occupiedBy: undefined })
+      }
+
       return {
         combatants: state.combatants.map((c) =>
           c.id === targetId
@@ -1150,6 +1237,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
               }
             : c
         ),
+        grid: gridUpdates.length > 0 ? updateGridOccupancy(state.grid, gridUpdates) : state.grid,
       }
     })
 
@@ -1442,7 +1530,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
           ? {
               ...c,
               hasActed: true,
-              conditions: [...c.conditions, { condition: 'dodging' as any, duration: 1 }],
+              conditions: [...c.conditions, { condition: 'dodging', duration: 1 }],
             }
           : c
       ),
@@ -1471,7 +1559,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
           ? {
               ...c,
               hasActed: true,
-              conditions: [...c.conditions, { condition: 'disengaging' as any, duration: 1 }],
+              conditions: [...c.conditions, { condition: 'disengaging', duration: 1 }],
             }
           : c
       ),
@@ -2289,7 +2377,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
           ? {
               ...c,
               hasBonusActed: true,
-              conditions: [...c.conditions, { condition: 'disengaging' as any, duration: 1 }],
+              conditions: [...c.conditions, { condition: 'disengaging', duration: 1 }],
             }
           : c
       ),
@@ -2319,7 +2407,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
           ? {
               ...c,
               hasBonusActed: true,
-              conditions: [...c.conditions, { condition: 'hidden' as any, duration: 1 }],
+              conditions: [...c.conditions, { condition: 'hidden', duration: 1 }],
             }
           : c
       ),
@@ -2395,14 +2483,14 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
           // Small delay after move
           await new Promise((resolve) => setTimeout(resolve, 300))
 
-          // Get next action after move
+          // Get next action after move (monster may have died from opportunity attack)
           const updatedCombatants = get().combatants
           const updatedCurrent = updatedCombatants.find((c) => c.id === currentId)
-          if (updatedCurrent) {
+          if (updatedCurrent && updatedCurrent.currentHp > 0) {
             const updatedGrid = get().grid
             const nextAction = getNextAIAction(updatedCurrent, updatedCombatants, updatedGrid)
             if (nextAction.type === 'attack' && nextAction.targetId && nextAction.action) {
-              get().performAttack(current.id, nextAction.targetId, undefined, nextAction.action)
+              get().performAttack(updatedCurrent.id, nextAction.targetId, undefined, nextAction.action)
             }
           }
         } else if (action.type === 'attack' && action.targetId && action.action) {

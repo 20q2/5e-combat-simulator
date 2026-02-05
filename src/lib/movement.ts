@@ -1,31 +1,12 @@
 import type { Position } from '@/types'
+import { getDistanceBetweenPositions } from './distance'
 
 /**
  * Calculate movement distance using the 5-10 diagonal rule (DMG variant).
- * - Straight moves (horizontal/vertical) cost 5ft each
- * - Diagonal moves alternate between 5ft and 10ft (first diagonal = 5ft, second = 10ft, etc.)
- *
- * Formula: distance = (max(dx, dy) + floor(min(dx, dy) / 2)) * 5
- *
- * Examples:
- * - 1 diagonal = 5ft
- * - 2 diagonals = 15ft (5 + 10)
- * - 3 diagonals = 20ft (5 + 10 + 5)
- * - 4 diagonals = 30ft (5 + 10 + 5 + 10)
+ * Re-exports the canonical implementation from distance.ts for backwards compatibility.
  */
 export function calculateMovementDistance(from: Position, to: Position): number {
-  const dx = Math.abs(to.x - from.x)
-  const dy = Math.abs(to.y - from.y)
-
-  const diagonals = Math.min(dx, dy)
-  const straights = Math.max(dx, dy) - diagonals
-
-  // Straights cost 5ft each
-  // Diagonals cost 5ft + 5ft per pair (alternating 5-10)
-  const diagonalCost = diagonals * 5 + Math.floor(diagonals / 2) * 5
-  const straightCost = straights * 5
-
-  return diagonalCost + straightCost
+  return getDistanceBetweenPositions(from, to)
 }
 
 /**

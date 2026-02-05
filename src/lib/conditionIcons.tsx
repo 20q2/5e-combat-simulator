@@ -16,6 +16,7 @@ import {
   Shield,
   Wind,
   Footprints,
+  ShieldPlus,
   type LucideIcon,
 } from 'lucide-react'
 import type { Condition } from '@/types'
@@ -27,8 +28,8 @@ export interface ConditionIconInfo {
   label: string
 }
 
-// Extended condition type to include special action states
-export type ExtendedCondition = Condition | 'dodging' | 'disengaging' | 'dashing'
+// ExtendedCondition is now the same as Condition since all action states are in the main type
+export type ExtendedCondition = Condition
 
 export const conditionIcons: Record<ExtendedCondition, ConditionIconInfo> = {
   // Standard D&D 5e conditions
@@ -141,6 +142,18 @@ export const conditionIcons: Record<ExtendedCondition, ConditionIconInfo> = {
     color: 'text-emerald-300',
     bgColor: 'bg-emerald-900',
     label: 'Dashing',
+  },
+  hidden: {
+    icon: EyeOff,
+    color: 'text-violet-300',
+    bgColor: 'bg-violet-900',
+    label: 'Hidden',
+  },
+  shielded: {
+    icon: ShieldPlus,
+    color: 'text-blue-300',
+    bgColor: 'bg-blue-900',
+    label: 'Shielded',
   },
 }
 
