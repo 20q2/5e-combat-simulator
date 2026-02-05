@@ -7,6 +7,7 @@ import { useCharacterStore, calculateAC, calculateFinalAbilityScores } from '@/s
 import { getAbilityModifier } from '@/types'
 import type { Weapon, Armor } from '@/types'
 import { Swords, Shield, Target, Shirt, HardHat, ShieldPlus } from 'lucide-react'
+import { WeaponMasterySelector } from './WeaponMasterySelector'
 
 // Parse dice notation and return average
 function parseDiceAverage(diceNotation: string): number {
@@ -441,6 +442,9 @@ export function EquipmentSelector() {
           )}
         </CardContent>
       </Card>
+
+      {/* Weapon Mastery - Only shown for Fighter and Ranger */}
+      <WeaponMasterySelector />
     </div>
   )
 }

@@ -40,6 +40,10 @@ import {
   canUseCunningAction,
   getMaxAttacksPerAction,
 } from '@/engine/classAbilities'
+import {
+  applyOnHitMasteryEffect,
+  applyGrazeOnMiss,
+} from '@/engine/weaponMastery'
 import { getAoEAffectedCells } from '@/lib/aoeShapes'
 import { getCombatantSize, getOccupiedCells, getFootprintSize } from '@/lib/creatureSize'
 
@@ -329,6 +333,10 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
       classFeatureUses: {},
       usedSneakAttackThisTurn: false,
       attacksMadeThisTurn: 0,
+      // D&D 2024 Weapon Mastery tracking
+      usedCleaveThisTurn: false,
+      usedNickThisTurn: false,
+      vexedBy: undefined,
     }
 
     // Initialize racial and class ability uses for characters
@@ -493,7 +501,17 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
     const currentId = turnOrder[currentTurnIndex]
     const updatedCombatants = combatants.map((c) =>
       c.id === currentId
-        ? { ...c, hasActed: false, hasBonusActed: false, movementUsed: 0, usedSneakAttackThisTurn: false, attacksMadeThisTurn: 0 }
+        ? {
+            ...c,
+            hasActed: false,
+            hasBonusActed: false,
+            movementUsed: 0,
+            usedSneakAttackThisTurn: false,
+            attacksMadeThisTurn: 0,
+            // Reset weapon mastery per-turn flags
+            usedCleaveThisTurn: false,
+            usedNickThisTurn: false,
+          }
         : c
     )
 
@@ -1389,6 +1407,24 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
       })
       // Show miss popup on target
       get().addCombatPopup(targetId, 'miss')
+
+      // Apply Graze mastery damage on miss (if applicable)
+      if (selectedWeapon) {
+        const grazeResult = applyGrazeOnMiss(attacker, target, selectedWeapon)
+        if (grazeResult && grazeResult.applied && grazeResult.grazeDamage && grazeResult.grazeDamage > 0) {
+          get().dealDamage(targetId, grazeResult.grazeDamage, attacker.name)
+          get().addDamagePopup(targetId, grazeResult.grazeDamage, selectedWeapon.damageType as DamageType, false)
+          get().addLogEntry({
+            type: 'damage',
+            actorId: attackerId,
+            actorName: attacker.name,
+            targetId,
+            targetName: target.name,
+            message: `Graze: ${grazeResult.grazeDamage} ${selectedWeapon.damageType} damage`,
+            details: 'Weapon mastery: Graze',
+          })
+        }
+      }
     }
 
     // Apply damage if hit
@@ -1457,6 +1493,88 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
             actorName: attacker.name,
             message: `${attacker.name} deals Sneak Attack damage! (+${result.sneakAttackDamage?.total})`,
           })
+        }
+
+        // Apply on-hit weapon mastery effects
+        if (selectedWeapon) {
+          const { round, combatants: currentCombatants } = get()
+          const masteryResult = applyOnHitMasteryEffect(attacker, target, selectedWeapon, grid, currentCombatants, round)
+
+          if (masteryResult && masteryResult.applied) {
+            // Log the mastery effect
+            get().addLogEntry({
+              type: 'other',
+              actorId: attackerId,
+              actorName: attacker.name,
+              message: masteryResult.description,
+              details: `Weapon mastery: ${masteryResult.mastery}`,
+            })
+
+            // Apply specific effects based on mastery type
+            switch (masteryResult.mastery) {
+              case 'push':
+                if (masteryResult.pushResult) {
+                  // Update target position
+                  set((state) => ({
+                    combatants: state.combatants.map((c) =>
+                      c.id === targetId
+                        ? { ...c, position: masteryResult.pushResult!.newPosition }
+                        : c
+                    ),
+                  }))
+                }
+                break
+
+              case 'sap':
+                // Add sapped condition to target (disadvantage on next attack)
+                set((state) => ({
+                  combatants: state.combatants.map((c) =>
+                    c.id === targetId
+                      ? {
+                          ...c,
+                          conditions: [...c.conditions, { condition: 'sapped' as const, duration: 1 }],
+                        }
+                      : c
+                  ),
+                }))
+                break
+
+              case 'slow':
+                // Slow is tracked via speed reduction - handled by combat calculations
+                // For now just log it; speed reduction is applied automatically in movement
+                break
+
+              case 'topple':
+                if (masteryResult.toppleResult && !masteryResult.toppleResult.savePassed) {
+                  // Target failed save, add prone condition
+                  set((state) => ({
+                    combatants: state.combatants.map((c) =>
+                      c.id === targetId
+                        ? {
+                            ...c,
+                            conditions: [...c.conditions, { condition: 'prone' as const, duration: -1 }],
+                          }
+                        : c
+                    ),
+                  }))
+                }
+                break
+
+              case 'vex':
+                // Set vexedBy on target so attacker has advantage on next attack
+                set((state) => ({
+                  combatants: state.combatants.map((c) =>
+                    c.id === targetId
+                      ? {
+                          ...c,
+                          vexedBy: { attackerId, expiresOnRound: round + 1 },
+                        }
+                      : c
+                  ),
+                }))
+                break
+            }
+          }
         }
       }
     }

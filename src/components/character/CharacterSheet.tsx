@@ -261,6 +261,7 @@ export function CharacterSheet() {
       deathSaves: { successes: 0, failures: 0 },
       spellSlots,
       knownSpells: [...cantrips, ...spells].filter((s): s is NonNullable<typeof s> => s !== undefined),
+      masteredWeaponIds: draft.masteredWeaponIds.length > 0 ? draft.masteredWeaponIds : undefined,
     }
 
     saveCharacter(character)

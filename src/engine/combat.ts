@@ -110,7 +110,8 @@ export function getAttackAdvantage(
   attacker: Combatant,
   target: Combatant,
   baseAdvantage: 'normal' | 'advantage' | 'disadvantage' = 'normal',
-  isRangedAttack: boolean = false
+  isRangedAttack: boolean = false,
+  currentRound: number = 0
 ): 'normal' | 'advantage' | 'disadvantage' {
   let hasAdvantage = baseAdvantage === 'advantage'
   let hasDisadvantage = baseAdvantage === 'disadvantage'
@@ -124,6 +125,10 @@ export function getAttackAdvantage(
   }
   if (attacker.conditions.some((c) => c.condition === 'prone')) {
     // Prone attacker has disadvantage on attacks
+    hasDisadvantage = true
+  }
+  // Check for Sapped condition (from Sap weapon mastery) - attacker has disadvantage
+  if (attacker.conditions.some((c) => c.condition === 'sapped')) {
     hasDisadvantage = true
   }
 
@@ -155,6 +160,11 @@ export function getAttackAdvantage(
   // Check if target is dodging - gives disadvantage to attacks against them
   if (target.conditions.some((c) => c.condition === 'dodging')) {
     hasDisadvantage = true
+  }
+
+  // Check for Vex mastery advantage (attacker previously hit this target with Vex)
+  if (target.vexedBy && target.vexedBy.attackerId === attacker.id && target.vexedBy.expiresOnRound >= currentRound) {
+    hasAdvantage = true
   }
 
   // Advantage and disadvantage cancel out

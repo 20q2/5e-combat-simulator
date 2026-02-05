@@ -17,6 +17,7 @@ import {
   Wind,
   Footprints,
   ShieldPlus,
+  Target,
   type LucideIcon,
 } from 'lucide-react'
 import type { Condition } from '@/types'
@@ -154,6 +155,14 @@ export const conditionIcons: Record<ExtendedCondition, ConditionIconInfo> = {
     color: 'text-blue-300',
     bgColor: 'bg-blue-900',
     label: 'Shielded',
+  },
+
+  // Weapon mastery conditions
+  sapped: {
+    icon: Target,
+    color: 'text-rose-300',
+    bgColor: 'bg-rose-900',
+    label: 'Sapped',
   },
 }
 

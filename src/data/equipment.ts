@@ -12,6 +12,7 @@ export const weapons: Weapon[] = [
     properties: ['light'],
     weight: 2,
     cost: 10,
+    mastery: 'slow',
   },
   {
     id: 'dagger',
@@ -24,6 +25,7 @@ export const weapons: Weapon[] = [
     range: { normal: 20, long: 60 },
     weight: 1,
     cost: 200,
+    mastery: 'nick',
   },
   {
     id: 'greatclub',
@@ -35,6 +37,7 @@ export const weapons: Weapon[] = [
     properties: ['two-handed'],
     weight: 10,
     cost: 20,
+    mastery: 'push',
   },
   {
     id: 'handaxe',
@@ -47,6 +50,7 @@ export const weapons: Weapon[] = [
     range: { normal: 20, long: 60 },
     weight: 2,
     cost: 500,
+    mastery: 'vex',
   },
   {
     id: 'javelin',
@@ -59,6 +63,7 @@ export const weapons: Weapon[] = [
     range: { normal: 30, long: 120 },
     weight: 2,
     cost: 50,
+    mastery: 'slow',
   },
   {
     id: 'light-hammer',
@@ -71,6 +76,7 @@ export const weapons: Weapon[] = [
     range: { normal: 20, long: 60 },
     weight: 2,
     cost: 200,
+    mastery: 'nick',
   },
   {
     id: 'mace',
@@ -82,6 +88,7 @@ export const weapons: Weapon[] = [
     properties: [],
     weight: 4,
     cost: 500,
+    mastery: 'sap',
   },
   {
     id: 'quarterstaff',
@@ -94,6 +101,7 @@ export const weapons: Weapon[] = [
     versatileDamage: '1d8',
     weight: 4,
     cost: 20,
+    mastery: 'topple',
   },
   {
     id: 'sickle',
@@ -105,6 +113,7 @@ export const weapons: Weapon[] = [
     properties: ['light'],
     weight: 2,
     cost: 100,
+    mastery: 'nick',
   },
   {
     id: 'spear',
@@ -118,6 +127,7 @@ export const weapons: Weapon[] = [
     versatileDamage: '1d8',
     weight: 3,
     cost: 100,
+    mastery: 'sap',
   },
 
   // SIMPLE RANGED WEAPONS
@@ -132,6 +142,7 @@ export const weapons: Weapon[] = [
     range: { normal: 80, long: 320 },
     weight: 5,
     cost: 2500,
+    mastery: 'slow',
   },
   {
     id: 'dart',
@@ -144,6 +155,7 @@ export const weapons: Weapon[] = [
     range: { normal: 20, long: 60 },
     weight: 0.25,
     cost: 5,
+    mastery: 'vex',
   },
   {
     id: 'shortbow',
@@ -156,6 +168,7 @@ export const weapons: Weapon[] = [
     range: { normal: 80, long: 320 },
     weight: 2,
     cost: 2500,
+    mastery: 'vex',
   },
   {
     id: 'sling',
@@ -168,6 +181,7 @@ export const weapons: Weapon[] = [
     range: { normal: 30, long: 120 },
     weight: 0,
     cost: 10,
+    mastery: 'slow',
   },
 
   // MARTIAL MELEE WEAPONS
@@ -182,6 +196,7 @@ export const weapons: Weapon[] = [
     versatileDamage: '1d10',
     weight: 4,
     cost: 1000,
+    mastery: 'topple',
   },
   {
     id: 'flail',
@@ -193,6 +208,7 @@ export const weapons: Weapon[] = [
     properties: [],
     weight: 2,
     cost: 1000,
+    mastery: 'sap',
   },
   {
     id: 'glaive',
@@ -204,6 +220,7 @@ export const weapons: Weapon[] = [
     properties: ['heavy', 'reach', 'two-handed'],
     weight: 6,
     cost: 2000,
+    mastery: 'graze',
   },
   {
     id: 'greataxe',
@@ -215,6 +232,7 @@ export const weapons: Weapon[] = [
     properties: ['heavy', 'two-handed'],
     weight: 7,
     cost: 3000,
+    mastery: 'cleave',
   },
   {
     id: 'greatsword',
@@ -226,6 +244,7 @@ export const weapons: Weapon[] = [
     properties: ['heavy', 'two-handed'],
     weight: 6,
     cost: 5000,
+    mastery: 'graze',
   },
   {
     id: 'halberd',
@@ -237,6 +256,7 @@ export const weapons: Weapon[] = [
     properties: ['heavy', 'reach', 'two-handed'],
     weight: 6,
     cost: 2000,
+    mastery: 'cleave',
   },
   {
     id: 'lance',
@@ -248,6 +268,7 @@ export const weapons: Weapon[] = [
     properties: ['reach', 'special'],
     weight: 6,
     cost: 1000,
+    mastery: 'topple',
   },
   {
     id: 'longsword',
@@ -260,6 +281,7 @@ export const weapons: Weapon[] = [
     versatileDamage: '1d10',
     weight: 3,
     cost: 1500,
+    mastery: 'sap',
   },
   {
     id: 'maul',
@@ -271,6 +293,7 @@ export const weapons: Weapon[] = [
     properties: ['heavy', 'two-handed'],
     weight: 10,
     cost: 1000,
+    mastery: 'topple',
   },
   {
     id: 'morningstar',
@@ -282,6 +305,7 @@ export const weapons: Weapon[] = [
     properties: [],
     weight: 4,
     cost: 1500,
+    mastery: 'sap',
   },
   {
     id: 'pike',
@@ -293,6 +317,7 @@ export const weapons: Weapon[] = [
     properties: ['heavy', 'reach', 'two-handed'],
     weight: 18,
     cost: 500,
+    mastery: 'push',
   },
   {
     id: 'rapier',
@@ -304,6 +329,7 @@ export const weapons: Weapon[] = [
     properties: ['finesse'],
     weight: 2,
     cost: 2500,
+    mastery: 'vex',
   },
   {
     id: 'scimitar',
@@ -315,6 +341,7 @@ export const weapons: Weapon[] = [
     properties: ['finesse', 'light'],
     weight: 3,
     cost: 2500,
+    mastery: 'nick',
   },
   {
     id: 'shortsword',
@@ -326,6 +353,7 @@ export const weapons: Weapon[] = [
     properties: ['finesse', 'light'],
     weight: 2,
     cost: 1000,
+    mastery: 'vex',
   },
   {
     id: 'trident',
@@ -339,6 +367,7 @@ export const weapons: Weapon[] = [
     versatileDamage: '1d8',
     weight: 4,
     cost: 500,
+    mastery: 'topple',
   },
   {
     id: 'war-pick',
@@ -350,6 +379,7 @@ export const weapons: Weapon[] = [
     properties: [],
     weight: 2,
     cost: 500,
+    mastery: 'sap',
   },
   {
     id: 'warhammer',
@@ -362,6 +392,7 @@ export const weapons: Weapon[] = [
     versatileDamage: '1d10',
     weight: 2,
     cost: 1500,
+    mastery: 'push',
   },
   {
     id: 'whip',
@@ -373,6 +404,7 @@ export const weapons: Weapon[] = [
     properties: ['finesse', 'reach'],
     weight: 3,
     cost: 200,
+    mastery: 'slow',
   },
 
   // MARTIAL RANGED WEAPONS
@@ -387,6 +419,7 @@ export const weapons: Weapon[] = [
     range: { normal: 25, long: 100 },
     weight: 1,
     cost: 1000,
+    mastery: 'vex',
   },
   {
     id: 'hand-crossbow',
@@ -399,6 +432,7 @@ export const weapons: Weapon[] = [
     range: { normal: 30, long: 120 },
     weight: 3,
     cost: 7500,
+    mastery: 'vex',
   },
   {
     id: 'heavy-crossbow',
@@ -411,6 +445,7 @@ export const weapons: Weapon[] = [
     range: { normal: 100, long: 400 },
     weight: 18,
     cost: 5000,
+    mastery: 'push',
   },
   {
     id: 'longbow',
@@ -423,6 +458,7 @@ export const weapons: Weapon[] = [
     range: { normal: 150, long: 600 },
     weight: 2,
     cost: 5000,
+    mastery: 'slow',
   },
   {
     id: 'net',
@@ -435,6 +471,7 @@ export const weapons: Weapon[] = [
     range: { normal: 5, long: 15 },
     weight: 3,
     cost: 100,
+    // Net has no mastery - it's a special weapon that doesn't deal damage
   },
 ]
 

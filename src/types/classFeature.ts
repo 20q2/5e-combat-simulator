@@ -81,6 +81,13 @@ export interface GenericClassFeature extends ClassFeatureBase {
   type: 'generic'
 }
 
+// D&D 2024 Weapon Mastery - martial class weapon specialization
+export interface WeaponMasteryFeature extends ClassFeatureBase {
+  type: 'weapon_mastery'
+  masteredWeaponCount: number  // Base number of weapons that can be mastered
+  masteredWeaponCountAtLevels?: Record<number, number>  // Level scaling (e.g., Fighter gets more at 4, 10, 16)
+}
+
 // ============================================
 // Union Type
 // ============================================
@@ -93,6 +100,7 @@ export type ClassFeature =
   | CunningActionFeature
   | ExtraAttackFeature
   | ImprovedCriticalFeature
+  | WeaponMasteryFeature
   | GenericClassFeature
 
 // ============================================
@@ -129,4 +137,8 @@ export function isImprovedCriticalFeature(f: ClassFeature): f is ImprovedCritica
 
 export function isGenericClassFeature(f: ClassFeature): f is GenericClassFeature {
   return f.type === 'generic'
+}
+
+export function isWeaponMasteryFeature(f: ClassFeature): f is WeaponMasteryFeature {
+  return f.type === 'weapon_mastery'
 }

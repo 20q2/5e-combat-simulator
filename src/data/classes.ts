@@ -63,6 +63,16 @@ export const classes: CharacterClass[] = [
     },
     features: [
       {
+        id: 'weapon-mastery-fighter',
+        type: 'weapon_mastery',
+        name: 'Weapon Mastery',
+        level: 1,
+        description: 'You can use the mastery property of weapons you are proficient with. Choose 3 weapons to master (increases at levels 4, 10, and 16).',
+        trigger: 'passive',
+        masteredWeaponCount: 3,
+        masteredWeaponCountAtLevels: { 4: 4, 10: 5, 16: 6 },
+      },
+      {
         id: 'fighting-style-fighter',
         type: 'fighting_style',
         name: 'Fighting Style',
@@ -1054,6 +1064,15 @@ export const classes: CharacterClass[] = [
       options: ['Animal Handling', 'Athletics', 'Insight', 'Investigation', 'Nature', 'Perception', 'Stealth', 'Survival'],
     },
     features: [
+      {
+        id: 'weapon-mastery-ranger',
+        type: 'weapon_mastery',
+        name: 'Weapon Mastery',
+        level: 1,
+        description: 'You can use the mastery property of 2 weapons you are proficient with.',
+        trigger: 'passive',
+        masteredWeaponCount: 2,
+      },
       {
         id: 'favored-enemy',
         type: 'generic',

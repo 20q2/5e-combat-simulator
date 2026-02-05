@@ -53,6 +53,8 @@ export type Condition =
   | 'dashing'
   | 'hidden'
   | 'shielded'
+  // Weapon mastery conditions
+  | 'sapped'  // Disadvantage on next attack (from Sap mastery)
 
 // ============================================
 // Character Types
@@ -107,6 +109,7 @@ export type {
   FightingStyle,
   SneakAttackFeature,
   ActionSurgeFeature,
+  WeaponMasteryFeature,
   GenericClassFeature,
 } from './classFeature'
 
@@ -115,6 +118,7 @@ export {
   isFightingStyleFeature,
   isSneakAttackFeature,
   isActionSurgeFeature,
+  isWeaponMasteryFeature,
   isGenericClassFeature,
 } from './classFeature'
 
@@ -187,6 +191,17 @@ export type WeaponProperty =
   | 'two-handed'
   | 'versatile'
 
+// D&D 5e 2024 Weapon Mastery properties
+export type WeaponMastery =
+  | 'cleave'   // On hit, make second attack vs creature within 5ft (no ability mod to damage). Once per turn.
+  | 'graze'    // On miss, deal ability modifier damage. Every miss.
+  | 'nick'     // Extra light weapon attack as part of Attack action. Once per turn.
+  | 'push'     // Push target 10ft away on hit. Every hit.
+  | 'sap'      // Target has disadvantage on next attack. Every hit.
+  | 'slow'     // Reduce target speed by 10ft until your next turn. Every hit.
+  | 'topple'   // Target makes CON save or falls prone. Every hit.
+  | 'vex'      // Gain advantage on next attack vs same target. Every hit.
+
 export interface Weapon {
   id: string
   name: string
@@ -199,6 +214,7 @@ export interface Weapon {
   versatileDamage?: string
   weight: number
   cost: number
+  mastery?: WeaponMastery  // D&D 2024 weapon mastery property
 }
 
 export interface Armor {
@@ -326,6 +342,7 @@ export interface Character {
     successes: number
     failures: number
   }
+  masteredWeaponIds?: string[]  // D&D 2024: IDs of weapons this character has mastered
 }
 
 export interface ActiveCondition {
@@ -456,6 +473,13 @@ export interface Combatant {
   classFeatureUses: Record<string, number>   // Track uses of limited class features (Second Wind, etc.)
   usedSneakAttackThisTurn: boolean           // Track if Sneak Attack was used this turn
   attacksMadeThisTurn: number                // Track attacks made this turn for Extra Attack
+  // D&D 2024 Weapon Mastery tracking
+  usedCleaveThisTurn: boolean                // Track if Cleave was used this turn (once per turn)
+  usedNickThisTurn: boolean                  // Track if Nick bonus attack was used this turn
+  vexedBy?: {                                // Track who vexed this target (for Vex mastery advantage)
+    attackerId: string
+    expiresOnRound: number
+  }
 }
 
 export interface GridCell {

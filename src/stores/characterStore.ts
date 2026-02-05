@@ -52,6 +52,7 @@ export interface CharacterDraft {
   rangedWeaponId: string | null
   armorId: string | null
   shieldEquipped: boolean
+  masteredWeaponIds: string[]
 }
 
 interface CharacterState {
@@ -88,6 +89,8 @@ interface CharacterState {
   setRangedWeapon: (weaponId: string | null) => void
   setArmor: (armorId: string | null) => void
   setShield: (equipped: boolean) => void
+  setMasteredWeapons: (weaponIds: string[]) => void
+  toggleMasteredWeapon: (weaponId: string) => void
   setAbilityBonusPlus2: (ability: AbilityName | null) => void
   setAbilityBonusPlus1: (ability: AbilityName | null) => void
   setAbilityBonusMode: (mode: AbilityBonusMode) => void
@@ -138,6 +141,7 @@ const initialDraft: CharacterDraft = {
   rangedWeaponId: null,
   armorId: null,
   shieldEquipped: false,
+  masteredWeaponIds: [],
 }
 
 export const useCharacterStore = create<CharacterState>()(
@@ -324,6 +328,25 @@ export const useCharacterStore = create<CharacterState>()(
         set((state) => ({
           draft: { ...state.draft, shieldEquipped: equipped },
         })),
+
+      setMasteredWeapons: (weaponIds) =>
+        set((state) => ({
+          draft: { ...state.draft, masteredWeaponIds: weaponIds },
+        })),
+
+      toggleMasteredWeapon: (weaponId) =>
+        set((state) => {
+          const current = state.draft.masteredWeaponIds
+          const isSelected = current.includes(weaponId)
+          return {
+            draft: {
+              ...state.draft,
+              masteredWeaponIds: isSelected
+                ? current.filter((id) => id !== weaponId)
+                : [...current, weaponId],
+            },
+          }
+        }),
 
       setAbilityBonusPlus2: (ability) =>
         set((state) => ({

@@ -265,6 +265,8 @@ interface WeaponOption {
   range: number
   damage: string
   weapon?: Weapon
+  mastery?: string  // Mastery property if character has mastered the weapon
+  hasMastery?: boolean  // Whether character has mastered this weapon
 }
 
 // Weapon and target selector (two-column layout)
@@ -341,6 +343,11 @@ function WeaponTargetSelector({
                   <div className="text-[10px] text-slate-400">
                     {weapon.damage} • {weapon.range}ft
                   </div>
+                  {weapon.hasMastery && weapon.mastery && (
+                    <div className="text-[10px] font-medium text-amber-400 uppercase">
+                      {weapon.mastery}
+                    </div>
+                  )}
                 </div>
               </button>
             ))}
@@ -907,7 +914,11 @@ export function ActionBar() {
   // Build weapons array for character attack selector
   const availableWeapons: WeaponOption[] = []
   if (isCharacter && character) {
+    // Check if character has mastered each weapon
+    const masteredIds = character.masteredWeaponIds ?? []
+
     if (meleeWeapon) {
+      const isMastered = masteredIds.includes(meleeWeapon.id)
       availableWeapons.push({
         id: 'melee',
         name: meleeWeapon.name,
@@ -915,9 +926,12 @@ export function ActionBar() {
         range: getMeleeRange(meleeWeapon),
         damage: meleeWeapon.damage,
         weapon: meleeWeapon,
+        mastery: isMastered && meleeWeapon.mastery ? meleeWeapon.mastery : undefined,
+        hasMastery: isMastered && !!meleeWeapon.mastery,
       })
     }
     if (rangedWeapon) {
+      const isMastered = masteredIds.includes(rangedWeapon.id)
       availableWeapons.push({
         id: 'ranged',
         name: rangedWeapon.name,
@@ -925,6 +939,8 @@ export function ActionBar() {
         range: rangedWeapon.range?.normal ?? 30,
         damage: rangedWeapon.damage,
         weapon: rangedWeapon,
+        mastery: isMastered && rangedWeapon.mastery ? rangedWeapon.mastery : undefined,
+        hasMastery: isMastered && !!rangedWeapon.mastery,
       })
     }
     // Always add unarmed strike option
