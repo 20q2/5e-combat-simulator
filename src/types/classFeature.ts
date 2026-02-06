@@ -117,6 +117,12 @@ export interface IndomitableFeature extends ClassFeatureBase {
   maxUsesAtLevels?: Record<number, number>  // Level scaling (e.g., {9: 1, 13: 2, 17: 3})
 }
 
+// Tactical Master - Fighter level 9 feature (replace weapon mastery with Push, Sap, or Slow)
+export interface TacticalMasterFeature extends ClassFeatureBase {
+  type: 'tactical_master'
+  allowedMasteries: ('push' | 'sap' | 'slow')[]  // Available replacement masteries
+}
+
 // ============================================
 // Union Type
 // ============================================
@@ -134,6 +140,7 @@ export type ClassFeature =
   | CombatSuperiorityFeature
   | RelentlessFeature
   | IndomitableFeature
+  | TacticalMasterFeature
   | GenericClassFeature
 
 // ============================================
@@ -190,4 +197,8 @@ export function isRelentlessFeature(f: ClassFeature): f is RelentlessFeature {
 
 export function isIndomitableFeature(f: ClassFeature): f is IndomitableFeature {
   return f.type === 'indomitable'
+}
+
+export function isTacticalMasterFeature(f: ClassFeature): f is TacticalMasterFeature {
+  return f.type === 'tactical_master'
 }

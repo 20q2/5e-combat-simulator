@@ -279,6 +279,7 @@ interface WeaponOption {
   weapon?: Weapon
   mastery?: string  // Mastery property if character has mastered the weapon
   hasMastery?: boolean  // Whether character has mastered this weapon
+  selectedMastery?: string  // Tactical Master mastery override
   // Attack replacement fields (for breath weapon, etc.)
   attackReplacement?: AttackReplacement
   usesRemaining?: number | null

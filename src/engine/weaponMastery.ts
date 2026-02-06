@@ -110,9 +110,11 @@ export function applyOnHitMasteryEffect(
   weapon: Weapon,
   grid: Grid,
   allCombatants: Combatant[],
-  currentRound: number
+  currentRound: number,
+  masteryOverride?: WeaponMastery  // Tactical Master override
 ): MasteryEffectResult | null {
-  const mastery = getActiveMastery(attacker, weapon)
+  // Use override if provided (Tactical Master), otherwise get active mastery
+  const mastery = masteryOverride ?? getActiveMastery(attacker, weapon)
   if (!mastery) return null
 
   switch (mastery) {
@@ -388,9 +390,11 @@ export function getGrazeDamage(attacker: Combatant, weapon: Weapon): number {
 export function applyGrazeOnMiss(
   attacker: Combatant,
   target: Combatant,
-  weapon: Weapon
+  weapon: Weapon,
+  masteryOverride?: WeaponMastery  // Tactical Master override
 ): MasteryEffectResult | null {
-  const mastery = getActiveMastery(attacker, weapon)
+  // Use override if provided (Tactical Master), otherwise get active mastery
+  const mastery = masteryOverride ?? getActiveMastery(attacker, weapon)
   if (mastery !== 'graze') return null
 
   const damage = getGrazeDamage(attacker, weapon)

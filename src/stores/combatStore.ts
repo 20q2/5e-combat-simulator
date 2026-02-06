@@ -16,6 +16,7 @@ import type {
   DamageType,
   CombatPopupType,
   Condition,
+  WeaponMastery,
 } from '@/types'
 import { rollInitiative, rollDie, rollD20 } from '@/engine/dice'
 import { getAbilityModifier } from '@/types'
@@ -188,7 +189,7 @@ interface CombatStore extends CombatState {
   // Combat actions
   dealDamage: (targetId: string, amount: number, source?: string) => void
   healDamage: (targetId: string, amount: number, source?: string) => void
-  performAttack: (attackerId: string, targetId: string, weapon?: Weapon, monsterAction?: MonsterAction, rangedWeapon?: Weapon) => AttackResult | null
+  performAttack: (attackerId: string, targetId: string, weapon?: Weapon, monsterAction?: MonsterAction, rangedWeapon?: Weapon, masteryOverride?: WeaponMastery) => AttackResult | null
   performAttackReplacement: (attackerId: string, replacementId: string, targetPosition: Position) => boolean
   performOpportunityAttack: (attackerId: string, targetId: string, attackReplacementId?: string) => AttackResult | null
   useDash: () => void
@@ -2101,7 +2102,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
     })
   },
 
-  performAttack: (attackerId, targetId, weapon, monsterAction, rangedWeapon) => {
+  performAttack: (attackerId, targetId, weapon, monsterAction, rangedWeapon, masteryOverride) => {
     const { combatants, grid } = get()
     const attacker = combatants.find((c) => c.id === attackerId)
     const target = combatants.find((c) => c.id === targetId)
@@ -2152,6 +2153,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
       monsterAction,
       allCombatants: combatants,
       usedSneakAttackThisTurn: attacker.usedSneakAttackThisTurn,
+      masteryOverride,
     })
 
     // Log the attack
@@ -2200,7 +2202,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
 
       // Apply Graze mastery damage on miss (if applicable)
       if (selectedWeapon) {
-        const grazeResult = applyGrazeOnMiss(attacker, target, selectedWeapon)
+        const grazeResult = applyGrazeOnMiss(attacker, target, selectedWeapon, masteryOverride)
         if (grazeResult && grazeResult.applied && grazeResult.grazeDamage && grazeResult.grazeDamage > 0) {
           get().dealDamage(targetId, grazeResult.grazeDamage, attacker.name)
           get().addDamagePopup(targetId, grazeResult.grazeDamage, selectedWeapon.damageType as DamageType, false)
@@ -2499,7 +2501,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
       // Apply on-hit weapon mastery effects
       if (selectedWeapon) {
         const { round, combatants: currentCombatants } = get()
-        const masteryResult = applyOnHitMasteryEffect(attacker, target, selectedWeapon, grid, currentCombatants, round)
+        const masteryResult = applyOnHitMasteryEffect(attacker, target, selectedWeapon, grid, currentCombatants, round, masteryOverride)
 
         if (masteryResult && masteryResult.applied) {
           // Log the mastery effect

@@ -162,6 +162,15 @@ export const classes: CharacterClass[] = [
         maxUsesAtLevels: { 9: 1, 13: 2, 17: 3 },
       },
       {
+        id: 'tactical-master',
+        type: 'tactical_master',
+        name: 'Tactical Master',
+        level: 9,
+        description: 'When you attack with a weapon whose mastery property you can use, you can replace that property with the Push, Sap, or Slow property for that attack.',
+        trigger: 'passive',
+        allowedMasteries: ['push', 'sap', 'slow'],
+      },
+      {
         id: 'extra-attack-2',
         type: 'extra_attack',
         name: 'Extra Attack (2)',

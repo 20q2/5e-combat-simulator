@@ -9,6 +9,7 @@ import type {
   ExtraAttackFeature,
   ImprovedCriticalFeature,
   IndomitableFeature,
+  TacticalMasterFeature,
   FightingStyle,
 } from '@/types/classFeature'
 import {
@@ -20,6 +21,7 @@ import {
   isExtraAttackFeature,
   isImprovedCriticalFeature,
   isIndomitableFeature,
+  isTacticalMasterFeature,
 } from '@/types/classFeature'
 import { roll } from './dice'
 
@@ -631,4 +633,30 @@ export function getIndomitableBonus(combatant: Combatant): number {
   // Only Fighters get this bonus, check class
   if (character.class.id !== 'fighter') return 0
   return character.level
+}
+
+// ============================================
+// Tactical Master
+// ============================================
+
+/**
+ * Get the Tactical Master feature for a combatant
+ */
+export function getTacticalMasterFeature(combatant: Combatant): TacticalMasterFeature | undefined {
+  return getFeatureOfType(combatant, isTacticalMasterFeature)
+}
+
+/**
+ * Check if combatant has Tactical Master (Fighter level 9+)
+ */
+export function hasTacticalMaster(combatant: Combatant): boolean {
+  return getTacticalMasterFeature(combatant) !== undefined
+}
+
+/**
+ * Get available replacement masteries for Tactical Master
+ */
+export function getTacticalMasterMasteries(combatant: Combatant): ('push' | 'sap' | 'slow')[] {
+  const feature = getTacticalMasterFeature(combatant)
+  return feature?.allowedMasteries ?? []
 }

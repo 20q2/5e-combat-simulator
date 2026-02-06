@@ -1,6 +1,6 @@
 import { rollAttack, rollDamage, rollD20, rollDie, type D20RollResult, type DiceRollResult } from './dice'
 import { getAbilityModifier } from '@/types'
-import type { Combatant, Character, Monster, Weapon, MonsterAction, Condition, Grid, Position, AbilityName } from '@/types'
+import type { Combatant, Character, Monster, Weapon, MonsterAction, Condition, Grid, Position, AbilityName, WeaponMastery } from '@/types'
 import { hasLineOfSight } from '@/lib/lineOfSight'
 import { getDistanceBetweenPositions } from '@/lib/distance'
 import {
@@ -48,6 +48,7 @@ export interface MeleeAttackOptions {
   advantage?: 'normal' | 'advantage' | 'disadvantage'
   allCombatants?: Combatant[]                                // For Sneak Attack ally check
   usedSneakAttackThisTurn?: boolean                          // Track if sneak attack already used
+  masteryOverride?: WeaponMastery                            // Tactical Master mastery override
 }
 
 /**
