@@ -7,7 +7,7 @@ import {
   rollD20,
   rollDamage,
   rollSavingThrow,
-} from './dice'
+} from '@/engine/dice'
 
 describe('dice engine', () => {
   beforeEach(() => {

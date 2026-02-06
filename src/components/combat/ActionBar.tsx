@@ -4,6 +4,7 @@ import { cn, formatCR } from '@/lib/utils'
 import { useCombatStore, getCurrentCombatant } from '@/stores/combatStore'
 import { getCharacterTokenImage, getMonsterTokenImage } from '@/lib/tokenImages'
 import { SpellSlotDisplay } from './SpellSlotDisplay'
+import { ResourceTracker } from './ResourceTracker'
 import type { Character, Monster, Weapon, MonsterAction, Spell } from '@/types'
 import { getMeleeRange } from '@/engine/combat'
 import {
@@ -25,7 +26,10 @@ import {
   Eye,
   Trophy,
   Skull,
+  Bug,
+  X,
 } from 'lucide-react'
+import type { Condition } from '@/types'
 import {
   getSecondWindFeature,
   canUseSecondWind,
@@ -37,11 +41,14 @@ import {
   canUseCunningAction,
   getMaxAttacksPerAction,
 } from '@/engine/classAbilities'
+import { hasCombatSuperiority } from '@/engine/maneuvers'
 import {
-  hasCombatSuperiority,
-  getMaxSuperiorityDice,
-  getSuperiorityDieSize,
-} from '@/engine/maneuvers'
+  getAvailableAttackReplacements,
+  canUseAttackReplacement,
+} from '@/engine/attackReplacements'
+import { canUseBattleMedic, getLuckPoints } from '@/engine/originFeats'
+import type { AttackReplacement, AoEAttackReplacement } from '@/types'
+import { Flame, Stethoscope } from 'lucide-react'
 
 // Parse spell range string to number (in feet)
 // e.g., "120 feet" → 120, "Touch" → 5, "Self" → 0
@@ -266,12 +273,15 @@ function TargetSelector({
 interface WeaponOption {
   id: string
   name: string
-  type: 'melee' | 'ranged' | 'unarmed'
+  type: 'melee' | 'ranged' | 'unarmed' | 'breath_weapon'
   range: number
   damage: string
   weapon?: Weapon
   mastery?: string  // Mastery property if character has mastered the weapon
   hasMastery?: boolean  // Whether character has mastered this weapon
+  // Attack replacement fields (for breath weapon, etc.)
+  attackReplacement?: AttackReplacement
+  usesRemaining?: number | null
 }
 
 // Weapon and target selector (two-column layout)
@@ -283,6 +293,7 @@ function WeaponTargetSelector({
   onCancel,
   onHoverTarget,
   onWeaponSelect,
+  onBreathWeaponSelect,
 }: {
   weapons: WeaponOption[]
   targets: { id: string; name: string; hp: number; maxHp: number }[]
@@ -291,6 +302,7 @@ function WeaponTargetSelector({
   onCancel: () => void
   onHoverTarget?: (targetId: string | undefined) => void
   onWeaponSelect: (weapon: WeaponOption | undefined) => void
+  onBreathWeaponSelect?: (replacement: AttackReplacement) => void
 }) {
   const [selectedWeapon, setSelectedWeapon] = useState<WeaponOption | undefined>(
     weapons.length > 0 ? weapons[0] : undefined
@@ -304,9 +316,9 @@ function WeaponTargetSelector({
     onWeaponSelect(selectedWeapon)
   }, [selectedWeapon])
 
-  // Get valid targets for currently selected weapon
+  // Get valid targets for currently selected weapon (not needed for breath weapons)
   const validTargetIds = new Set<string>()
-  if (currentCombatant && selectedWeapon) {
+  if (currentCombatant && selectedWeapon && selectedWeapon.type !== 'breath_weapon') {
     const validForWeapon = getValidTargets(
       currentCombatant.id,
       selectedWeapon.type === 'melee' || selectedWeapon.type === 'unarmed' ? selectedWeapon.weapon : undefined,
@@ -317,6 +329,7 @@ function WeaponTargetSelector({
   }
 
   const filteredTargets = targets.filter(t => validTargetIds.has(t.id))
+  const isBreathWeaponSelected = selectedWeapon?.type === 'breath_weapon'
 
   return (
     <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 bg-slate-900 border-2 border-rose-800 rounded-lg shadow-2xl p-3 z-50">
@@ -326,7 +339,7 @@ function WeaponTargetSelector({
       </div>
       <div className="flex gap-3">
         {/* Left column: Weapons */}
-        <div className="w-40 border-r border-slate-700 pr-3">
+        <div className="w-44 border-r border-slate-700 pr-3">
           <div className="text-xs text-slate-400 mb-1.5">Weapon</div>
           <div className="space-y-1">
             {weapons.map((weapon) => (
@@ -336,21 +349,29 @@ function WeaponTargetSelector({
                 className={cn(
                   'w-full flex items-center gap-2 p-2 rounded text-left transition-colors',
                   selectedWeapon?.id === weapon.id
-                    ? 'bg-rose-900/60 border border-rose-600'
+                    ? weapon.type === 'breath_weapon'
+                      ? 'bg-orange-900/60 border border-orange-600'
+                      : 'bg-rose-900/60 border border-rose-600'
                     : 'bg-slate-800 hover:bg-slate-700 border border-transparent'
                 )}
               >
                 {weapon.type === 'melee' && <Sword className="w-4 h-4 text-slate-300" />}
                 {weapon.type === 'ranged' && <Crosshair className="w-4 h-4 text-slate-300" />}
                 {weapon.type === 'unarmed' && <Hand className="w-4 h-4 text-slate-300" />}
+                {weapon.type === 'breath_weapon' && <Flame className="w-4 h-4 text-orange-400" />}
                 <div className="flex-1 min-w-0">
                   <div className="text-xs text-slate-200 truncate">{weapon.name}</div>
                   <div className="text-[10px] text-slate-400">
-                    {weapon.damage} • {weapon.range}ft
+                    {weapon.damage} • {weapon.type === 'breath_weapon' ? `${weapon.range}ft ${(weapon.attackReplacement as AoEAttackReplacement)?.aoeType}` : `${weapon.range}ft`}
                   </div>
                   {weapon.hasMastery && weapon.mastery && (
                     <div className="text-[10px] font-medium text-amber-400 uppercase">
                       {weapon.mastery}
+                    </div>
+                  )}
+                  {weapon.type === 'breath_weapon' && weapon.usesRemaining !== null && (
+                    <div className="text-[10px] font-medium text-orange-400">
+                      {weapon.usesRemaining} use{weapon.usesRemaining !== 1 ? 's' : ''} left
                     </div>
                   )}
                 </div>
@@ -359,29 +380,54 @@ function WeaponTargetSelector({
           </div>
         </div>
 
-        {/* Right column: Targets */}
+        {/* Right column: Targets or AoE instruction */}
         <div className="w-44">
-          <div className="text-xs text-slate-400 mb-1.5">
-            Target {filteredTargets.length > 0 && `(${filteredTargets.length})`}
-          </div>
-          <div className="space-y-1 max-h-48 overflow-y-auto">
-            {filteredTargets.length === 0 ? (
-              <div className="text-xs text-slate-500 italic p-2">No targets in range</div>
-            ) : (
-              filteredTargets.map((target) => (
+          {isBreathWeaponSelected ? (
+            <>
+              <div className="text-xs text-slate-400 mb-1.5">
+                Aim on Grid
+              </div>
+              <div className="space-y-2 p-2">
+                <p className="text-xs text-slate-300">
+                  Click on the grid to aim your breath weapon in that direction.
+                </p>
                 <button
-                  key={target.id}
-                  onClick={() => onAttack(target.id, selectedWeapon?.weapon)}
-                  onMouseEnter={() => onHoverTarget?.(target.id)}
-                  onMouseLeave={() => onHoverTarget?.(undefined)}
-                  className="w-full flex justify-between items-center p-2 rounded bg-slate-800 hover:bg-rose-900/50 transition-colors text-left"
+                  onClick={() => {
+                    if (selectedWeapon?.attackReplacement && onBreathWeaponSelect) {
+                      onBreathWeaponSelect(selectedWeapon.attackReplacement)
+                    }
+                  }}
+                  className="w-full p-2 rounded bg-orange-700 hover:bg-orange-600 transition-colors text-center"
                 >
-                  <span className="text-xs text-slate-200">{target.name}</span>
-                  <span className="text-[10px] text-rose-400">{target.hp}/{target.maxHp}</span>
+                  <span className="text-xs text-white font-semibold">Select Direction on Grid</span>
                 </button>
-              ))
-            )}
-          </div>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="text-xs text-slate-400 mb-1.5">
+                Target {filteredTargets.length > 0 && `(${filteredTargets.length})`}
+              </div>
+              <div className="space-y-1 max-h-48 overflow-y-auto">
+                {filteredTargets.length === 0 ? (
+                  <div className="text-xs text-slate-500 italic p-2">No targets in range</div>
+                ) : (
+                  filteredTargets.map((target) => (
+                    <button
+                      key={target.id}
+                      onClick={() => onAttack(target.id, selectedWeapon?.weapon)}
+                      onMouseEnter={() => onHoverTarget?.(target.id)}
+                      onMouseLeave={() => onHoverTarget?.(undefined)}
+                      className="w-full flex justify-between items-center p-2 rounded bg-slate-800 hover:bg-rose-900/50 transition-colors text-left"
+                    >
+                      <span className="text-xs text-slate-200">{target.name}</span>
+                      <span className="text-[10px] text-rose-400">{target.hp}/{target.maxHp}</span>
+                    </button>
+                  ))
+                )}
+              </div>
+            </>
+          )}
         </div>
       </div>
       <button
@@ -793,6 +839,131 @@ function DeathSavesUI({
   )
 }
 
+// ============================================
+// Debug Menu
+// ============================================
+
+const ALL_CONDITIONS: Condition[] = [
+  'blinded', 'charmed', 'deafened', 'frightened', 'grappled',
+  'incapacitated', 'invisible', 'paralyzed', 'petrified', 'poisoned',
+  'prone', 'restrained', 'stunned', 'unconscious', 'exhaustion',
+  'sapped', 'goaded'
+]
+
+function DebugMenu({
+  combatants,
+  onApplyCondition,
+  onRemoveCondition,
+  onClose,
+}: {
+  combatants: { id: string; name: string; conditions: { condition: Condition }[] }[]
+  onApplyCondition: (combatantId: string, condition: Condition) => void
+  onRemoveCondition: (combatantId: string, condition: Condition) => void
+  onClose: () => void
+}) {
+  const [selectedCombatant, setSelectedCombatant] = useState<string | null>(null)
+  const [selectedCondition, setSelectedCondition] = useState<Condition>('prone')
+
+  const targetCombatant = combatants.find(c => c.id === selectedCombatant)
+  const activeConditions = targetCombatant?.conditions.map(c => c.condition) ?? []
+
+  return (
+    <div className="absolute bottom-full right-0 mb-2 w-80 bg-slate-900 border-2 border-orange-700 rounded-lg shadow-2xl p-3 z-50">
+      <div className="flex items-center justify-between mb-3">
+        <div className="text-sm font-semibold text-orange-400 flex items-center gap-2">
+          <Bug className="w-4 h-4" />
+          Debug Menu
+        </div>
+        <button onClick={onClose} className="p-1 hover:bg-slate-700 rounded">
+          <X className="w-4 h-4 text-slate-400" />
+        </button>
+      </div>
+
+      {/* Apply Condition Section */}
+      <div className="space-y-3">
+        <div className="text-xs text-slate-400 font-medium">Apply / Remove Condition</div>
+
+        {/* Combatant Selector */}
+        <div>
+          <label className="text-xs text-slate-500 mb-1 block">Target</label>
+          <select
+            value={selectedCombatant ?? ''}
+            onChange={(e) => setSelectedCombatant(e.target.value || null)}
+            className="w-full bg-slate-800 border border-slate-600 rounded px-2 py-1.5 text-sm text-slate-200"
+          >
+            <option value="">Select combatant...</option>
+            {combatants.map(c => (
+              <option key={c.id} value={c.id}>{c.name}</option>
+            ))}
+          </select>
+        </div>
+
+        {/* Condition Selector */}
+        <div>
+          <label className="text-xs text-slate-500 mb-1 block">Condition</label>
+          <select
+            value={selectedCondition}
+            onChange={(e) => setSelectedCondition(e.target.value as Condition)}
+            className="w-full bg-slate-800 border border-slate-600 rounded px-2 py-1.5 text-sm text-slate-200"
+          >
+            {ALL_CONDITIONS.map(cond => (
+              <option key={cond} value={cond}>
+                {cond.charAt(0).toUpperCase() + cond.slice(1)}
+                {activeConditions.includes(cond) ? ' (active)' : ''}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* Action Buttons */}
+        <div className="flex gap-2">
+          <button
+            onClick={() => selectedCombatant && onApplyCondition(selectedCombatant, selectedCondition)}
+            disabled={!selectedCombatant || activeConditions.includes(selectedCondition)}
+            className={cn(
+              'flex-1 px-3 py-1.5 rounded text-sm font-medium transition-colors',
+              selectedCombatant && !activeConditions.includes(selectedCondition)
+                ? 'bg-orange-700 hover:bg-orange-600 text-orange-100'
+                : 'bg-slate-700 text-slate-500 cursor-not-allowed'
+            )}
+          >
+            Apply
+          </button>
+          <button
+            onClick={() => selectedCombatant && onRemoveCondition(selectedCombatant, selectedCondition)}
+            disabled={!selectedCombatant || !activeConditions.includes(selectedCondition)}
+            className={cn(
+              'flex-1 px-3 py-1.5 rounded text-sm font-medium transition-colors',
+              selectedCombatant && activeConditions.includes(selectedCondition)
+                ? 'bg-rose-700 hover:bg-rose-600 text-rose-100'
+                : 'bg-slate-700 text-slate-500 cursor-not-allowed'
+            )}
+          >
+            Remove
+          </button>
+        </div>
+
+        {/* Show active conditions for selected combatant */}
+        {targetCombatant && activeConditions.length > 0 && (
+          <div className="mt-2 pt-2 border-t border-slate-700">
+            <div className="text-xs text-slate-500 mb-1">Active Conditions:</div>
+            <div className="flex flex-wrap gap-1">
+              {activeConditions.map(cond => (
+                <span
+                  key={cond}
+                  className="text-xs px-2 py-0.5 rounded bg-purple-900/50 text-purple-300 border border-purple-700/50"
+                >
+                  {cond}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 export function ActionBar() {
   const state = useCombatStore()
   const {
@@ -828,6 +999,11 @@ export function ActionBar() {
     startProjectileTargeting,
     cancelProjectileTargeting,
     resetCombat,
+    debugApplyCondition,
+    debugRemoveCondition,
+    setBreathWeaponTargeting,
+    useBattleMedic,
+    getBattleMedicTargets,
   } = state
 
   const navigate = useNavigate()
@@ -837,6 +1013,8 @@ export function ActionBar() {
   const [isSelectingWeapon, setIsSelectingWeapon] = useState(false)
   const [isExecutingAI, setIsExecutingAI] = useState(false)
   const [selectedSlotLevel, setSelectedSlotLevel] = useState<number | undefined>(undefined)
+  const [showDebugMenu, setShowDebugMenu] = useState(false)
+  const [isSelectingBattleMedicTarget, setIsSelectingBattleMedicTarget] = useState(false)
 
   const currentCombatant = getCurrentCombatant(state)
 
@@ -1036,17 +1214,18 @@ export function ActionBar() {
   const canUseActionSurgeNow = hasActionSurge && currentCombatant.hasActed && canUseActionSurge(currentCombatant, currentCombatant.classFeatureUses)
   const actionSurgeUses = hasActionSurge ? getActionSurgeUses(currentCombatant, currentCombatant.classFeatureUses) : 0
 
-  // Check for Combat Superiority (Battle Master subclass)
-  const hasBattleMaster = isCharacter && hasCombatSuperiority(currentCombatant)
-  const maxSupDice = hasBattleMaster ? getMaxSuperiorityDice(currentCombatant) : 0
-  const supDiceRemaining = currentCombatant.superiorityDiceRemaining
-  const supDieSize = hasBattleMaster ? getSuperiorityDieSize(currentCombatant) : 0
+  // Note: Superiority dice display moved to ResourceTracker component
 
   // Check for Cunning Action (Rogue class feature, level 2+)
   const hasCunningActionFeature = isCharacter && hasCunningAction(currentCombatant)
   const canCunningDash = hasCunningActionFeature && canUseCunningAction(currentCombatant, 'dash')
   const canCunningDisengage = hasCunningActionFeature && canUseCunningAction(currentCombatant, 'disengage')
   const canCunningHide = hasCunningActionFeature && canUseCunningAction(currentCombatant, 'hide')
+
+  // Check for Battle Medic (Healer origin feat)
+  const hasBattleMedicFeat = isCharacter && canUseBattleMedic(currentCombatant)
+  const battleMedicTargets = hasBattleMedicFeat ? getBattleMedicTargets(currentCombatant.id) : []
+  const canUseBattleMedicNow = hasBattleMedicFeat && battleMedicTargets.length > 0
 
   // Calculate Extra Attack info
   const maxAttacks = getMaxAttacksPerAction(currentCombatant)
@@ -1096,6 +1275,27 @@ export function ActionBar() {
       damage: '1+STR',
       weapon: undefined,
     })
+
+    // Add attack replacements (breath weapon, etc.)
+    if (currentCombatant) {
+      const attackReplacements = getAvailableAttackReplacements(currentCombatant)
+      for (const replacement of attackReplacements) {
+        if (canUseAttackReplacement(currentCombatant, replacement)) {
+          if (replacement.targetingType === 'aoe') {
+            const aoeReplacement = replacement as AoEAttackReplacement
+            availableWeapons.push({
+              id: replacement.id,
+              name: replacement.name,
+              type: 'breath_weapon',
+              range: aoeReplacement.aoeSize,
+              damage: aoeReplacement.damageDice,
+              attackReplacement: replacement,
+              usesRemaining: replacement.usesRemaining,
+            })
+          }
+        }
+      }
+    }
   }
 
   // Action handlers
@@ -1179,6 +1379,47 @@ export function ActionBar() {
     setSelectedSpell(undefined)
     setIsSelectingSpell(false)
     setSelectedSlotLevel(undefined)
+    setBreathWeaponTargeting(undefined)
+    setIsSelectingBattleMedicTarget(false)
+  }
+
+  // Battle Medic handlers
+  const handleBattleMedicClick = () => {
+    if (isSelectingBattleMedicTarget) {
+      setIsSelectingBattleMedicTarget(false)
+    } else {
+      setIsSelectingBattleMedicTarget(true)
+    }
+  }
+
+  const handleBattleMedicTargetSelect = (targetId: string) => {
+    useBattleMedic(currentCombatant.id, targetId)
+    setIsSelectingBattleMedicTarget(false)
+    setHoveredTarget(undefined)
+  }
+
+  // Handler for when breath weapon is selected from weapon list
+  const handleBreathWeaponSelect = (replacement: AttackReplacement) => {
+    if (!currentCombatant) return
+    if (replacement.targetingType !== 'aoe') return
+
+    const aoeReplacement = replacement as AoEAttackReplacement
+
+    // Set up AoE preview
+    setAoEPreview({
+      type: aoeReplacement.aoeType,
+      size: aoeReplacement.aoeSize,
+      origin: currentCombatant.position,
+      originType: 'self',
+    })
+
+    // Enter breath weapon targeting mode (store format: { replacementId, attackerId })
+    setBreathWeaponTargeting({
+      replacementId: replacement.id,
+      attackerId: currentCombatant.id,
+    })
+    setIsSelectingWeapon(false)  // Close weapon selector
+    setRangeHighlight(undefined)  // Clear range highlight
   }
 
   const handleSpellClick = () => {
@@ -1369,10 +1610,9 @@ export function ActionBar() {
               </div>
             </div>
 
-            {/* Main Action Buttons */}
-            <div className="relative flex-1 flex items-center justify-center gap-2">
-
-              {/* Action Buttons */}
+            {/* Main Action Buttons - 2 Row Grid */}
+            <div className="relative flex-1">
+              {/* Popups - positioned above the grid */}
               {/* Spell selector popup */}
               {isSelectingSpell && selectedAction === 'spell' && (
                 <SpellSelector
@@ -1402,6 +1642,7 @@ export function ActionBar() {
                   onCancel={handleCancelTarget}
                   onHoverTarget={setHoveredTarget}
                   onWeaponSelect={handleWeaponSelect}
+                  onBreathWeaponSelect={handleBreathWeaponSelect}
                 />
               )}
 
@@ -1434,186 +1675,206 @@ export function ActionBar() {
                 />
               )}
 
-              {/* Action buttons */}
-              <ActionButton
-                icon={<Footprints className="w-5 h-5" />}
-                label="Move"
-                onClick={handleMoveClick}
-                active={selectedAction === 'move'}
-                disabled={remainingMovement === 0}
-                variant="movement"
-                tooltip={`Move (${remainingMovement}ft remaining)`}
-              />
+              {/* Threat warning */}
+              {isThreatened && (
+                <div className="absolute -top-8 left-1/2 -translate-x-1/2 px-3 py-1 bg-amber-900/80 border border-amber-600 rounded text-xs text-amber-200 whitespace-nowrap flex items-center gap-1.5 z-40">
+                  <AlertTriangle className="w-3.5 h-3.5" />
+                  Threatened by {threateningEnemies.length} {threateningEnemies.length === 1 ? 'enemy' : 'enemies'}
+                </div>
+              )}
 
-              <ActionButton
-                icon={<Sword className="w-5 h-5" />}
-                label="Attack"
-                onClick={handleAttackClick}
-                active={selectedAction === 'attack'}
-                disabled={!canAttack}
-                variant="attack"
-                tooltip={
-                  validTargets.length === 0
-                    ? 'No targets in range'
-                    : hasExtraAttack
-                      ? `Attack with ${weaponName} (${attacksRemaining}/${maxAttacks} attacks)`
-                      : `Attack with ${weaponName}`
-                }
-                badge={hasExtraAttack && attacksRemaining > 0 ? attacksRemaining : undefined}
-                actionType="action"
-              />
-
-              {/* Spell button with slot display above it */}
-              <div className="relative">
-                {/* Spell Slots Display - positioned above the Spell button */}
-                {isCharacter && character?.spellSlots && (
-                  <div className="absolute -top-14 left-1/2 -translate-x-1/2 z-10">
+              {/* Spell Slots & Resources Row - above action buttons */}
+              {isCharacter && (character?.spellSlots || hasCombatSuperiority(currentCombatant) || getLuckPoints(currentCombatant) > 0) && (
+                <div className="flex items-center justify-center gap-2 mb-1">
+                  {character?.spellSlots && (
                     <SpellSlotDisplay
                       spellSlots={character.spellSlots}
                       onSlotClick={!currentCombatant.hasActed ? handleSlotLevelClick : undefined}
                       compact
                     />
-                  </div>
-                )}
-                <ActionButton
-                  icon={<Sparkles className="w-5 h-5" />}
-                  label="Spell"
-                  onClick={handleSpellClick}
-                  active={selectedAction === 'spell'}
-                  disabled={currentCombatant.hasActed || !hasSpells}
-                  variant="spell"
-                  tooltip={!hasSpells ? 'No spells available' : `Cast a spell`}
-                  badge={hasSpells ? availableSpells.length : undefined}
-                  actionType="action"
-                />
-              </div>
-
-              <div className="w-px h-10 bg-slate-700" />
-
-              <ActionButton
-                icon={<Wind className="w-5 h-5" />}
-                label="Dash"
-                onClick={useDash}
-                disabled={currentCombatant.hasActed}
-                tooltip="Double your movement speed"
-                actionType="action"
-              />
-
-              <ActionButton
-                icon={<Shield className="w-5 h-5" />}
-                label="Dodge"
-                onClick={useDodge}
-                disabled={currentCombatant.hasActed}
-                tooltip="Attacks against you have disadvantage"
-                actionType="action"
-              />
-
-              <ActionButton
-                icon={<DoorOpen className="w-5 h-5" />}
-                label="Disengage"
-                onClick={useDisengage}
-                disabled={currentCombatant.hasActed}
-                variant={isThreatened ? 'movement' : 'default'}
-                actionType="action"
-                tooltip={isThreatened ? `Escape ${threateningEnemies.length} threatening enemies` : 'Move without opportunity attacks'}
-              />
-
-              {/* Second Wind (Fighter bonus action) */}
-              {hasSecondWind && (() => {
-                const isMissingHp = currentCombatant.currentHp < currentCombatant.maxHp
-                const hpMissing = currentCombatant.maxHp - currentCombatant.currentHp
-                return (
-                  <>
-                    <div className="w-px h-10 bg-slate-700" />
-                    <ActionButton
-                      icon={<Heart className="w-5 h-5" />}
-                      label="2nd Wind"
-                      onClick={() => useSecondWind(currentCombatant.id)}
-                      disabled={!canUseSecondWindNow}
-                      variant={isMissingHp ? 'attack' : 'default'}
-                      tooltip={isMissingHp
-                        ? `Heal 1d10+${character?.level ?? 1} HP (missing ${hpMissing} HP)`
-                        : `Heal 1d10+${character?.level ?? 1} HP (at full health)`
-                      }
-                      badge={secondWindUses > 0 ? secondWindUses : undefined}
-                      actionType="bonus"
-                    />
-                  </>
-                )
-              })()}
-
-              {/* Action Surge (Fighter, level 2+) */}
-              {hasActionSurge && (
-                <ActionButton
-                  icon={<Zap className="w-5 h-5" />}
-                  label="Surge"
-                  onClick={() => useActionSurge(currentCombatant.id)}
-                  disabled={!canUseActionSurgeNow}
-                  variant="attack"
-                  tooltip={`Take an additional action this turn (${actionSurgeUses} use remaining)`}
-                  badge={actionSurgeUses > 0 ? actionSurgeUses : undefined}
-                />
-              )}
-
-              {/* Superiority Dice (Battle Master) */}
-              {hasBattleMaster && (
-                <>
-                  <div className="w-px h-10 bg-slate-700" />
-                  <div className="flex flex-col items-center justify-center px-2">
-                    <div className="text-xs text-muted-foreground uppercase tracking-wide">Sup. Dice</div>
-                    <div className="flex items-center gap-1">
-                      <span className={cn(
-                        "font-bold text-sm",
-                        supDiceRemaining > 0 ? "text-amber-400" : "text-slate-500"
-                      )}>
-                        {supDiceRemaining}/{maxSupDice}
-                      </span>
-                      <span className="text-xs text-muted-foreground">d{supDieSize}</span>
-                    </div>
-                  </div>
-                </>
-              )}
-
-              {/* Cunning Action (Rogue, level 2+) */}
-              {hasCunningActionFeature && (
-                <>
-                  <div className="w-px h-10 bg-slate-700" />
-                  <ActionButton
-                    icon={<Wind className="w-5 h-5" />}
-                    label="C. Dash"
-                    onClick={useCunningDash}
-                    disabled={!canCunningDash}
-                    variant="movement"
-                    tooltip="Bonus Action: Dash (double movement)"
-                    actionType="bonus"
-                  />
-                  <ActionButton
-                    icon={<DoorOpen className="w-5 h-5" />}
-                    label="C. Disen."
-                    onClick={useCunningDisengage}
-                    disabled={!canCunningDisengage}
-                    variant="movement"
-                    tooltip="Bonus Action: Disengage (avoid opportunity attacks)"
-                    actionType="bonus"
-                  />
-                  <ActionButton
-                    icon={<Eye className="w-5 h-5" />}
-                    label="C. Hide"
-                    onClick={useCunningHide}
-                    disabled={!canCunningHide}
-                    tooltip="Bonus Action: Hide (gain advantage on next attack)"
-                    actionType="bonus"
-                  />
-                </>
-              )}
-
-              {/* Threat warning */}
-              {isThreatened && (
-                <div className="absolute -top-8 left-1/2 -translate-x-1/2 px-3 py-1 bg-amber-900/80 border border-amber-600 rounded text-xs text-amber-200 whitespace-nowrap flex items-center gap-1.5">
-                  <AlertTriangle className="w-3.5 h-3.5" />
-                  Threatened by {threateningEnemies.length} {threateningEnemies.length === 1 ? 'enemy' : 'enemies'}
+                  )}
+                  <ResourceTracker combatant={currentCombatant} compact />
                 </div>
               )}
+
+              {/* 2-Row Grid Layout */}
+              <div className="grid grid-rows-2 gap-1">
+                {/* Row 1: Core Actions */}
+                <div className="flex items-center justify-center gap-2">
+                  <ActionButton
+                    icon={<Footprints className="w-5 h-5" />}
+                    label="Move"
+                    onClick={handleMoveClick}
+                    active={selectedAction === 'move'}
+                    disabled={remainingMovement === 0}
+                    variant="movement"
+                    tooltip={`Move (${remainingMovement}ft remaining)`}
+                  />
+
+                  <ActionButton
+                    icon={<Sword className="w-5 h-5" />}
+                    label="Attack"
+                    onClick={handleAttackClick}
+                    active={selectedAction === 'attack'}
+                    disabled={!canAttack}
+                    variant="attack"
+                    tooltip={
+                      validTargets.length === 0
+                        ? 'No targets in range'
+                        : hasExtraAttack
+                          ? `Attack with ${weaponName} (${attacksRemaining}/${maxAttacks} attacks)`
+                          : `Attack with ${weaponName}`
+                    }
+                    badge={hasExtraAttack && attacksRemaining > 0 ? attacksRemaining : undefined}
+                    actionType="action"
+                  />
+
+                  <ActionButton
+                    icon={<Sparkles className="w-5 h-5" />}
+                    label="Spell"
+                    onClick={handleSpellClick}
+                    active={selectedAction === 'spell'}
+                    disabled={currentCombatant.hasActed || !hasSpells}
+                    variant="spell"
+                    tooltip={!hasSpells ? 'No spells available' : `Cast a spell`}
+                    badge={hasSpells ? availableSpells.length : undefined}
+                    actionType="action"
+                  />
+
+                  <div className="w-px h-10 bg-slate-700" />
+
+                  <ActionButton
+                    icon={<Wind className="w-5 h-5" />}
+                    label="Dash"
+                    onClick={useDash}
+                    disabled={currentCombatant.hasActed || currentCombatant.attacksMadeThisTurn > 0}
+                    tooltip={currentCombatant.attacksMadeThisTurn > 0 ? "Can't change action mid-Attack" : "Double your movement speed"}
+                    actionType="action"
+                  />
+
+                  <ActionButton
+                    icon={<Shield className="w-5 h-5" />}
+                    label="Dodge"
+                    onClick={useDodge}
+                    disabled={currentCombatant.hasActed || currentCombatant.attacksMadeThisTurn > 0}
+                    tooltip={currentCombatant.attacksMadeThisTurn > 0 ? "Can't change action mid-Attack" : "Attacks against you have disadvantage"}
+                    actionType="action"
+                  />
+
+                  <ActionButton
+                    icon={<DoorOpen className="w-5 h-5" />}
+                    label="Disengage"
+                    onClick={useDisengage}
+                    disabled={currentCombatant.hasActed || currentCombatant.attacksMadeThisTurn > 0}
+                    variant={isThreatened ? 'movement' : 'default'}
+                    actionType="action"
+                    tooltip={currentCombatant.attacksMadeThisTurn > 0 ? "Can't change action mid-Attack" : (isThreatened ? `Escape ${threateningEnemies.length} threatening enemies` : 'Move without opportunity attacks')}
+                  />
+                </div>
+
+                {/* Row 2: Class Features & Resources */}
+                <div className="flex items-center justify-center gap-2">
+                  {/* Second Wind (Fighter bonus action) */}
+                  {hasSecondWind && (() => {
+                    const isMissingHp = currentCombatant.currentHp < currentCombatant.maxHp
+                    const hpMissing = currentCombatant.maxHp - currentCombatant.currentHp
+                    return (
+                      <ActionButton
+                        icon={<Heart className="w-5 h-5" />}
+                        label="2nd Wind"
+                        onClick={() => useSecondWind(currentCombatant.id)}
+                        disabled={!canUseSecondWindNow}
+                        variant={isMissingHp ? 'attack' : 'default'}
+                        tooltip={isMissingHp
+                          ? `Heal 1d10+${character?.level ?? 1} HP (missing ${hpMissing} HP)`
+                          : `Heal 1d10+${character?.level ?? 1} HP (at full health)`
+                        }
+                        badge={secondWindUses > 0 ? secondWindUses : undefined}
+                        actionType="bonus"
+                      />
+                    )
+                  })()}
+
+                  {/* Action Surge (Fighter, level 2+) */}
+                  {hasActionSurge && (
+                    <ActionButton
+                      icon={<Zap className="w-5 h-5" />}
+                      label="Surge"
+                      onClick={() => useActionSurge(currentCombatant.id)}
+                      disabled={!canUseActionSurgeNow}
+                      variant="attack"
+                      tooltip={`Take an additional action this turn (${actionSurgeUses} use remaining)`}
+                      badge={actionSurgeUses > 0 ? actionSurgeUses : undefined}
+                    />
+                  )}
+
+                  {/* Battle Medic (Healer origin feat) */}
+                  {hasBattleMedicFeat && (
+                    <div className="relative">
+                      <ActionButton
+                        icon={<Stethoscope className="w-5 h-5" />}
+                        label="Medic"
+                        onClick={handleBattleMedicClick}
+                        disabled={!canUseBattleMedicNow}
+                        active={isSelectingBattleMedicTarget}
+                        variant={battleMedicTargets.length > 0 ? 'attack' : 'default'}
+                        tooltip={battleMedicTargets.length > 0
+                          ? `Heal an adjacent ally (${battleMedicTargets.length} target${battleMedicTargets.length > 1 ? 's' : ''})`
+                          : 'No wounded adjacent allies'
+                        }
+                        badge={battleMedicTargets.length > 0 ? battleMedicTargets.length : undefined}
+                        actionType="action"
+                      />
+                      {isSelectingBattleMedicTarget && battleMedicTargets.length > 0 && (
+                        <TargetSelector
+                          targets={battleMedicTargets.map(t => ({
+                            id: t.id,
+                            name: t.name,
+                            hp: t.currentHp,
+                            maxHp: t.maxHp,
+                          }))}
+                          onSelect={handleBattleMedicTargetSelect}
+                          onCancel={() => setIsSelectingBattleMedicTarget(false)}
+                          onHover={setHoveredTarget}
+                          label="Heal Ally (Battle Medic)"
+                        />
+                      )}
+                    </div>
+                  )}
+
+                  {/* Cunning Action (Rogue, level 2+) */}
+                  {hasCunningActionFeature && (
+                    <>
+                      <ActionButton
+                        icon={<Wind className="w-5 h-5" />}
+                        label="C. Dash"
+                        onClick={useCunningDash}
+                        disabled={!canCunningDash}
+                        variant="movement"
+                        tooltip="Bonus Action: Dash (double movement)"
+                        actionType="bonus"
+                      />
+                      <ActionButton
+                        icon={<DoorOpen className="w-5 h-5" />}
+                        label="C. Disen."
+                        onClick={useCunningDisengage}
+                        disabled={!canCunningDisengage}
+                        variant="movement"
+                        tooltip="Bonus Action: Disengage (avoid opportunity attacks)"
+                        actionType="bonus"
+                      />
+                      <ActionButton
+                        icon={<Eye className="w-5 h-5" />}
+                        label="C. Hide"
+                        onClick={useCunningHide}
+                        disabled={!canCunningHide}
+                        tooltip="Bonus Action: Hide (gain advantage on next attack)"
+                        actionType="bonus"
+                      />
+                    </>
+                  )}
+                </div>
+              </div>
             </div>
 
             {/* End Turn Section */}
@@ -1655,6 +1916,37 @@ export function ActionBar() {
                     <span className="text-[10px] text-slate-500">AI controlled</span>
                   )}
                 </div>
+              )}
+            </div>
+
+            {/* Debug Menu Button */}
+            <div className="relative pl-4 border-l border-slate-700">
+              <button
+                onClick={() => setShowDebugMenu(!showDebugMenu)}
+                className={cn(
+                  'flex flex-col items-center justify-center w-12 h-12 rounded-lg transition-all',
+                  'bg-gradient-to-b from-orange-900 to-orange-950 border-2 border-orange-700',
+                  'hover:from-orange-800 hover:to-orange-900 hover:scale-105',
+                  showDebugMenu && 'ring-2 ring-orange-400'
+                )}
+                title="Debug Menu"
+              >
+                <Bug className="w-5 h-5 text-orange-400" />
+                <span className="text-[8px] text-orange-300 font-medium">Debug</span>
+              </button>
+
+              {/* Debug Menu Popup */}
+              {showDebugMenu && (
+                <DebugMenu
+                  combatants={combatants.filter(c => c.currentHp > 0).map(c => ({
+                    id: c.id,
+                    name: c.name,
+                    conditions: c.conditions,
+                  }))}
+                  onApplyCondition={debugApplyCondition}
+                  onRemoveCondition={debugRemoveCondition}
+                  onClose={() => setShowDebugMenu(false)}
+                />
               )}
             </div>
           </div>

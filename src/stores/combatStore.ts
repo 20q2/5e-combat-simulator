@@ -15,8 +15,9 @@ import type {
   DamagePopup,
   DamageType,
   CombatPopupType,
+  Condition,
 } from '@/types'
-import { rollInitiative, rollDie } from '@/engine/dice'
+import { rollInitiative, rollDie, rollD20 } from '@/engine/dice'
 import { getAbilityModifier } from '@/types'
 import { resolveAttack, canAttackTarget, getSpellSaveDC, getSpellAttackBonus, rollCombatantSavingThrow, rollDeathSave, selectWeaponForTarget, type AttackResult } from '@/engine/combat'
 import { rollAttack, rollDamage } from '@/engine/dice'
@@ -28,7 +29,17 @@ import {
   checkRelentlessEndurance,
   applyRelentlessEndurance,
   useRacialAbility as decrementRacialAbilityUse,
+  applyDamageResistance,
+  rollBreathWeaponDamage,
+  hasNimbleness,
+  canMoveThrough,
 } from '@/engine/racialAbilities'
+import {
+  getAttackReplacementById,
+  canUseAttackReplacement,
+  getReplacementSourceId,
+} from '@/engine/attackReplacements'
+import type { AoEAttackReplacement, AoETargetResult } from '@/types'
 import {
   initializeClassFeatureUses,
   getSecondWindFeature,
@@ -39,6 +50,9 @@ import {
   useClassFeature,
   canUseCunningAction,
   getMaxAttacksPerAction,
+  canUseIndomitable,
+  getIndomitableFeature,
+  getIndomitableBonus,
 } from '@/engine/classAbilities'
 import {
   applyOnHitMasteryEffect,
@@ -47,9 +61,30 @@ import {
 import {
   initializeSuperiorityDice,
   checkRelentless,
+  getAvailableManeuvers,
+  applyOnHitManeuver,
+  getSuperiorityDieSize,
+  getManeuverSaveDC,
+  prepareRiposte,
+  applyParry,
 } from '@/engine/maneuvers'
+import { getManeuverById } from '@/data/maneuvers'
+import type { TriggerOption, PendingTrigger } from '@/types'
 import { getAoEAffectedCells } from '@/lib/aoeShapes'
 import { getCombatantSize, getOccupiedCells, getFootprintSize } from '@/lib/creatureSize'
+import {
+  initializeFeatUses,
+  getAlertInitiativeBonus,
+  canSwapInitiative,
+  getEligibleSwapTargets,
+  canUseSavageAttacker,
+  canTavernBrawlerPush,
+  calculatePushPosition,
+  isUnarmedStrike,
+  canUseBattleMedic,
+  getBattleMedicTargets as getOriginFeatBattleMedicTargets,
+  rollBattleMedicHealing,
+} from '@/engine/originFeats'
 
 /**
  * Helper to immutably update grid cell occupancy.
@@ -131,6 +166,14 @@ interface CombatStore extends CombatState {
   useReactionSpell: (spellId: string) => void
   skipReaction: () => void
 
+  // Combat triggers (maneuvers, class features)
+  resolveTrigger: (optionId: string | null) => void
+  skipTrigger: () => void
+
+  // Indomitable (Fighter save reroll)
+  resolveIndomitable: (useReroll: boolean) => void
+  skipIndomitable: () => void
+
   // Movement
   moveCombatant: (id: string, to: Position) => void
   canMoveTo: (combatantId: string, to: Position) => boolean
@@ -146,7 +189,8 @@ interface CombatStore extends CombatState {
   dealDamage: (targetId: string, amount: number, source?: string) => void
   healDamage: (targetId: string, amount: number, source?: string) => void
   performAttack: (attackerId: string, targetId: string, weapon?: Weapon, monsterAction?: MonsterAction, rangedWeapon?: Weapon) => AttackResult | null
-  performOpportunityAttack: (attackerId: string, targetId: string) => AttackResult | null
+  performAttackReplacement: (attackerId: string, replacementId: string, targetPosition: Position) => boolean
+  performOpportunityAttack: (attackerId: string, targetId: string, attackReplacementId?: string) => AttackResult | null
   useDash: () => void
   useDodge: () => void
   getValidTargets: (attackerId: string, weapon?: Weapon, monsterAction?: MonsterAction, rangedWeapon?: Weapon) => Combatant[]
@@ -155,6 +199,9 @@ interface CombatStore extends CombatState {
   makeDeathSave: (combatantId: string) => void
   stabilize: (combatantId: string) => void
   getThreateningEnemies: (combatantId: string) => Combatant[]
+
+  // Attack replacement (breath weapon, etc.)
+  setBreathWeaponTargeting: (targeting: { replacementId: string; attackerId: string } | undefined) => void
 
   // Racial abilities
   useRacialAbility: (combatantId: string, abilityId: string) => void
@@ -188,6 +235,18 @@ interface CombatStore extends CombatState {
   addCombatPopup: (targetId: string, popupType: CombatPopupType, text?: string) => void
   addHealPopup: (targetId: string, amount: number) => void
   removeDamagePopup: (id: string) => void
+
+  // Debug utilities
+  debugApplyCondition: (combatantId: string, condition: Condition) => void
+  debugRemoveCondition: (combatantId: string, condition: Condition) => void
+
+  // Origin feats
+  confirmInitiativeSwap: (targetId: string | null) => void
+  skipInitiativeSwap: () => void
+  confirmSavageAttacker: (useRoll1: boolean) => void
+  skipSavageAttacker: () => void
+  useBattleMedic: (healerId: string, targetId: string) => void
+  getBattleMedicTargets: (healerId: string) => Combatant[]
 
   // Reset
   resetCombat: () => void
@@ -298,6 +357,7 @@ const initialState: CombatState = {
   hoveredTargetId: undefined,
   damagePopups: [],
   pendingReaction: undefined,
+  pendingIndomitable: undefined,
   movementAnimation: undefined,
   pendingMovement: undefined,
 }
@@ -363,6 +423,10 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
       superiorityDiceRemaining: 0,
       usedManeuverThisAttack: false,
       goadedBy: undefined,
+      // Origin Feat tracking
+      featUses: {},
+      usedSavageAttackerThisTurn: false,
+      usedTavernBrawlerPushThisTurn: false,
     }
 
     // Initialize racial and class ability uses for characters
@@ -380,6 +444,8 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
           }
         }
       }
+      // Initialize origin feat uses (e.g., Lucky luck points)
+      combatant.featUses = initializeFeatUses(combatant)
     }
 
     // Update grid cell occupancy immutably
@@ -502,13 +568,19 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
           ? (c.data as Character).abilityScores.dexterity
           : (c.data as Monster).abilityScores.dexterity
       )
-      const roll = rollInitiative(dexMod)
+
+      // Alert feat: add proficiency bonus to initiative
+      const alertBonus = getAlertInitiativeBonus(c)
+      const totalMod = dexMod + alertBonus
+      const roll = rollInitiative(totalMod)
 
       get().addLogEntry({
         type: 'initiative',
         actorId: c.id,
         actorName: c.name,
-        message: `rolls initiative: ${roll.breakdown}`,
+        message: alertBonus > 0
+          ? `rolls initiative (Alert +${alertBonus}): ${roll.breakdown}`
+          : `rolls initiative: ${roll.breakdown}`,
       })
 
       // Check Relentless feature for Battle Masters with 0 dice
@@ -530,10 +602,29 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
     const sorted = [...updatedCombatants].sort((a, b) => b.initiative - a.initiative)
     const turnOrder = sorted.map((c) => c.id)
 
+    // Check for Alert feat initiative swap opportunities
+    const alertCharacters = updatedCombatants.filter(c =>
+      c.type === 'character' && canSwapInitiative(c)
+    )
+
+    // Set up pending initiative swap if any character has Alert with eligible allies
+    let pendingSwap: { swapperId: string; eligibleAllies: string[] } | undefined
+    if (alertCharacters.length > 0) {
+      const swapper = alertCharacters[0]
+      const eligibleAllies = getEligibleSwapTargets(swapper, updatedCombatants)
+      if (eligibleAllies.length > 0) {
+        pendingSwap = {
+          swapperId: swapper.id,
+          eligibleAllies: eligibleAllies.map(a => a.id),
+        }
+      }
+    }
+
     set({
       combatants: updatedCombatants,
       turnOrder,
       phase: 'initiative',
+      pendingInitiativeSwap: pendingSwap,
     })
   },
 
@@ -560,6 +651,11 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
             // Reset weapon mastery per-turn flags
             usedCleaveThisTurn: false,
             usedNickThisTurn: false,
+            // Reset maneuver tracking (in case turn ended mid-attack)
+            usedManeuverThisAttack: false,
+            // Reset origin feat per-turn flags
+            usedSavageAttackerThisTurn: false,
+            usedTavernBrawlerPushThisTurn: false,
           }
         : c
     )
@@ -881,6 +977,597 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
     }
   },
 
+  resolveIndomitable: (useReroll: boolean) => {
+    const { pendingIndomitable, combatants } = get()
+    if (!pendingIndomitable) return
+
+    const combatant = combatants.find(c => c.id === pendingIndomitable.combatantId)
+    if (!combatant) {
+      set({ pendingIndomitable: undefined })
+      return
+    }
+
+    const { ability, dc, modifier, context } = pendingIndomitable
+
+    if (useReroll) {
+      // Use Indomitable - reroll with Fighter level bonus
+      const feature = getIndomitableFeature(combatant)
+      if (!feature) {
+        set({ pendingIndomitable: undefined })
+        return
+      }
+
+      const bonus = getIndomitableBonus(combatant)
+      const reroll = rollD20(modifier + bonus, 'normal')
+      const success = reroll.total >= dc
+
+      // Decrement Indomitable uses
+      const useResult = useClassFeature(combatant, feature.id, combatant.classFeatureUses)
+      set((state) => ({
+        combatants: state.combatants.map(c =>
+          c.id === combatant.id
+            ? { ...c, classFeatureUses: useResult.newUses }
+            : c
+        ),
+      }))
+
+      // Log the Indomitable use
+      get().addLogEntry({
+        type: 'other',
+        actorId: combatant.id,
+        actorName: combatant.name,
+        message: `${combatant.name} uses Indomitable! Rerolls ${ability} save: ${reroll.naturalRoll} + ${modifier + bonus} = ${reroll.total} vs DC ${dc}`,
+        details: success ? 'SUCCESS!' : 'Still fails...',
+      })
+
+      if (success) {
+        // Save succeeded on reroll
+        get().addCombatPopup(combatant.id, 'saved')
+
+        // Handle half damage on successful save
+        if (context.damage && context.halfDamageOnSave) {
+          const halfDamage = Math.floor(context.damage / 2)
+          if (halfDamage > 0) {
+            get().dealDamage(combatant.id, halfDamage, context.sourceName)
+            get().addDamagePopup(combatant.id, halfDamage, context.damageType || 'bludgeoning', false)
+          }
+        }
+      } else {
+        // Still failed - apply full effect
+        if (context.damage) {
+          get().dealDamage(combatant.id, context.damage, context.sourceName)
+          get().addDamagePopup(combatant.id, context.damage, context.damageType || 'bludgeoning', false)
+        }
+      }
+    } else {
+      // Chose not to use Indomitable - apply original failure effect
+      if (context.damage) {
+        get().dealDamage(combatant.id, context.damage, context.sourceName)
+        get().addDamagePopup(combatant.id, context.damage, context.damageType || 'bludgeoning', false)
+      }
+    }
+
+    // Clear pending state
+    set({ pendingIndomitable: undefined })
+
+    // If this was during an AI turn, continue
+    if (get().isAITurn()) {
+      setTimeout(() => get().endTurn(), 500)
+    }
+  },
+
+  skipIndomitable: () => {
+    // Same as resolveIndomitable(false)
+    get().resolveIndomitable(false)
+  },
+
+  resolveTrigger: (optionId: string | null) => {
+    const { pendingTrigger, combatants, grid, round } = get()
+    if (!pendingTrigger) return
+
+    const reactor = combatants.find(c => c.id === pendingTrigger.reactorId)
+    const target = combatants.find(c => c.id === pendingTrigger.targetId)
+    if (!reactor || !target) {
+      // Clear trigger and return
+      set({ pendingTrigger: undefined })
+      return
+    }
+
+    // Handle Riposte (on_miss) - completely different flow (counter-attack)
+    if (pendingTrigger.type === 'on_miss' && optionId === 'riposte') {
+      const maneuver = getManeuverById('riposte')
+      if (!maneuver) {
+        set({ pendingTrigger: undefined })
+        return
+      }
+
+      // Get the Riposte bonus damage (roll superiority die)
+      const riposteResult = prepareRiposte(reactor)
+
+      // Use reaction and decrement superiority dice
+      set((state) => ({
+        combatants: state.combatants.map(c =>
+          c.id === reactor.id
+            ? {
+                ...c,
+                hasReacted: true,
+                superiorityDiceRemaining: Math.max(0, c.superiorityDiceRemaining - 1),
+              }
+            : c
+        ),
+      }))
+
+      // Log the Riposte activation
+      get().addLogEntry({
+        type: 'other',
+        actorId: reactor.id,
+        actorName: reactor.name,
+        message: riposteResult.message,
+        details: `Superiority die: d${riposteResult.superiorityDieSize}`,
+      })
+
+      // Make the counter-attack (use performAttack but add bonus damage)
+      // Get the reactor's melee weapon
+      const character = reactor.data as Character
+      const meleeWeapon = character.equipment?.meleeWeapon
+
+      if (meleeWeapon) {
+        // Resolve a melee attack against the original attacker
+        const attackResult = resolveAttack({
+          attacker: reactor,
+          target,  // target is the original attacker who missed
+          weapon: meleeWeapon,
+          allCombatants: combatants,
+          usedSneakAttackThisTurn: reactor.usedSneakAttackThisTurn,
+        })
+
+        // Log the counter-attack
+        if (attackResult.hit) {
+          get().addLogEntry({
+            type: 'attack',
+            actorId: reactor.id,
+            actorName: reactor.name,
+            targetId: target.id,
+            targetName: target.name,
+            message: `${reactor.name} ripostes and hits ${target.name}!`,
+            details: `${attackResult.attackRoll.breakdown} vs AC ${attackResult.targetAC}`,
+          })
+
+          // Calculate damage with Riposte bonus
+          const baseDamage = attackResult.damage?.total || 0
+          const totalDamage = baseDamage + (riposteResult.bonusDamage || 0)
+          const damageType = (attackResult.damageType ?? meleeWeapon.damageType ?? 'slashing') as DamageType
+
+          get().dealDamage(target.id, totalDamage, reactor.name)
+          get().addDamagePopup(target.id, totalDamage, damageType, attackResult.critical)
+          if (attackResult.critical) {
+            get().addCombatPopup(target.id, 'critical')
+          }
+
+          get().addLogEntry({
+            type: 'damage',
+            actorId: reactor.id,
+            actorName: reactor.name,
+            targetId: target.id,
+            targetName: target.name,
+            message: `${totalDamage} ${damageType} damage (${baseDamage} + ${riposteResult.bonusDamage} Riposte)`,
+          })
+        } else {
+          get().addLogEntry({
+            type: 'attack',
+            actorId: reactor.id,
+            actorName: reactor.name,
+            targetId: target.id,
+            targetName: target.name,
+            message: `${reactor.name} ripostes but misses ${target.name}`,
+            details: `${attackResult.attackRoll.breakdown} vs AC ${attackResult.targetAC}`,
+          })
+          get().addCombatPopup(target.id, 'miss')
+        }
+      }
+
+      // Clear pending trigger
+      set({ pendingTrigger: undefined })
+      return
+    }
+
+    // Handle on_damage_taken (Shield spell, Parry maneuver)
+    if (pendingTrigger.type === 'on_damage_taken') {
+      let finalDamage = pendingTrigger.pendingDamage || 0
+      const damageType = pendingTrigger.context.damageType || 'bludgeoning'
+      const isCritical = pendingTrigger.context.isCritical || false
+      const attackRoll = pendingTrigger.context.attackRoll || 0
+      const targetAC = pendingTrigger.context.targetAC || 10
+      const triggerer = combatants.find(c => c.id === pendingTrigger.triggererId)
+
+      if (optionId === 'shield') {
+        // Handle Shield spell
+        const acBonus = 5
+        const newAC = targetAC + acBonus
+
+        // Log the Shield cast
+        get().addLogEntry({
+          type: 'spell',
+          actorId: reactor.id,
+          actorName: reactor.name,
+          message: `${reactor.name} casts Shield as a reaction! (+${acBonus} AC)`,
+          details: `AC ${targetAC} → ${newAC}`,
+        })
+
+        // Mark reaction as used
+        set((state) => ({
+          combatants: state.combatants.map(c =>
+            c.id === reactor.id
+              ? { ...c, hasReacted: true }
+              : c
+          ),
+        }))
+
+        // Check if the attack now misses with the new AC
+        if (attackRoll < newAC) {
+          // Attack misses due to Shield
+          get().addLogEntry({
+            type: 'attack',
+            actorId: pendingTrigger.triggererId,
+            actorName: triggerer?.name || 'Attacker',
+            targetId: reactor.id,
+            targetName: reactor.name,
+            message: `Attack blocked by Shield!`,
+            details: `Roll ${attackRoll} vs AC ${newAC}`,
+          })
+          get().addCombatPopup(reactor.id, 'saved')
+          finalDamage = 0  // No damage taken
+        }
+
+        // Apply Shield buff (lasts until start of reactor's next turn)
+        set((state) => ({
+          combatants: state.combatants.map(c =>
+            c.id === reactor.id
+              ? {
+                  ...c,
+                  conditions: [
+                    ...c.conditions,
+                    { condition: 'shielded' as const, duration: 1, source: 'Shield spell' }
+                  ]
+                }
+              : c
+          ),
+        }))
+
+      } else if (optionId === 'parry') {
+        // Handle Parry maneuver
+        const parryResult = applyParry(reactor, finalDamage)
+
+        // Log the Parry
+        get().addLogEntry({
+          type: 'other',
+          actorId: reactor.id,
+          actorName: reactor.name,
+          message: parryResult.message,
+          details: `Superiority die: d${parryResult.superiorityDieSize}`,
+        })
+
+        // Reduce damage
+        finalDamage = Math.max(0, finalDamage - (parryResult.damageReduced || 0))
+
+        // Mark reaction as used and decrement superiority dice
+        set((state) => ({
+          combatants: state.combatants.map(c =>
+            c.id === reactor.id
+              ? {
+                  ...c,
+                  hasReacted: true,
+                  superiorityDiceRemaining: Math.max(0, c.superiorityDiceRemaining - 1),
+                }
+              : c
+          ),
+        }))
+      }
+
+      // Deal the final damage (if any)
+      if (finalDamage > 0) {
+        get().dealDamage(reactor.id, finalDamage, triggerer?.name)
+        get().addDamagePopup(reactor.id, finalDamage, damageType, isCritical)
+        if (isCritical) {
+          get().addCombatPopup(reactor.id, 'critical')
+        }
+
+        get().addLogEntry({
+          type: 'damage',
+          actorId: pendingTrigger.triggererId,
+          actorName: triggerer?.name || 'Attacker',
+          targetId: reactor.id,
+          targetName: reactor.name,
+          message: `${finalDamage} ${damageType} damage`,
+        })
+      }
+
+      // Clear pending trigger
+      set({ pendingTrigger: undefined })
+      return
+    }
+
+    // Handle on_hit maneuvers (Trip Attack, Menacing Attack, etc.)
+    let totalDamage = pendingTrigger.pendingDamage || 0
+    const damageType = pendingTrigger.context.damageType || 'bludgeoning'
+    const isCritical = pendingTrigger.context.isCritical || false
+
+    if (optionId) {
+      // Player chose to use a maneuver
+      const maneuver = getManeuverById(optionId)
+      if (maneuver && pendingTrigger.type === 'on_hit') {
+        // Apply the maneuver
+        const maneuverResult = applyOnHitManeuver(reactor, target, maneuver, grid, combatants)
+
+        // Add bonus damage if applicable
+        if (maneuverResult.bonusDamage) {
+          totalDamage += maneuverResult.bonusDamage
+        }
+
+        // Log the maneuver usage
+        get().addLogEntry({
+          type: 'other',
+          actorId: reactor.id,
+          actorName: reactor.name,
+          message: maneuverResult.message,
+          details: `Superiority die: d${maneuverResult.superiorityDieSize}`,
+        })
+
+        // Apply condition if save failed
+        if (maneuverResult.conditionApplied) {
+          set((state) => ({
+            combatants: state.combatants.map(c =>
+              c.id === target.id
+                ? {
+                    ...c,
+                    conditions: [
+                      ...c.conditions,
+                      { condition: maneuverResult.conditionApplied!, duration: maneuver.conditionDuration || -1 }
+                    ]
+                  }
+                : c
+            ),
+          }))
+          // Show condition popup on target
+          const conditionName = maneuverResult.conditionApplied.charAt(0).toUpperCase() + maneuverResult.conditionApplied.slice(1)
+          get().addCombatPopup(target.id, 'condition', conditionName)
+        }
+
+        // Decrement superiority dice and mark maneuver as used this attack
+        set((state) => ({
+          combatants: state.combatants.map(c =>
+            c.id === reactor.id
+              ? {
+                  ...c,
+                  superiorityDiceRemaining: Math.max(0, c.superiorityDiceRemaining - 1),
+                  usedManeuverThisAttack: true,
+                }
+              : c
+          ),
+        }))
+      }
+    }
+
+    // Deal the damage (with any bonus from maneuver)
+    get().dealDamage(target.id, totalDamage, reactor.name)
+    get().addDamagePopup(target.id, totalDamage, damageType, isCritical)
+    if (isCritical) {
+      get().addCombatPopup(target.id, 'critical')
+    }
+
+    // Log damage
+    get().addLogEntry({
+      type: 'damage',
+      actorId: reactor.id,
+      actorName: reactor.name,
+      targetId: target.id,
+      targetName: target.name,
+      message: `${totalDamage} ${damageType} damage`,
+    })
+
+    // Apply on-hit weapon mastery effects
+    const weapon = pendingTrigger.context.weapon
+    if (weapon) {
+      const { combatants: currentCombatants } = get()
+      const updatedReactor = currentCombatants.find(c => c.id === reactor.id)
+      const updatedTarget = currentCombatants.find(c => c.id === target.id)
+
+      if (updatedReactor && updatedTarget) {
+        const masteryResult = applyOnHitMasteryEffect(updatedReactor, updatedTarget, weapon, grid, currentCombatants, round)
+
+        if (masteryResult && masteryResult.applied) {
+          get().addLogEntry({
+            type: 'other',
+            actorId: reactor.id,
+            actorName: reactor.name,
+            message: masteryResult.description,
+            details: `Weapon mastery: ${masteryResult.mastery}`,
+          })
+
+          // Apply specific effects based on mastery type
+          switch (masteryResult.mastery) {
+            case 'push':
+              if (masteryResult.pushResult) {
+                set((state) => ({
+                  combatants: state.combatants.map((c) =>
+                    c.id === target.id
+                      ? { ...c, position: masteryResult.pushResult!.newPosition }
+                      : c
+                  ),
+                }))
+              }
+              break
+
+            case 'sap':
+              set((state) => ({
+                combatants: state.combatants.map((c) =>
+                  c.id === target.id
+                    ? {
+                        ...c,
+                        conditions: [...c.conditions, { condition: 'sapped' as const, duration: 1 }],
+                      }
+                    : c
+                ),
+              }))
+              get().addCombatPopup(target.id, 'condition', 'Sapped')
+              break
+
+            case 'topple':
+              if (masteryResult.toppleResult && !masteryResult.toppleResult.savePassed) {
+                set((state) => ({
+                  combatants: state.combatants.map((c) =>
+                    c.id === target.id
+                      ? {
+                          ...c,
+                          conditions: [...c.conditions, { condition: 'prone' as const, duration: -1 }],
+                        }
+                      : c
+                  ),
+                }))
+                get().addCombatPopup(target.id, 'condition', 'Prone')
+              }
+              break
+
+            case 'vex':
+              set((state) => ({
+                combatants: state.combatants.map((c) =>
+                  c.id === target.id
+                    ? {
+                        ...c,
+                        vexedBy: { attackerId: reactor.id, expiresOnRound: round + 1 },
+                      }
+                    : c
+                ),
+              }))
+              break
+          }
+        }
+      }
+    }
+
+    // Clear pending trigger
+    set({ pendingTrigger: undefined })
+  },
+
+  skipTrigger: () => {
+    const { pendingTrigger, combatants, grid, round } = get()
+    if (!pendingTrigger) return
+
+    const reactor = combatants.find(c => c.id === pendingTrigger.reactorId)
+    const target = combatants.find(c => c.id === pendingTrigger.targetId)
+
+    if (!target) {
+      set({ pendingTrigger: undefined })
+      return
+    }
+
+    const totalDamage = pendingTrigger.pendingDamage || 0
+    const damageType = pendingTrigger.context.damageType || 'bludgeoning'
+    const isCritical = pendingTrigger.context.isCritical || false
+
+    // Deal the pending damage without maneuver bonus
+    get().dealDamage(target.id, totalDamage, reactor?.name)
+    get().addDamagePopup(target.id, totalDamage, damageType, isCritical)
+    if (isCritical) {
+      get().addCombatPopup(target.id, 'critical')
+    }
+
+    // Log damage
+    if (reactor) {
+      get().addLogEntry({
+        type: 'damage',
+        actorId: reactor.id,
+        actorName: reactor.name,
+        targetId: target.id,
+        targetName: target.name,
+        message: `${totalDamage} ${damageType} damage`,
+      })
+    }
+
+    // Apply on-hit weapon mastery effects
+    const weapon = pendingTrigger.context.weapon
+    if (weapon && reactor) {
+      const { combatants: currentCombatants } = get()
+      const updatedReactor = currentCombatants.find(c => c.id === reactor.id)
+      const updatedTarget = currentCombatants.find(c => c.id === target.id)
+
+      if (updatedReactor && updatedTarget) {
+        const masteryResult = applyOnHitMasteryEffect(updatedReactor, updatedTarget, weapon, grid, currentCombatants, round)
+
+        if (masteryResult && masteryResult.applied) {
+          get().addLogEntry({
+            type: 'other',
+            actorId: reactor.id,
+            actorName: reactor.name,
+            message: masteryResult.description,
+            details: `Weapon mastery: ${masteryResult.mastery}`,
+          })
+
+          // Apply specific effects based on mastery type
+          switch (masteryResult.mastery) {
+            case 'push':
+              if (masteryResult.pushResult) {
+                set((state) => ({
+                  combatants: state.combatants.map((c) =>
+                    c.id === target.id
+                      ? { ...c, position: masteryResult.pushResult!.newPosition }
+                      : c
+                  ),
+                }))
+              }
+              break
+
+            case 'sap':
+              set((state) => ({
+                combatants: state.combatants.map((c) =>
+                  c.id === target.id
+                    ? {
+                        ...c,
+                        conditions: [...c.conditions, { condition: 'sapped' as const, duration: 1 }],
+                      }
+                    : c
+                ),
+              }))
+              get().addCombatPopup(target.id, 'condition', 'Sapped')
+              break
+
+            case 'topple':
+              if (masteryResult.toppleResult && !masteryResult.toppleResult.savePassed) {
+                set((state) => ({
+                  combatants: state.combatants.map((c) =>
+                    c.id === target.id
+                      ? {
+                          ...c,
+                          conditions: [...c.conditions, { condition: 'prone' as const, duration: -1 }],
+                        }
+                      : c
+                  ),
+                }))
+                get().addCombatPopup(target.id, 'condition', 'Prone')
+              }
+              break
+
+            case 'vex':
+              set((state) => ({
+                combatants: state.combatants.map((c) =>
+                  c.id === target.id
+                    ? {
+                        ...c,
+                        vexedBy: { attackerId: reactor.id, expiresOnRound: round + 1 },
+                      }
+                    : c
+                ),
+              }))
+              break
+          }
+        }
+      }
+    }
+
+    // Clear pending trigger
+    set({ pendingTrigger: undefined })
+  },
+
   moveCombatant: (id, to) => {
     const { combatants, grid, phase } = get()
     const combatant = combatants.find((c) => c.id === id)
@@ -890,20 +1577,27 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
     // Get creature size for footprint calculations
     const size = getCombatantSize(combatant)
 
-    // Get occupied positions for pathfinding (all footprint cells of other living combatants)
+    // Check if this combatant has Nimbleness (Halfling/Gnome ability)
+    const moverHasNimbleness = hasNimbleness(combatant)
+
+    // Get occupied positions for pathfinding (exclude creatures we can pass through)
     // Dead creatures are corpses - their spaces are passable
-    const occupiedPositions = new Set<string>()
+    const pathablePositions = new Set<string>()
     combatants
       .filter((c) => c.id !== id && c.position.x >= 0 && !isDead(c))
       .forEach((c) => {
         const cSize = getCombatantSize(c)
         const cells = getOccupiedCells(c.position, cSize)
-        cells.forEach((cell) => occupiedPositions.add(`${cell.x},${cell.y}`))
+        // Only block pathfinding if we can't pass through this creature
+        const canPassThrough = moverHasNimbleness && canMoveThrough(combatant, cSize)
+        if (!canPassThrough) {
+          cells.forEach((cell) => pathablePositions.add(`${cell.x},${cell.y}`))
+        }
       })
 
     // Find path using A* pathfinding with footprint awareness
     const footprint = getFootprintSize(size)
-    const path = findPath(grid, combatant.position, to, occupiedPositions, undefined, footprint)
+    const path = findPath(grid, combatant.position, to, pathablePositions, undefined, footprint)
     if (!path) return
 
     // Calculate actual path cost (accounts for terrain)
@@ -1119,19 +1813,26 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
       }
     }
 
-    // Get occupied positions for pathfinding (all footprint cells of other living combatants)
+    // Check if this combatant has Nimbleness (Halfling/Gnome ability)
+    const moverHasNimbleness = hasNimbleness(combatant)
+
+    // Get occupied positions for pathfinding (exclude creatures we can pass through)
     // Dead creatures are corpses - their spaces are passable
-    const occupiedPositions = new Set<string>()
+    const pathablePositions = new Set<string>()
     combatants
       .filter((c) => c.id !== combatantId && c.position.x >= 0 && !isDead(c))
       .forEach((c) => {
         const cSize = getCombatantSize(c)
         const cells = getOccupiedCells(c.position, cSize)
-        cells.forEach((cell) => occupiedPositions.add(`${cell.x},${cell.y}`))
+        // Only block pathfinding if we can't pass through this creature
+        const canPassThrough = moverHasNimbleness && canMoveThrough(combatant, cSize)
+        if (!canPassThrough) {
+          cells.forEach((cell) => pathablePositions.add(`${cell.x},${cell.y}`))
+        }
       })
 
     // Find path using A* pathfinding with footprint awareness
-    const path = findPath(grid, combatant.position, to, occupiedPositions, undefined, footprint)
+    const path = findPath(grid, combatant.position, to, pathablePositions, undefined, footprint)
     if (!path) return false
 
     // Calculate actual path cost
@@ -1164,29 +1865,47 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
 
     const remainingMovement = speed - combatant.movementUsed
 
-    // Get occupied positions (all footprint cells of other living combatants)
-    // Dead creatures are corpses - their spaces are passable
-    const occupiedPositions = new Set<string>()
+    // Check if this combatant has Nimbleness (Halfling/Gnome ability)
+    const moverHasNimbleness = hasNimbleness(combatant)
+
+    // Build two sets:
+    // 1. pathablePositions: cells we can PATH through (blocked by creatures we CAN'T pass through)
+    // 2. endBlockedPositions: ALL occupied cells (you can't END movement in anyone's space)
+    const pathablePositions = new Set<string>()
+    const endBlockedPositions = new Set<string>()
+
     combatants
       .filter((c) => c.id !== combatantId && c.position.x >= 0 && !isDead(c))
       .forEach((c) => {
         const cSize = getCombatantSize(c)
         const cells = getOccupiedCells(c.position, cSize)
-        cells.forEach((cell) => occupiedPositions.add(`${cell.x},${cell.y}`))
+
+        // Always add to endBlocked - you can't end in anyone's space
+        cells.forEach((cell) => endBlockedPositions.add(`${cell.x},${cell.y}`))
+
+        // Only add to pathable if we CAN'T pass through this creature
+        const canPassThrough = moverHasNimbleness && canMoveThrough(combatant, cSize)
+        if (!canPassThrough) {
+          cells.forEach((cell) => pathablePositions.add(`${cell.x},${cell.y}`))
+        }
       })
 
     // Use pathfinding-based reachability with footprint awareness
+    // Pass pathablePositions so we can path through larger creatures with Nimbleness
     const reachableMap = getReachableFromPathfinding(
       grid,
       combatant.position,
       remainingMovement,
-      occupiedPositions,
+      pathablePositions,
       footprint
     )
 
-    // Convert map to array of positions
+    // Convert map to array of positions, filtering out cells we can't end in
     const reachable: Position[] = []
     for (const key of reachableMap.keys()) {
+      // Don't include positions where movement can't end (occupied spaces)
+      if (endBlockedPositions.has(key)) continue
+
       const [x, y] = key.split(',').map(Number)
       reachable.push({ x, y })
     }
@@ -1389,6 +2108,15 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
 
     if (!attacker || !target) return null
 
+    // Reset maneuver tracking for this new attack (allows using different maneuvers on Extra Attack)
+    if (attacker.usedManeuverThisAttack) {
+      set((state) => ({
+        combatants: state.combatants.map((c) =>
+          c.id === attackerId ? { ...c, usedManeuverThisAttack: false } : c
+        ),
+      }))
+    }
+
     // Check if attacker can attack (Extra Attack allows multiple attacks per action)
     const maxAttacks = getMaxAttacksPerAction(attacker)
     if (attacker.attacksMadeThisTurn >= maxAttacks) return null
@@ -1487,13 +2215,87 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
           })
         }
       }
+
+      // Check for Riposte reaction (target can counter-attack on miss)
+      // Only for melee attacks against player characters
+      const isMeleeAttack = !selectedWeapon || selectedWeapon.type === 'melee'
+      const riposteManeuvers = getAvailableManeuvers(target, 'reaction').filter(m => m.id === 'riposte')
+
+      if (
+        riposteManeuvers.length > 0 &&
+        target.type === 'character' &&
+        target.superiorityDiceRemaining > 0 &&
+        !target.hasReacted &&
+        isMeleeAttack
+      ) {
+        const dieSize = getSuperiorityDieSize(target)
+
+        const triggerOptions: TriggerOption[] = riposteManeuvers.map(m => ({
+          id: m.id,
+          type: 'maneuver' as const,
+          name: m.name,
+          description: m.description,
+          cost: `1 Superiority Die (d${dieSize})`,
+          effect: `Make melee attack with +1d${dieSize} damage if you hit`,
+        }))
+
+        // Store pending trigger for Riposte
+        const pendingTrigger: PendingTrigger = {
+          type: 'on_miss',
+          triggererId: attackerId,    // Who missed (the attacker)
+          reactorId: targetId,        // Who can riposte (the target that was missed)
+          targetId: attackerId,       // Who to counter-attack (the attacker)
+          options: triggerOptions,
+          context: {
+            attackRoll: result.attackRoll.total,
+            targetAC: result.targetAC,
+          },
+        }
+
+        // Update attacker state before pausing
+        const newAttacksMade = attacker.attacksMadeThisTurn + 1
+        const maxAttacksForAttacker = getMaxAttacksPerAction(attacker)
+        const allAttacksUsed = newAttacksMade >= maxAttacksForAttacker
+
+        set((state) => ({
+          combatants: state.combatants.map((c) =>
+            c.id === attackerId
+              ? {
+                  ...c,
+                  attacksMadeThisTurn: newAttacksMade,
+                  hasActed: allAttacksUsed,
+                }
+              : c
+          ),
+          pendingTrigger,
+          selectedAction: undefined,
+          targetingMode: undefined,
+        }))
+
+        return result  // Don't continue - wait for Riposte decision
+      }
     }
+
+    // Track if Savage Attacker feat was used (needs to be outside the if block for state updates)
+    let usedSavageAttackerFeat = false
 
     // Apply damage if hit
     if (result.hit && result.damage) {
       // Calculate total damage including Savage Attacks and Sneak Attack bonus
       let totalDamage = result.damage.total
       const bonusDamageDetails: string[] = []
+
+      // Savage Attacker feat: roll weapon damage twice and use the better roll
+      if (canUseSavageAttacker(attacker) && selectedWeapon) {
+        const reroll = rollDamage(selectedWeapon.damage, result.critical)
+        if (reroll.total > result.damage.total) {
+          totalDamage = reroll.total
+          bonusDamageDetails.push(`Savage Attacker (rerolled ${result.damage.total} -> ${reroll.total})`)
+        } else {
+          bonusDamageDetails.push(`Savage Attacker (kept ${result.damage.total} over ${reroll.total})`)
+        }
+        usedSavageAttackerFeat = true
+      }
 
       if (result.savageAttacksDamage) {
         totalDamage += result.savageAttacksDamage.total
@@ -1505,138 +2307,305 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
         bonusDamageDetails.push(`Sneak Attack [${result.sneakAttackDamage.rolls.join(', ')}]`)
       }
 
-      // Check if target has reaction spells available (like Shield)
+      // Check for on-hit maneuvers (Battle Master maneuvers like Trip Attack, Menacing Attack)
+      const onHitManeuvers = getAvailableManeuvers(attacker, 'on_hit')
+      if (
+        onHitManeuvers.length > 0 &&
+        attacker.superiorityDiceRemaining > 0 &&
+        !attacker.usedManeuverThisAttack &&
+        attacker.type === 'character'  // Only player characters get the prompt
+      ) {
+        const dieSize = getSuperiorityDieSize(attacker)
+        const saveDC = getManeuverSaveDC(attacker)
+
+        // Build trigger options from available maneuvers
+        const triggerOptions: TriggerOption[] = onHitManeuvers.map(m => ({
+          id: m.id,
+          type: 'maneuver' as const,
+          name: m.name,
+          description: m.description,
+          cost: `1 Superiority Die (d${dieSize})`,
+          effect: m.savingThrow
+            ? `+1d${dieSize} damage, ${m.savingThrow.ability.toUpperCase()} save (DC ${saveDC}) or ${m.savingThrow.effect}`
+            : `+1d${dieSize} damage`,
+        }))
+
+        // Store pending trigger - combat pauses until resolved
+        const pendingTrigger: PendingTrigger = {
+          type: 'on_hit',
+          triggererId: attackerId,
+          reactorId: attackerId,  // Attacker chooses their own maneuver
+          targetId,               // Target for applying effects
+          options: triggerOptions,
+          context: {
+            attackRoll: result.attackRoll.total,
+            targetAC: result.targetAC,
+            damage: totalDamage,
+            damageType: (result.damageType ?? 'bludgeoning') as DamageType,
+            isCritical: result.critical,
+            weapon: selectedWeapon,
+          },
+          pendingDamage: totalDamage,
+        }
+
+        // Update attacker state before pausing
+        const newAttacksMade = attacker.attacksMadeThisTurn + 1
+        const maxAttacksForAttacker = getMaxAttacksPerAction(attacker)
+        const allAttacksUsed = newAttacksMade >= maxAttacksForAttacker
+
+        set((state) => ({
+          combatants: state.combatants.map((c) =>
+            c.id === attackerId
+              ? {
+                  ...c,
+                  attacksMadeThisTurn: newAttacksMade,
+                  hasActed: allAttacksUsed,
+                  usedSneakAttackThisTurn: c.usedSneakAttackThisTurn || (result.sneakAttackUsed ?? false),
+                  usedSavageAttackerThisTurn: c.usedSavageAttackerThisTurn || usedSavageAttackerFeat,
+                }
+              : c
+          ),
+          pendingTrigger,
+          selectedAction: undefined,
+          targetingMode: undefined,
+        }))
+
+        return result  // Don't deal damage yet - wait for maneuver decision
+      }
+
+      // Check if target has reaction options available (Shield spell, Parry maneuver)
       const availableReactionSpells = getAvailableReactionSpells(target, 'on_hit')
 
-      if (availableReactionSpells.length > 0 && !target.hasReacted) {
-        // Set pending reaction and pause for player decision
-        set({
-          pendingReaction: {
-            type: 'shield',
-            reactingCombatantId: targetId,
-            triggeringCombatantId: attackerId,
-            availableReactions: availableReactionSpells,
+      // Check for Parry maneuver (only for melee attacks)
+      const isMeleeAttackForParry = !selectedWeapon || selectedWeapon.type === 'melee'
+      const parryManeuvers = isMeleeAttackForParry
+        ? getAvailableManeuvers(target, 'reaction').filter(m => m.id === 'parry')
+        : []
+
+      const hasReactionOptions =
+        (availableReactionSpells.length > 0 || parryManeuvers.length > 0) &&
+        !target.hasReacted &&
+        target.type === 'character'
+
+      if (hasReactionOptions) {
+        // Build combined trigger options for both spells and maneuvers
+        const triggerOptions: TriggerOption[] = []
+
+        // Add Shield spell option if available
+        for (const spell of availableReactionSpells) {
+          if (spell.id === 'shield') {
+            triggerOptions.push({
+              id: 'shield',
+              type: 'spell',
+              name: 'Shield',
+              description: 'Increase your AC by 5 until the start of your next turn',
+              cost: 'Level 1 Spell Slot',
+              effect: `+5 AC (${result.targetAC} → ${result.targetAC + 5})`,
+            })
+          }
+        }
+
+        // Add Parry maneuver option if available
+        if (parryManeuvers.length > 0 && target.superiorityDiceRemaining > 0) {
+          const dieSize = getSuperiorityDieSize(target)
+          const character = target.data as Character
+          const dexMod = Math.floor((character.abilityScores.dexterity - 10) / 2)
+          triggerOptions.push({
+            id: 'parry',
+            type: 'maneuver',
+            name: 'Parry',
+            description: 'Reduce incoming damage by superiority die + DEX modifier',
+            cost: `1 Superiority Die (d${dieSize})`,
+            effect: `Reduce damage by 1d${dieSize}+${dexMod}`,
+          })
+        }
+
+        if (triggerOptions.length > 0) {
+          // Set pending trigger for damage mitigation options
+          const pendingTrigger: PendingTrigger = {
+            type: 'on_damage_taken',
+            triggererId: attackerId,
+            reactorId: targetId,
+            targetId,  // Target is the one taking damage
+            options: triggerOptions,
             context: {
               attackRoll: result.attackRoll.total,
-              attackBonus: result.attackRoll.total - result.attackRoll.naturalRoll,
               targetAC: result.targetAC,
               damage: totalDamage,
               damageType: (result.damageType ?? 'bludgeoning') as DamageType,
               isCritical: result.critical,
+              weapon: selectedWeapon,
             },
-          },
-        })
-        // Don't deal damage yet - wait for reaction decision
-        // Update attacker state still needs to happen
-      } else {
-        // No reaction available, deal damage immediately
-        get().dealDamage(targetId, totalDamage, attacker.name)
-        get().addDamagePopup(targetId, totalDamage, (result.damageType ?? 'bludgeoning') as DamageType, result.critical)
+            pendingDamage: totalDamage,
+          }
 
-        const damageDetails = bonusDamageDetails.length > 0
-          ? `${result.damage.breakdown} + ${bonusDamageDetails.join(' + ')}`
-          : result.damage.breakdown
+          // Update attacker state before pausing
+          const newAttacksMade = attacker.attacksMadeThisTurn + 1
+          const maxAttacksForAttacker = getMaxAttacksPerAction(attacker)
+          const allAttacksUsed = newAttacksMade >= maxAttacksForAttacker
 
+          set((state) => ({
+            combatants: state.combatants.map((c) =>
+              c.id === attackerId
+                ? {
+                    ...c,
+                    attacksMadeThisTurn: newAttacksMade,
+                    hasActed: allAttacksUsed,
+                    usedSneakAttackThisTurn: c.usedSneakAttackThisTurn || (result.sneakAttackUsed ?? false),
+                    usedSavageAttackerThisTurn: c.usedSavageAttackerThisTurn || usedSavageAttackerFeat,
+                  }
+                : c
+            ),
+            pendingTrigger,
+            selectedAction: undefined,
+            targetingMode: undefined,
+          }))
+
+          return result  // Don't deal damage yet - wait for reaction decision
+        }
+      }
+
+      // No reactions available, deal damage immediately
+      get().dealDamage(targetId, totalDamage, attacker.name)
+      get().addDamagePopup(targetId, totalDamage, (result.damageType ?? 'bludgeoning') as DamageType, result.critical)
+      if (result.critical) {
+        get().addCombatPopup(targetId, 'critical')
+      }
+
+      const damageDetails = bonusDamageDetails.length > 0
+        ? `${result.damage.breakdown} + ${bonusDamageDetails.join(' + ')}`
+        : result.damage.breakdown
+
+      get().addLogEntry({
+        type: 'damage',
+        actorId: attackerId,
+        actorName: attacker.name,
+        targetId,
+        targetName: target.name,
+        message: `${totalDamage} ${result.damageType} damage`,
+        details: damageDetails,
+      })
+
+      // Log Sneak Attack if used
+      if (result.sneakAttackUsed) {
         get().addLogEntry({
-          type: 'damage',
+          type: 'other',
           actorId: attackerId,
           actorName: attacker.name,
-          targetId,
-          targetName: target.name,
-          message: `${totalDamage} ${result.damageType} damage`,
-          details: damageDetails,
+          message: `${attacker.name} deals Sneak Attack damage! (+${result.sneakAttackDamage?.total})`,
         })
+      }
 
-        // Log Sneak Attack if used
-        if (result.sneakAttackUsed) {
+      // Apply on-hit weapon mastery effects
+      if (selectedWeapon) {
+        const { round, combatants: currentCombatants } = get()
+        const masteryResult = applyOnHitMasteryEffect(attacker, target, selectedWeapon, grid, currentCombatants, round)
+
+        if (masteryResult && masteryResult.applied) {
+          // Log the mastery effect
           get().addLogEntry({
             type: 'other',
             actorId: attackerId,
             actorName: attacker.name,
-            message: `${attacker.name} deals Sneak Attack damage! (+${result.sneakAttackDamage?.total})`,
+            message: masteryResult.description,
+            details: `Weapon mastery: ${masteryResult.mastery}`,
           })
-        }
 
-        // Apply on-hit weapon mastery effects
-        if (selectedWeapon) {
-          const { round, combatants: currentCombatants } = get()
-          const masteryResult = applyOnHitMasteryEffect(attacker, target, selectedWeapon, grid, currentCombatants, round)
+          // Apply specific effects based on mastery type
+          switch (masteryResult.mastery) {
+            case 'push':
+              if (masteryResult.pushResult) {
+                // Update target position
+                set((state) => ({
+                  combatants: state.combatants.map((c) =>
+                    c.id === targetId
+                      ? { ...c, position: masteryResult.pushResult!.newPosition }
+                      : c
+                  ),
+                }))
+              }
+              break
 
-          if (masteryResult && masteryResult.applied) {
-            // Log the mastery effect
-            get().addLogEntry({
-              type: 'other',
-              actorId: attackerId,
-              actorName: attacker.name,
-              message: masteryResult.description,
-              details: `Weapon mastery: ${masteryResult.mastery}`,
-            })
+            case 'sap':
+              // Add sapped condition to target (disadvantage on next attack)
+              set((state) => ({
+                combatants: state.combatants.map((c) =>
+                  c.id === targetId
+                    ? {
+                        ...c,
+                        conditions: [...c.conditions, { condition: 'sapped' as const, duration: 1 }],
+                      }
+                    : c
+                ),
+              }))
+              get().addCombatPopup(targetId, 'condition', 'Sapped')
+              break
 
-            // Apply specific effects based on mastery type
-            switch (masteryResult.mastery) {
-              case 'push':
-                if (masteryResult.pushResult) {
-                  // Update target position
-                  set((state) => ({
-                    combatants: state.combatants.map((c) =>
-                      c.id === targetId
-                        ? { ...c, position: masteryResult.pushResult!.newPosition }
-                        : c
-                    ),
-                  }))
-                }
-                break
+            case 'slow':
+              // Slow is tracked via speed reduction - handled by combat calculations
+              // For now just log it; speed reduction is applied automatically in movement
+              break
 
-              case 'sap':
-                // Add sapped condition to target (disadvantage on next attack)
+            case 'topple':
+              if (masteryResult.toppleResult && !masteryResult.toppleResult.savePassed) {
+                // Target failed save, add prone condition
                 set((state) => ({
                   combatants: state.combatants.map((c) =>
                     c.id === targetId
                       ? {
                           ...c,
-                          conditions: [...c.conditions, { condition: 'sapped' as const, duration: 1 }],
+                          conditions: [...c.conditions, { condition: 'prone' as const, duration: -1 }],
                         }
                       : c
                   ),
                 }))
-                break
+                get().addCombatPopup(targetId, 'condition', 'Prone')
+              }
+              break
 
-              case 'slow':
-                // Slow is tracked via speed reduction - handled by combat calculations
-                // For now just log it; speed reduction is applied automatically in movement
-                break
-
-              case 'topple':
-                if (masteryResult.toppleResult && !masteryResult.toppleResult.savePassed) {
-                  // Target failed save, add prone condition
-                  set((state) => ({
-                    combatants: state.combatants.map((c) =>
-                      c.id === targetId
-                        ? {
-                            ...c,
-                            conditions: [...c.conditions, { condition: 'prone' as const, duration: -1 }],
-                          }
-                        : c
-                    ),
-                  }))
-                }
-                break
-
-              case 'vex':
-                // Set vexedBy on target so attacker has advantage on next attack
-                set((state) => ({
-                  combatants: state.combatants.map((c) =>
-                    c.id === targetId
-                      ? {
-                          ...c,
-                          vexedBy: { attackerId, expiresOnRound: round + 1 },
-                        }
-                      : c
-                  ),
-                }))
-                break
-            }
+            case 'vex':
+              // Set vexedBy on target so attacker has advantage on next attack
+              set((state) => ({
+                combatants: state.combatants.map((c) =>
+                  c.id === targetId
+                    ? {
+                        ...c,
+                        vexedBy: { attackerId, expiresOnRound: round + 1 },
+                      }
+                    : c
+                ),
+              }))
+              break
           }
+        }
+      }
+
+      // Tavern Brawler feat: push on unarmed hit (automatic, once per turn)
+      if (isUnarmedStrike(selectedWeapon) && canTavernBrawlerPush(attacker)) {
+        const pushPos = calculatePushPosition(attacker, target, grid)
+        if (pushPos) {
+          // Update grid occupancy
+          const gridUpdates = [
+            { x: target.position.x, y: target.position.y, occupiedBy: undefined },
+            { x: pushPos.x, y: pushPos.y, occupiedBy: targetId },
+          ]
+          set((state) => ({
+            combatants: state.combatants.map((c) =>
+              c.id === targetId
+                ? { ...c, position: pushPos }
+                : c.id === attackerId
+                ? { ...c, usedTavernBrawlerPushThisTurn: true }
+                : c
+            ),
+            grid: updateGridOccupancy(state.grid, gridUpdates),
+          }))
+
+          get().addLogEntry({
+            type: 'other',
+            actorId: attackerId,
+            actorName: attacker.name,
+            message: `pushes ${target.name} 5ft (Tavern Brawler)`,
+          })
         }
       }
     }
@@ -1654,6 +2623,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
               attacksMadeThisTurn: newAttacksMade,
               hasActed: allAttacksUsed,
               usedSneakAttackThisTurn: c.usedSneakAttackThisTurn || (result.sneakAttackUsed ?? false),
+              usedSavageAttackerThisTurn: c.usedSavageAttackerThisTurn || usedSavageAttackerFeat,
             }
           : c
       ),
@@ -1665,12 +2635,179 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
     return result
   },
 
+  performAttackReplacement: (attackerId, replacementId, targetPosition) => {
+    const { combatants } = get()
+    const attacker = combatants.find((c) => c.id === attackerId)
+
+    if (!attacker) return false
+
+    // Get the attack replacement
+    const replacement = getAttackReplacementById(attacker, replacementId)
+    if (!replacement) {
+      console.error('Attack replacement not found:', replacementId)
+      return false
+    }
+
+    // Check if can use
+    if (!canUseAttackReplacement(attacker, replacement)) {
+      console.error('Cannot use attack replacement:', replacementId)
+      return false
+    }
+
+    // Handle AoE attack replacements (breath weapon)
+    if (replacement.targetingType === 'aoe') {
+      const aoeReplacement = replacement as AoEAttackReplacement
+
+      // Get affected cells using the AoE system
+      const affectedCells = getAoEAffectedCells({
+        type: aoeReplacement.aoeType,
+        size: aoeReplacement.aoeSize,
+        origin: attacker.position,
+        target: targetPosition,
+        originType: 'self',
+      })
+
+      // Find all combatants in affected cells (enemies only)
+      const affectedCombatants = combatants.filter((c) => {
+        if (c.id === attackerId) return false // Don't hit yourself
+        if (c.currentHp <= 0) return false // Skip dead combatants
+        // Check if any of the combatant's occupied cells are in the AoE
+        const cellKey = `${c.position.x},${c.position.y}`
+        return affectedCells.has(cellKey)
+      })
+
+      // Roll damage once for all targets
+      // For breath weapon, we need to get the actual ability to roll damage
+      const breathWeaponAbility = attacker.type === 'character'
+        ? ((attacker.data as Character).race.abilities ?? []).find(a => a.id === replacement.sourceId)
+        : null
+
+      let damageRolled = 0
+      if (breathWeaponAbility && breathWeaponAbility.type === 'breath_weapon') {
+        const damageResult = rollBreathWeaponDamage(attacker, breathWeaponAbility)
+        damageRolled = damageResult.total
+      } else {
+        // Fallback: roll the damage dice directly
+        const diceResult = rollDamage(aoeReplacement.damageDice)
+        damageRolled = diceResult.total
+      }
+
+      // Process each target
+      const targetResults: AoETargetResult[] = []
+      const updatedCombatants = [...combatants]
+
+      for (const target of affectedCombatants) {
+        // Roll saving throw for target
+        const saveResult = rollCombatantSavingThrow(target, aoeReplacement.savingThrow, aoeReplacement.dc)
+        const saved = saveResult.success
+
+        // Calculate damage (half on save)
+        let damage = saved ? Math.floor(damageRolled / 2) : damageRolled
+
+        // Apply resistance
+        const resistanceResult = applyDamageResistance(
+          target,
+          damage,
+          aoeReplacement.damageType,
+          target.racialAbilityUses
+        )
+        damage = resistanceResult.damage
+        const resistanceApplied = resistanceResult.applied !== null
+
+        targetResults.push({
+          targetId: target.id,
+          targetName: target.name,
+          saveRoll: saveResult.roll.naturalRoll,
+          saveTotal: saveResult.roll.total,
+          saved,
+          damageDealt: damage,
+          resistanceApplied,
+        })
+
+        // Apply damage to target
+        const targetIndex = updatedCombatants.findIndex((c) => c.id === target.id)
+        if (targetIndex !== -1) {
+          const newHp = Math.max(0, updatedCombatants[targetIndex].currentHp - damage)
+          updatedCombatants[targetIndex] = {
+            ...updatedCombatants[targetIndex],
+            currentHp: newHp,
+          }
+        }
+
+        // Show damage popup
+        get().addDamagePopup(target.id, damage, aoeReplacement.damageType, false)
+        if (saved) {
+          get().addCombatPopup(target.id, 'saved')
+        }
+        if (resistanceApplied) {
+          get().addCombatPopup(target.id, 'resisted')
+        }
+
+        // Log damage for each target
+        get().addLogEntry({
+          type: 'damage',
+          actorId: attackerId,
+          actorName: attacker.name,
+          targetId: target.id,
+          targetName: target.name,
+          message: `${damage} ${aoeReplacement.damageType} damage${saved ? ' (saved)' : ''}${resistanceApplied ? ' (resisted)' : ''}`,
+          details: `${aoeReplacement.savingThrow.toUpperCase()} save: ${saveResult.roll.total} vs DC ${aoeReplacement.dc}`,
+        })
+      }
+
+      // Log the breath weapon usage
+      get().addLogEntry({
+        type: 'attack',
+        actorId: attackerId,
+        actorName: attacker.name,
+        message: `${attacker.name} uses ${replacement.name}!`,
+        details: `${damageRolled} ${aoeReplacement.damageType} damage, DC ${aoeReplacement.dc} ${aoeReplacement.savingThrow.toUpperCase()} save`,
+      })
+
+      // Decrement uses
+      const sourceId = getReplacementSourceId(replacement)
+      const { newUses } = decrementRacialAbilityUse(attacker, sourceId, attacker.racialAbilityUses)
+
+      // Update attacker state: increment attacks made, decrement uses
+      const newAttacksMade = attacker.attacksMadeThisTurn + 1
+      const maxAttacks = getMaxAttacksPerAction(attacker)
+      const allAttacksUsed = newAttacksMade >= maxAttacks
+
+      // Update attacker in the combatants list
+      const attackerIndex = updatedCombatants.findIndex((c) => c.id === attackerId)
+      if (attackerIndex !== -1) {
+        updatedCombatants[attackerIndex] = {
+          ...updatedCombatants[attackerIndex],
+          attacksMadeThisTurn: newAttacksMade,
+          hasActed: allAttacksUsed,
+          racialAbilityUses: newUses,
+        }
+      }
+
+      // Update state
+      set({
+        combatants: updatedCombatants,
+        selectedAction: undefined,
+        targetingMode: undefined,
+        aoePreview: undefined,
+      })
+
+      return true
+    }
+
+    // Single target attack replacements (future: unarmed strike, etc.)
+    // TODO: Implement single target attack replacements when needed
+
+    return false
+  },
+
   useDash: () => {
     const { turnOrder, currentTurnIndex, combatants } = get()
     const currentId = turnOrder[currentTurnIndex]
     const combatant = combatants.find((c) => c.id === currentId)
 
-    if (!combatant || combatant.hasActed) return
+    // Can't use Dash if: no combatant, already used action, or mid-Attack action (Extra Attack)
+    if (!combatant || combatant.hasActed || combatant.attacksMadeThisTurn > 0) return
 
     // Dash adds your speed to your remaining movement for this turn
     const speed = combatant.type === 'character'
@@ -1701,7 +2838,8 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
     const currentId = turnOrder[currentTurnIndex]
     const combatant = combatants.find((c) => c.id === currentId)
 
-    if (!combatant || combatant.hasActed) return
+    // Can't use Dodge if: no combatant, already used action, or mid-Attack action (Extra Attack)
+    if (!combatant || combatant.hasActed || combatant.attacksMadeThisTurn > 0) return
 
     // Add dodging condition (we'll track this via a special condition)
     set((state) => ({
@@ -1730,7 +2868,8 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
     const currentId = turnOrder[currentTurnIndex]
     const combatant = combatants.find((c) => c.id === currentId)
 
-    if (!combatant || combatant.hasActed) return
+    // Can't use Disengage if: no combatant, already used action, or mid-Attack action (Extra Attack)
+    if (!combatant || combatant.hasActed || combatant.attacksMadeThisTurn > 0) return
 
     // Add disengaging condition to prevent opportunity attacks this turn
     set((state) => ({
@@ -1792,7 +2931,11 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
     })
   },
 
-  performOpportunityAttack: (attackerId, targetId) => {
+  setBreathWeaponTargeting: (targeting) => {
+    set({ breathWeaponTargeting: targeting })
+  },
+
+  performOpportunityAttack: (attackerId, targetId, attackReplacementId) => {
     const { combatants } = get()
     const attacker = combatants.find((c) => c.id === attackerId)
     const target = combatants.find((c) => c.id === targetId)
@@ -1801,6 +2944,49 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
 
     // Check if attacker has reaction available
     if (attacker.hasReacted) return null
+
+    // Handle attack replacement (breath weapon) opportunity attack
+    if (attackReplacementId) {
+      const replacement = getAttackReplacementById(attacker, attackReplacementId)
+      if (replacement && canUseAttackReplacement(attacker, replacement) && replacement.targetingType === 'aoe') {
+        get().addLogEntry({
+          type: 'other',
+          actorId: attackerId,
+          actorName: attacker.name,
+          message: `${attacker.name} uses ${replacement.name} as an opportunity attack against ${target.name}!`,
+        })
+
+        // Use target's position as the direction for the AoE
+        const result = get().performAttackReplacement(attackerId, attackReplacementId, target.position)
+
+        // Mark reaction as used (performAttackReplacement doesn't do this)
+        set((state) => ({
+          combatants: state.combatants.map((c) =>
+            c.id === attackerId ? { ...c, hasReacted: true, attacksMadeThisTurn: 0, hasActed: false } : c
+          ),
+        }))
+
+        // Return a fake AttackResult for compatibility (breath weapon doesn't use attack rolls)
+        return result ? {
+          hit: true,
+          critical: false,
+          criticalMiss: false,
+          attackRoll: {
+            total: 0,
+            rolls: [0],
+            modifier: 0,
+            expression: 'N/A',
+            breakdown: 'N/A (AoE save)',
+            isNatural20: false,
+            isNatural1: false,
+            naturalRoll: 0,
+            advantage: 'normal' as const,
+          },
+          targetAC: 0,
+        } : null
+      }
+      return null
+    }
 
     get().addLogEntry({
       type: 'other',
@@ -1881,6 +3067,9 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
           // No reaction available, deal damage immediately
           get().dealDamage(targetId, totalDamage, attacker.name)
           get().addDamagePopup(targetId, totalDamage, (result.damageType ?? 'bludgeoning') as DamageType, result.critical)
+          if (result.critical) {
+            get().addCombatPopup(targetId, 'critical')
+          }
           get().addLogEntry({
             type: 'damage',
             actorId: attackerId,
@@ -2202,6 +3391,9 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
 
             get().dealDamage(currentTargetId, damage.total, caster.name)
             get().addDamagePopup(currentTargetId, damage.total, spell.damage.type, isCrit)
+            if (isCrit) {
+              get().addCombatPopup(currentTargetId, 'critical')
+            }
             get().addLogEntry({
               type: 'damage',
               actorId: casterId,
@@ -2221,6 +3413,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
               message: `${caster.name} misses ${target.name} with ${spell.name}`,
               details: `${attackRoll.breakdown} vs AC ${targetAC}`,
             })
+            get().addCombatPopup(currentTargetId, 'miss')
             get().addCombatPopup(currentTargetId, 'miss')
           }
         } else if (spell.savingThrow) {
@@ -2251,8 +3444,10 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
               get().addDamagePopup(currentTargetId, halfDamage, spell.damage.type, false)
             }
           } else {
+            // Roll damage for the full hit
             const damage = rollDamage(spell.damage.dice, false)
 
+            // Log the failed save
             get().addLogEntry({
               type: 'spell',
               actorId: casterId,
@@ -2263,6 +3458,32 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
               details: saveResult.roll.breakdown,
             })
 
+            // Check if target can use Indomitable (Fighter level 9+)
+            if (target.type === 'character' && canUseIndomitable(target, target.classFeatureUses)) {
+              // Set pending Indomitable prompt
+              set({
+                pendingIndomitable: {
+                  combatantId: target.id,
+                  ability: spell.savingThrow,
+                  dc,
+                  originalRoll: saveResult.roll.total,
+                  originalNatural: saveResult.roll.naturalRoll,
+                  modifier: saveResult.modifier,
+                  context: {
+                    type: 'spell_damage',
+                    sourceId: casterId,
+                    sourceName: `${caster.name}'s ${spell.name}`,
+                    damage: damage.total,
+                    halfDamageOnSave: true,
+                    damageType: spell.damage.type,
+                  },
+                },
+              })
+              // Return early - the Indomitable resolution handler will apply damage
+              return true
+            }
+
+            // No Indomitable available - apply damage immediately
             get().dealDamage(currentTargetId, damage.total, caster.name)
             get().addDamagePopup(currentTargetId, damage.total, spell.damage.type, false)
             get().addLogEntry({
@@ -2507,6 +3728,32 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
 
     // Show heal popup
     get().addHealPopup(combatantId, healResult.total)
+
+    // Tactical Shift: Level 5+ Fighters can move half speed without provoking OAs
+    if (character.class.id === 'fighter' && character.level >= 5) {
+      const speed = character.speed
+      const halfSpeed = Math.floor(speed / 2)
+
+      get().addLogEntry({
+        type: 'other',
+        actorId: combatantId,
+        actorName: combatant.name,
+        message: `${combatant.name} uses Tactical Shift and can move ${halfSpeed} ft. without provoking opportunity attacks!`,
+      })
+
+      // Grant bonus movement and disengaging condition
+      set((state) => ({
+        combatants: state.combatants.map((c) =>
+          c.id === combatantId
+            ? {
+                ...c,
+                movementUsed: c.movementUsed - halfSpeed,
+                conditions: [...c.conditions, { condition: 'disengaging' as const, duration: 1 }],
+              }
+            : c
+        ),
+      }))
+    }
   },
 
   useActionSurge: (combatantId) => {
@@ -2851,6 +4098,208 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
     set((state) => ({
       damagePopups: state.damagePopups.filter((p) => p.id !== id),
     }))
+  },
+
+  debugApplyCondition: (combatantId, condition) => {
+    const { combatants } = get()
+    const target = combatants.find(c => c.id === combatantId)
+    if (!target) return
+
+    // Check if condition already exists
+    if (target.conditions.some(c => c.condition === condition)) return
+
+    set((state) => ({
+      combatants: state.combatants.map(c =>
+        c.id === combatantId
+          ? { ...c, conditions: [...c.conditions, { condition, duration: -1 }] }
+          : c
+      ),
+    }))
+
+    // Show condition popup
+    const conditionName = condition.charAt(0).toUpperCase() + condition.slice(1)
+    get().addCombatPopup(combatantId, 'condition', conditionName)
+
+    get().addLogEntry({
+      type: 'other',
+      actorId: combatantId,
+      actorName: target.name,
+      message: `[DEBUG] ${target.name} gains ${conditionName} condition`,
+    })
+  },
+
+  debugRemoveCondition: (combatantId, condition) => {
+    const { combatants } = get()
+    const target = combatants.find(c => c.id === combatantId)
+    if (!target) return
+
+    set((state) => ({
+      combatants: state.combatants.map(c =>
+        c.id === combatantId
+          ? { ...c, conditions: c.conditions.filter(cond => cond.condition !== condition) }
+          : c
+      ),
+    }))
+
+    const conditionName = condition.charAt(0).toUpperCase() + condition.slice(1)
+    get().addLogEntry({
+      type: 'other',
+      actorId: combatantId,
+      actorName: target.name,
+      message: `[DEBUG] ${target.name} loses ${conditionName} condition`,
+    })
+  },
+
+  // ============================================
+  // Origin Feat Actions
+  // ============================================
+
+  confirmInitiativeSwap: (targetId) => {
+    const { pendingInitiativeSwap, combatants } = get()
+    if (!pendingInitiativeSwap) return
+
+    if (targetId) {
+      const swapper = combatants.find(c => c.id === pendingInitiativeSwap.swapperId)
+      const target = combatants.find(c => c.id === targetId)
+
+      if (swapper && target) {
+        const swapperInit = swapper.initiative
+        const targetInit = target.initiative
+
+        set((state) => ({
+          combatants: state.combatants.map(c => {
+            if (c.id === swapper.id) return { ...c, initiative: targetInit }
+            if (c.id === target.id) return { ...c, initiative: swapperInit }
+            return c
+          }),
+        }))
+
+        // Re-sort turn order
+        const { combatants: updated } = get()
+        const sorted = [...updated].sort((a, b) => b.initiative - a.initiative)
+        set({ turnOrder: sorted.map(c => c.id) })
+
+        get().addLogEntry({
+          type: 'other',
+          actorId: swapper.id,
+          actorName: swapper.name,
+          message: `swaps initiative with ${target.name} (Alert feat)`,
+        })
+      }
+    }
+
+    set({ pendingInitiativeSwap: undefined })
+  },
+
+  skipInitiativeSwap: () => {
+    set({ pendingInitiativeSwap: undefined })
+  },
+
+  confirmSavageAttacker: (useRoll1) => {
+    const { pendingSavageAttacker, combatants } = get()
+    if (!pendingSavageAttacker) return
+
+    const { attackerId, targetId, roll1, roll2, damageType, isCritical } = pendingSavageAttacker
+    const attacker = combatants.find(c => c.id === attackerId)
+    const target = combatants.find(c => c.id === targetId)
+    if (!attacker || !target) return
+
+    const selectedRoll = useRoll1 ? roll1 : roll2
+    const otherRoll = useRoll1 ? roll2 : roll1
+
+    get().addLogEntry({
+      type: 'damage',
+      actorId: attackerId,
+      actorName: attacker.name,
+      targetId,
+      targetName: target.name,
+      message: `uses Savage Attacker: chose ${selectedRoll.breakdown} over ${otherRoll.total}`,
+    })
+
+    // Apply damage
+    get().dealDamage(targetId, selectedRoll.total, attacker.name)
+    get().addDamagePopup(targetId, selectedRoll.total, damageType, isCritical)
+
+    // Mark feat as used this turn
+    set((state) => ({
+      combatants: state.combatants.map(c =>
+        c.id === attackerId
+          ? { ...c, usedSavageAttackerThisTurn: true }
+          : c
+      ),
+      pendingSavageAttacker: undefined,
+    }))
+  },
+
+  skipSavageAttacker: () => {
+    const { pendingSavageAttacker, combatants } = get()
+    if (!pendingSavageAttacker) return
+
+    // Apply the first roll (default behavior if skipped)
+    const { attackerId, targetId, roll1, damageType, isCritical } = pendingSavageAttacker
+    const attacker = combatants.find(c => c.id === attackerId)
+    if (attacker) {
+      get().dealDamage(targetId, roll1.total, attacker.name)
+      get().addDamagePopup(targetId, roll1.total, damageType, isCritical)
+    }
+
+    set({ pendingSavageAttacker: undefined })
+  },
+
+  getBattleMedicTargets: (healerId) => {
+    const { combatants } = get()
+    const healer = combatants.find(c => c.id === healerId)
+    if (!healer) return []
+    return getOriginFeatBattleMedicTargets(healer, combatants)
+  },
+
+  useBattleMedic: (healerId, targetId) => {
+    const { combatants } = get()
+    const healer = combatants.find(c => c.id === healerId)
+    const target = combatants.find(c => c.id === targetId)
+
+    if (!healer || !target) return
+    if (!canUseBattleMedic(healer)) return
+    if (target.type !== 'character') return
+
+    // Get target's hit die from their class
+    const targetChar = target.data as Character
+    const hitDie = targetChar.class.hitDie
+
+    // Roll healing: target's hit die + healer's proficiency (with reroll 1s)
+    const healingResult = rollBattleMedicHealing(healer, hitDie)
+
+    // Calculate actual healing (cap at max HP)
+    const actualHealing = Math.min(healingResult.total, target.maxHp - target.currentHp)
+
+    // Log the healing
+    get().addLogEntry({
+      type: 'heal',
+      actorId: healerId,
+      actorName: healer.name,
+      targetId,
+      targetName: target.name,
+      message: `uses Battle Medic on ${target.name}: ${healingResult.breakdown} (healed ${actualHealing})`,
+    })
+
+    // Apply healing and mark action used
+    set((state) => ({
+      combatants: state.combatants.map(c => {
+        if (c.id === targetId) {
+          return {
+            ...c,
+            currentHp: Math.min(c.maxHp, c.currentHp + actualHealing),
+          }
+        }
+        if (c.id === healerId) {
+          return { ...c, hasActed: true }
+        }
+        return c
+      }),
+    }))
+
+    // Show heal popup
+    get().addHealPopup(targetId, actualHealing)
   },
 
   resetCombat: () => {

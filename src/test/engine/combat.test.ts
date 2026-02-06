@@ -5,7 +5,7 @@ import {
   getCharacterDamageBonus,
   getCombatantAC,
   resolveAttack,
-} from './combat'
+} from '@/engine/combat'
 import type { Combatant, Character, Monster, Weapon } from '@/types'
 
 // ============================================

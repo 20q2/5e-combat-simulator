@@ -111,6 +111,12 @@ export interface RelentlessFeature extends ClassFeatureBase {
   type: 'relentless'
 }
 
+// Indomitable - Fighter level 9 feature (reroll failed saving throw with Fighter level bonus)
+export interface IndomitableFeature extends ClassFeatureBase {
+  type: 'indomitable'
+  maxUsesAtLevels?: Record<number, number>  // Level scaling (e.g., {9: 1, 13: 2, 17: 3})
+}
+
 // ============================================
 // Union Type
 // ============================================
@@ -127,6 +133,7 @@ export type ClassFeature =
   | WeaponMasteryFeature
   | CombatSuperiorityFeature
   | RelentlessFeature
+  | IndomitableFeature
   | GenericClassFeature
 
 // ============================================
@@ -179,4 +186,8 @@ export function isCombatSuperiorityFeature(f: ClassFeature): f is CombatSuperior
 
 export function isRelentlessFeature(f: ClassFeature): f is RelentlessFeature {
   return f.type === 'relentless'
+}
+
+export function isIndomitableFeature(f: ClassFeature): f is IndomitableFeature {
+  return f.type === 'indomitable'
 }

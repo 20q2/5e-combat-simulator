@@ -8,6 +8,10 @@ import { ActionBar } from '@/components/combat/ActionBar'
 import { CombatLog } from '@/components/combat/CombatLog'
 import { CombatantPanel } from '@/components/combat/CombatantPanel'
 import { ReactionPrompt } from '@/components/combat/ReactionPrompt'
+import { ManeuverPrompt } from '@/components/combat/ManeuverPrompt'
+import { InitiativeSwapPrompt } from '@/components/combat/InitiativeSwapPrompt'
+import { SavageAttackerPrompt } from '@/components/combat/SavageAttackerPrompt'
+import { IndomitablePrompt } from '@/components/combat/IndomitablePrompt'
 import { useCombatStore } from '@/stores/combatStore'
 import { useCharacterStore } from '@/stores/characterStore'
 import { getMonsterById } from '@/data'
@@ -277,6 +281,18 @@ export function CombatPage() {
 
       {/* Reaction Prompt Overlay */}
       <ReactionPrompt />
+
+      {/* Maneuver Prompt Overlay */}
+      <ManeuverPrompt />
+
+      {/* Initiative Swap Prompt (Alert feat) */}
+      <InitiativeSwapPrompt />
+
+      {/* Savage Attacker Damage Choice Prompt */}
+      <SavageAttackerPrompt />
+
+      {/* Indomitable Reroll Prompt (Fighter level 9+) */}
+      <IndomitablePrompt />
     </div>
   )
 }

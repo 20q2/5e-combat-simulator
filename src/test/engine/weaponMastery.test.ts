@@ -12,7 +12,7 @@ import {
   hasVexAdvantage,
   isSapped,
   getMasteryDescription,
-} from './weaponMastery'
+} from '@/engine/weaponMastery'
 import type { Combatant, Character, Weapon, Grid, WeaponMastery } from '@/types'
 import type { WeaponMasteryFeature, ClassFeature } from '@/types/classFeature'
 
@@ -95,6 +95,9 @@ function createCharacterCombatant(
     superiorityDiceRemaining: 0,
     usedManeuverThisAttack: false,
     goadedBy: undefined,
+    featUses: {},
+    usedSavageAttackerThisTurn: false,
+    usedTavernBrawlerPushThisTurn: false,
   } as Combatant
 }
 

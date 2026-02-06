@@ -338,6 +338,9 @@ export function CombatGrid() {
     setRangeHighlight,
     projectileTargeting,
     assignProjectile,
+    breathWeaponTargeting,
+    setBreathWeaponTargeting,
+    performAttackReplacement,
   } = useCombatStore()
 
   // Drive the movement animation
@@ -728,6 +731,17 @@ export function CombatGrid() {
       return
     }
 
+    // In breath weapon targeting mode, clicking fires the breath weapon in that direction
+    if (phase === 'combat' && aoePreview && breathWeaponTargeting && currentTurnId) {
+      performAttackReplacement(breathWeaponTargeting.attackerId, breathWeaponTargeting.replacementId, position)
+      // Clear breath weapon state
+      setBreathWeaponTargeting(undefined)
+      setAoEPreview(undefined)
+      setRangeHighlight(undefined)
+      setSelectedAction(undefined)
+      return
+    }
+
     // In setup phase, place selected combatant
     if (phase === 'setup' && selectedCombatantId) {
       if (!isCellOccupied(x, y, selectedCombatantId)) {
@@ -769,6 +783,20 @@ export function CombatGrid() {
       setAoEPreview(undefined)
       setRangeHighlight(undefined)
       setSelectedAction(undefined)
+      return
+    }
+
+    // In breath weapon targeting mode, clicking a token fires the breath weapon toward that combatant
+    if (phase === 'combat' && aoePreview && breathWeaponTargeting && currentTurnId) {
+      const targetCombatant = combatants.find(c => c.id === combatantId)
+      if (targetCombatant) {
+        performAttackReplacement(breathWeaponTargeting.attackerId, breathWeaponTargeting.replacementId, targetCombatant.position)
+        // Clear breath weapon state
+        setBreathWeaponTargeting(undefined)
+        setAoEPreview(undefined)
+        setRangeHighlight(undefined)
+        setSelectedAction(undefined)
+      }
       return
     }
 

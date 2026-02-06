@@ -58,6 +58,7 @@ function CharacterCard({
             <div className="font-semibold truncate">{character.name}</div>
             <div className="text-sm text-muted-foreground">
               Level {character.level} {character.race.name} {character.class.name}
+              {character.subclass && ` (${character.subclass.name})`}
             </div>
             <div className="text-xs text-muted-foreground mt-1">
               {hpDisplay} · {acDisplay} · {character.speed} ft

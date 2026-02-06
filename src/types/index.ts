@@ -138,6 +138,41 @@ export type {
   ManeuverContext,
 } from './maneuver'
 
+// Attack replacement types are defined in ./attackReplacement.ts
+export type {
+  AttackReplacement,
+  AttackReplacementBase,
+  AoEAttackReplacement,
+  SingleTargetAttackReplacement,
+  AoEAttackResult,
+  AoETargetResult,
+} from './attackReplacement'
+
+export {
+  isAoEAttackReplacement,
+  isSingleTargetAttackReplacement,
+} from './attackReplacement'
+
+// Origin feat combat types are defined in ./originFeat.ts
+export type {
+  OriginFeatTrigger,
+  OriginFeatCombatBase,
+  OriginFeatCombat,
+  AlertFeatCombat,
+  HealerFeatCombat,
+  LuckyFeatCombat,
+  SavageAttackerFeatCombat,
+  TavernBrawlerFeatCombat,
+} from './originFeat'
+
+export {
+  isAlertFeat,
+  isHealerFeat,
+  isLuckyFeat,
+  isSavageAttackerFeat,
+  isTavernBrawlerFeat,
+} from './originFeat'
+
 // Import ClassFeature and FightingStyle types for use in interfaces
 import type { ClassFeature, FightingStyle } from './classFeature'
 
@@ -508,6 +543,10 @@ export interface Combatant {
   superiorityDiceRemaining: number  // Current number of superiority dice available
   usedManeuverThisAttack: boolean  // Track if a maneuver was used on the current attack (for on-hit maneuvers)
   goadedBy?: string  // ID of combatant who goaded this target (for Goading Attack disadvantage)
+  // Origin Feat tracking
+  featUses: Record<string, number>  // feat id -> remaining uses (e.g., { lucky: 2 })
+  usedSavageAttackerThisTurn: boolean  // Track if Savage Attacker was used this turn (once per turn)
+  usedTavernBrawlerPushThisTurn: boolean  // Track if Tavern Brawler push was used this turn (once per turn)
 }
 
 export interface GridCell {
@@ -558,11 +597,12 @@ export interface AoEPreview {
 export type CombatPopupType =
   | 'damage'      // Shows damage number
   | 'miss'        // "MISS"
-  | 'critical'    // "CRITICAL!" (used with damage)
+  | 'critical'    // "CRITICAL!" - shown separately from damage on crits
   | 'heal'        // Shows heal number in green
   | 'saved'       // "SAVED" - passed saving throw
   | 'dodged'      // "DODGED" - attack missed due to Dodge action
   | 'resisted'    // "RESISTED" - damage reduced by resistance
+  | 'condition'   // Shows condition name (e.g., "Frightened", "Prone")
 
 export interface DamagePopup {
   id: string
@@ -575,6 +615,42 @@ export interface DamagePopup {
   velocityX: number            // Random horizontal drift (-1 to 1)
   popupType: CombatPopupType   // What kind of popup to show
   text?: string                // Optional custom text override
+}
+
+// ============================================
+// Combat Trigger System Types
+// ============================================
+
+export type CombatTriggerType =
+  | 'on_hit'           // After successful weapon attack (Battle Master on-hit maneuvers)
+  | 'on_miss'          // After attack miss (Riposte opportunity)
+  | 'on_damage_taken'  // After taking damage (Parry, Absorb Elements)
+  | 'pre_attack'       // Before attack roll (Precision Attack)
+
+export interface TriggerOption {
+  id: string
+  type: 'maneuver' | 'spell' | 'class_feature'
+  name: string
+  description: string
+  cost?: string        // "1 Superiority Die (d8)", "Level 1 Slot"
+  effect?: string      // "+1d8 damage, STR save (DC 15) or prone"
+}
+
+export interface PendingTrigger {
+  type: CombatTriggerType
+  triggererId: string       // Who triggered (usually attacker)
+  reactorId: string         // Who can respond (attacker for on_hit, target for on_damage_taken)
+  options: TriggerOption[]
+  context: {
+    attackRoll?: number
+    targetAC?: number
+    damage?: number
+    damageType?: DamageType
+    isCritical?: boolean
+    weapon?: Weapon
+  }
+  pendingDamage?: number    // Hold damage until trigger resolved
+  targetId?: string         // Target of the original attack (for applying maneuver effects)
 }
 
 export interface CombatState {
@@ -620,6 +696,8 @@ export interface CombatState {
       isCritical?: boolean
     }
   }
+  // Pending combat trigger prompt (maneuvers, class features, etc.)
+  pendingTrigger?: PendingTrigger
   // Movement animation state
   movementAnimation?: {
     combatantId: string
@@ -633,6 +711,43 @@ export interface CombatState {
     path: Position[]
     pathCost: number
     threateningEnemies: string[]  // IDs of enemies that will trigger opportunity attacks
+  }
+  // Alert feat initiative swap prompt
+  pendingInitiativeSwap?: {
+    swapperId: string         // ID of combatant with Alert feat
+    eligibleAllies: string[]  // IDs of allies available to swap with
+  }
+  // Savage Attacker feat damage choice prompt
+  pendingSavageAttacker?: {
+    attackerId: string
+    targetId: string
+    roll1: { total: number; breakdown: string }
+    roll2: { total: number; breakdown: string }
+    damageType: DamageType
+    isCritical: boolean
+  }
+  // Breath weapon targeting state (for AoE attack replacements)
+  breathWeaponTargeting?: {
+    replacementId: string
+    attackerId: string
+  }
+  // Indomitable reroll prompt (Fighter level 9+)
+  pendingIndomitable?: {
+    combatantId: string           // Fighter who can use Indomitable
+    ability: AbilityName          // The ability for the saving throw
+    dc: number                    // The DC that was failed
+    originalRoll: number          // The original roll total (failed)
+    originalNatural: number       // The natural d20 roll
+    modifier: number              // The save modifier
+    context: {                    // Context for what happens after resolution
+      type: 'spell_damage' | 'breath_weapon' | 'effect'
+      sourceId?: string           // Who/what caused the save
+      sourceName?: string         // Name of source
+      damage?: number             // Pending damage on failed save
+      halfDamageOnSave?: boolean  // Whether save halves damage
+      damageType?: DamageType
+      effect?: string             // Description of effect on failed save
+    }
   }
 }
 

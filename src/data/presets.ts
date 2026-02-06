@@ -1,6 +1,6 @@
 import type { Character, AbilityScores, TerrainDefinition } from '@/types'
 import type { FightingStyle } from '@/types/classFeature'
-import { getRaceById, getClassById, getWeaponById, getArmorById, getSpellById, getClassFeaturesByLevel } from './index'
+import { getRaceById, getClassById, getWeaponById, getArmorById, getSpellById, getClassFeaturesByLevel, getSubclassFeaturesByLevel } from './index'
 import encounterData from './encounters.json'
 
 // Helper to create a preset character
@@ -9,6 +9,7 @@ function createPresetCharacter(config: {
   name: string
   raceId: string
   classId: string
+  subclassId?: string
   level: number
   abilityScores: AbilityScores
   meleeWeaponId?: string
@@ -19,9 +20,11 @@ function createPresetCharacter(config: {
   spellIds?: string[]
   masteredWeaponIds?: string[]
   fightingStyles?: FightingStyle[]
+  knownManeuverIds?: string[]
 }): Character | null {
   const race = getRaceById(config.raceId)
   const charClass = getClassById(config.classId)
+  const subclass = config.subclassId ? charClass?.subclasses.find(s => s.id === config.subclassId) : undefined
   const meleeWeapon = config.meleeWeaponId ? getWeaponById(config.meleeWeaponId) : undefined
   const rangedWeapon = config.rangedWeaponId ? getWeaponById(config.rangedWeaponId) : undefined
   const offhandWeapon = config.offhandWeaponId ? getWeaponById(config.offhandWeaponId) : undefined
@@ -67,8 +70,10 @@ function createPresetCharacter(config: {
   // Get proficiency bonus
   const proficiencyBonus = Math.ceil(config.level / 4) + 1
 
-  // Get class features
-  const features = getClassFeaturesByLevel(charClass, config.level)
+  // Get class features and subclass features
+  const classFeatures = getClassFeaturesByLevel(charClass, config.level)
+  const subclassFeatures = config.subclassId ? getSubclassFeaturesByLevel(charClass, config.subclassId, config.level) : []
+  const features = [...classFeatures, ...subclassFeatures]
 
   // Get spells if provided
   const knownSpells = config.spellIds
@@ -97,6 +102,7 @@ function createPresetCharacter(config: {
     name: config.name,
     race,
     class: charClass,
+    subclass,
     level: config.level,
     abilityScores: finalScores,
     originFeats: [], // Preset characters don't have origin feats defined
@@ -123,6 +129,7 @@ function createPresetCharacter(config: {
     deathSaves: { successes: 0, failures: 0 },
     masteredWeaponIds: config.masteredWeaponIds,
     fightingStyles: config.fightingStyles,
+    knownManeuverIds: config.knownManeuverIds,
   }
 }
 
@@ -142,12 +149,13 @@ export const presetCharacters = [
     shieldId: 'shield',
   }),
 
-  // Human Fighter Level 5 - Extra Attack & Weapon Mastery
+  // Human Fighter Level 5 - Battle Master with Extra Attack & Weapon Mastery
   createPresetCharacter({
     id: 'preset-fighter-5',
     name: 'Kira Steelstrike',
     raceId: 'human',
     classId: 'fighter',
+    subclassId: 'battle-master',
     level: 5,
     abilityScores: { strength: 16, dexterity: 14, constitution: 16, intelligence: 10, wisdom: 12, charisma: 8 },
     meleeWeaponId: 'greatsword',
@@ -155,6 +163,7 @@ export const presetCharacters = [
     armorId: 'chain-mail',
     masteredWeaponIds: ['greatsword', 'longbow', 'halberd'],
     fightingStyles: ['great_weapon'],
+    knownManeuverIds: ['trip-attack', 'precision-attack', 'riposte', 'menacing-attack'],
   }),
 
   // Elf Rogue - Sneaky striker

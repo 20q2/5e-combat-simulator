@@ -113,6 +113,17 @@ function getPopupTypeStyles(popupType: CombatPopupType): { color: string; shadow
         text: '+',
       }
     case 'critical':
+      return {
+        color: 'text-red-500',
+        shadow: 'drop-shadow-[0_2px_8px_rgba(239,68,68,0.8)]',
+        text: 'CRITICAL!',
+      }
+    case 'condition':
+      return {
+        color: 'text-purple-400',
+        shadow: 'drop-shadow-[0_2px_6px_rgba(192,132,252,0.7)]',
+        text: '', // Text will be provided via text prop
+      }
     case 'damage':
     default:
       return {
@@ -141,7 +152,7 @@ export function DamagePopup({ amount, damageType, isCritical, velocityX, popupTy
   // Determine what to display
   const displayText = text ?? typeStyles.text
   const showAmount = (popupType === 'damage' || popupType === 'heal') && amount !== undefined
-  const isLargeText = isCritical || popupType === 'miss' || popupType === 'dodged' || popupType === 'saved'
+  const isLargeText = isCritical || popupType === 'miss' || popupType === 'dodged' || popupType === 'saved' || popupType === 'critical' || popupType === 'condition'
 
   return (
     <div

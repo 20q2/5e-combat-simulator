@@ -1,4 +1,4 @@
-import { rollAttack, rollDamage, rollD20, type D20RollResult, type DiceRollResult } from './dice'
+import { rollAttack, rollDamage, rollD20, rollDie, type D20RollResult, type DiceRollResult } from './dice'
 import { getAbilityModifier } from '@/types'
 import type { Combatant, Character, Monster, Weapon, MonsterAction, Condition, Grid, Position, AbilityName } from '@/types'
 import { hasLineOfSight } from '@/lib/lineOfSight'
@@ -7,6 +7,7 @@ import {
   checkSavageAttacks,
   rollSavageAttacksDamage,
   checkSaveAdvantage,
+  checkRerollEligible,
   type SaveAdvantageContext,
 } from './racialAbilities'
 import {
@@ -17,6 +18,10 @@ import {
   rollSneakAttackDamage,
   getCriticalRange,
 } from './classAbilities'
+import {
+  hasTavernBrawler,
+  getTavernBrawlerDamage,
+} from './originFeats'
 
 // ============================================
 // Attack Resolution
@@ -224,7 +229,13 @@ export function resolveAttack(options: MeleeAttackOptions): AttackResult {
       ? getAbilityModifier((attacker.data as Character).abilityScores.strength)
       : getAbilityModifier((attacker.data as Monster).abilityScores.strength)
     attackBonus = strMod
-    damageExpression = `1+${strMod}`
+
+    // Tavern Brawler feat: use 1d4+STR instead of 1+STR
+    if (hasTavernBrawler(attacker)) {
+      damageExpression = getTavernBrawlerDamage(attacker)
+    } else {
+      damageExpression = `1+${strMod}`
+    }
     damageType = 'bludgeoning'
   }
 
@@ -236,7 +247,29 @@ export function resolveAttack(options: MeleeAttackOptions): AttackResult {
 
   // Roll the attack
   const targetAC = getCombatantAC(target)
-  const attackRoll = rollAttack(attackBonus, finalAdvantage)
+  let attackRoll = rollAttack(attackBonus, finalAdvantage)
+
+  // Check for Halfling Lucky - reroll 1s on attack rolls
+  if (attackRoll.naturalRoll === 1) {
+    const rerollCheck = checkRerollEligible(attacker, 'attack', 1)
+    if (rerollCheck.canReroll) {
+      // Reroll the d20
+      const newRoll = rollDie(20)
+      const newTotal = newRoll + attackBonus
+      const modifierStr = attackBonus > 0 ? `+${attackBonus}` : attackBonus < 0 ? `${attackBonus}` : ''
+
+      // Update the attack roll with the rerolled result
+      attackRoll = {
+        ...attackRoll,
+        naturalRoll: newRoll,
+        total: newTotal,
+        isNatural1: newRoll === 1,
+        isNatural20: newRoll === 20,
+        rolls: [...attackRoll.rolls, newRoll],
+        breakdown: `Lucky[${attackRoll.rolls[0]}→${newRoll}]${modifierStr} = ${newTotal}`,
+      }
+    }
+  }
 
   // Check for critical miss (nat 1 always misses)
   if (attackRoll.isNatural1) {
@@ -578,7 +611,29 @@ export function rollCombatantSavingThrow(
     }
   }
 
-  const rollResult = rollD20(modifier, finalAdvantage)
+  let rollResult = rollD20(modifier, finalAdvantage)
+
+  // Check for Halfling Lucky - reroll 1s on saving throws
+  if (rollResult.naturalRoll === 1) {
+    const rerollCheck = checkRerollEligible(combatant, 'saving_throw', 1)
+    if (rerollCheck.canReroll) {
+      // Reroll the d20
+      const newRoll = rollDie(20)
+      const newTotal = newRoll + modifier
+      const modifierStr = modifier > 0 ? `+${modifier}` : modifier < 0 ? `${modifier}` : ''
+
+      // Update the roll result with the rerolled value
+      rollResult = {
+        ...rollResult,
+        naturalRoll: newRoll,
+        total: newTotal,
+        isNatural1: newRoll === 1,
+        isNatural20: newRoll === 20,
+        rolls: [...rollResult.rolls, newRoll],
+        breakdown: `Lucky[${rollResult.rolls[0]}→${newRoll}]${modifierStr} = ${newTotal}`,
+      }
+    }
+  }
 
   return {
     roll: rollResult,

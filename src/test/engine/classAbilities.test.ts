@@ -8,7 +8,7 @@ import {
   getMaxAttacksPerAction,
   getCriticalRange,
   isCriticalHit,
-} from './classAbilities'
+} from '@/engine/classAbilities'
 import type { Combatant, Character, Weapon } from '@/types'
 import type { FightingStyleFeature, SneakAttackFeature, ExtraAttackFeature, ImprovedCriticalFeature, ClassFeature } from '@/types/classFeature'
 

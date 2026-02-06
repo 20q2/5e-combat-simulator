@@ -4,6 +4,7 @@ import type {
   AbilityName,
   Condition,
   Character,
+  Size,
 } from '@/types'
 import { getAbilityModifier } from '@/types'
 import type {
@@ -14,6 +15,7 @@ import type {
   TriggeredHealAbility,
   BonusDamageAbility,
   BreathWeaponAbility,
+  NimblenessAbility,
 } from '@/types/race'
 import { roll } from './dice'
 
@@ -359,6 +361,55 @@ export function useRacialAbility(
     },
     usesRemaining
   }
+}
+
+// ============================================
+// Nimbleness (Halfling, Gnome)
+// ============================================
+
+const SIZE_ORDER: Size[] = ['tiny', 'small', 'medium', 'large', 'huge', 'gargantuan']
+
+/**
+ * Compare two sizes - returns negative if a < b, 0 if equal, positive if a > b
+ */
+export function compareSizes(a: Size, b: Size): number {
+  return SIZE_ORDER.indexOf(a) - SIZE_ORDER.indexOf(b)
+}
+
+/**
+ * Check if a combatant has the Nimbleness ability
+ */
+export function hasNimbleness(combatant: Combatant): boolean {
+  const abilities = getCombatantAbilitiesOfType(combatant, 'nimbleness')
+  return abilities.length > 0
+}
+
+/**
+ * Get the Nimbleness ability for a combatant
+ */
+export function getNimblenessAbility(combatant: Combatant): NimblenessAbility | null {
+  const abilities = getCombatantAbilitiesOfType(combatant, 'nimbleness')
+  return abilities[0] ?? null
+}
+
+/**
+ * Check if a combatant with Nimbleness can move through a creature of a given size
+ * @param mover The combatant trying to move through
+ * @param blockerSize The size of the creature in the way
+ */
+export function canMoveThrough(mover: Combatant, blockerSize: Size): boolean {
+  const nimbleness = getNimblenessAbility(mover)
+  if (!nimbleness) return false
+  return nimbleness.canMoveThrough.includes(blockerSize)
+}
+
+/**
+ * Get all sizes that a combatant can move through with Nimbleness
+ */
+export function getPassableSizes(combatant: Combatant): Size[] {
+  const nimbleness = getNimblenessAbility(combatant)
+  if (!nimbleness) return []
+  return nimbleness.canMoveThrough
 }
 
 // ============================================

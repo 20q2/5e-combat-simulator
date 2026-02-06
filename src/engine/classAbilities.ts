@@ -8,6 +8,7 @@ import type {
   CunningActionFeature,
   ExtraAttackFeature,
   ImprovedCriticalFeature,
+  IndomitableFeature,
   FightingStyle,
 } from '@/types/classFeature'
 import {
@@ -18,6 +19,7 @@ import {
   isCunningActionFeature,
   isExtraAttackFeature,
   isImprovedCriticalFeature,
+  isIndomitableFeature,
 } from '@/types/classFeature'
 import { roll } from './dice'
 
@@ -506,6 +508,9 @@ export function initializeClassFeatureUses(combatant: Combatant): Record<string,
       // Handle Second Wind level scaling
       if (isSecondWindFeature(feature)) {
         uses[feature.id] = getSecondWindMaxUses(combatant)
+      } else if (isIndomitableFeature(feature)) {
+        // Handle Indomitable level scaling
+        uses[feature.id] = getIndomitableMaxUses(combatant)
       } else {
         uses[feature.id] = feature.maxUses
       }
@@ -540,4 +545,90 @@ export function useClassFeature(
     },
     usesRemaining
   }
+}
+
+// ============================================
+// Indomitable
+// ============================================
+
+/**
+ * Get the Indomitable feature for a combatant
+ */
+export function getIndomitableFeature(combatant: Combatant): IndomitableFeature | undefined {
+  return getFeatureOfType(combatant, isIndomitableFeature)
+}
+
+/**
+ * Get the effective max uses for Indomitable based on character level
+ * Level 9: 1 use, Level 13: 2 uses, Level 17: 3 uses
+ */
+export function getIndomitableMaxUses(combatant: Combatant): number {
+  const feature = getIndomitableFeature(combatant)
+  if (!feature) return 0
+  if (feature.maxUses === undefined) return 0
+
+  // If no level scaling, use base maxUses
+  if (!feature.maxUsesAtLevels) return feature.maxUses
+
+  // Get character level
+  if (combatant.type !== 'character') return feature.maxUses
+  const character = combatant.data as Character
+  const level = character.level
+
+  // Find the highest threshold that applies
+  let effectiveMax = feature.maxUses
+  const thresholds = Object.keys(feature.maxUsesAtLevels)
+    .map(Number)
+    .sort((a, b) => a - b)
+
+  for (const threshold of thresholds) {
+    if (level >= threshold) {
+      effectiveMax = feature.maxUsesAtLevels[threshold]
+    }
+  }
+
+  return effectiveMax
+}
+
+/**
+ * Check if Indomitable can be used (has uses remaining and hasn't used reaction)
+ */
+export function canUseIndomitable(
+  combatant: Combatant,
+  classFeatureUses: Record<string, number>
+): boolean {
+  const feature = getIndomitableFeature(combatant)
+  if (!feature) return false
+
+  // Indomitable doesn't require reaction to not be used, but we track uses
+  const maxUses = getIndomitableMaxUses(combatant)
+  if (maxUses <= 0) return false
+
+  const uses = classFeatureUses[feature.id] ?? maxUses
+  return uses > 0
+}
+
+/**
+ * Get remaining Indomitable uses
+ */
+export function getIndomitableUses(
+  combatant: Combatant,
+  classFeatureUses: Record<string, number>
+): number {
+  const feature = getIndomitableFeature(combatant)
+  if (!feature) return 0
+  const maxUses = getIndomitableMaxUses(combatant)
+  if (maxUses <= 0) return 0
+  return classFeatureUses[feature.id] ?? maxUses
+}
+
+/**
+ * Get the Fighter level for Indomitable bonus
+ */
+export function getIndomitableBonus(combatant: Combatant): number {
+  if (combatant.type !== 'character') return 0
+  const character = combatant.data as Character
+  // Only Fighters get this bonus, check class
+  if (character.class.id !== 'fighter') return 0
+  return character.level
 }

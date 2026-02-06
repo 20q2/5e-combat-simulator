@@ -34,7 +34,11 @@
       "Bash(timeout:*)",
       "WebFetch(domain:roll20.net)",
       "WebFetch(domain:dnd2024.wikidot.com)",
-      "WebFetch(domain:rpgbot.net)"
+      "WebFetch(domain:rpgbot.net)",
+      "Bash(del:*)",
+      "Bash(del srcenginecombat.test.ts)",
+      "Bash(del srcengineweaponMastery.test.ts)",
+      "Bash(grep:*)"
     ]
   }
 }

@@ -202,3 +202,79 @@ export function isRepeatableFeat(id: OriginFeatId): boolean {
   const feat = getOriginFeatById(id)
   return feat?.repeatable ?? false
 }
+
+// ============================================
+// Combat-Specific Data
+// ============================================
+// Maps origin feat IDs to their combat-relevant data
+// Non-combat feats (crafter, musician, skilled, tough) map to null
+
+import type {
+  OriginFeatCombat,
+  AlertFeatCombat,
+  HealerFeatCombat,
+  LuckyFeatCombat,
+  SavageAttackerFeatCombat,
+  TavernBrawlerFeatCombat,
+} from '@/types/originFeat'
+
+const ALERT_COMBAT: AlertFeatCombat = {
+  id: 'alert',
+  type: 'alert',
+  trigger: 'on_initiative',
+  initiativeProficiencyBonus: true,
+  canSwapInitiative: true,
+}
+
+const HEALER_COMBAT: HealerFeatCombat = {
+  id: 'healer',
+  type: 'healer',
+  trigger: 'action',
+  requiresHealerKit: true,
+  healingRerollOnes: true,
+}
+
+const LUCKY_COMBAT: LuckyFeatCombat = {
+  id: 'lucky',
+  type: 'lucky',
+  trigger: 'on_attack_roll',
+  luckPointsEqualProficiency: true,
+}
+
+const SAVAGE_ATTACKER_COMBAT: SavageAttackerFeatCombat = {
+  id: 'savage-attacker',
+  type: 'savage_attacker',
+  trigger: 'on_damage_roll',
+  usesPerTurn: 1,
+}
+
+const TAVERN_BRAWLER_COMBAT: TavernBrawlerFeatCombat = {
+  id: 'tavern-brawler',
+  type: 'tavern_brawler',
+  trigger: 'passive',
+  enhancedUnarmedDie: '1d4',
+  rerollOnes: true,
+  pushDistance: 5,
+  pushOncePerTurn: true,
+}
+
+export const ORIGIN_FEAT_COMBAT: Record<OriginFeatId, OriginFeatCombat | null> = {
+  'alert': ALERT_COMBAT,
+  'crafter': null,           // No combat relevance
+  'healer': HEALER_COMBAT,
+  'lucky': LUCKY_COMBAT,
+  'magic-initiate': null,    // Handled separately via spell system
+  'musician': null,          // No combat relevance
+  'savage-attacker': SAVAGE_ATTACKER_COMBAT,
+  'skilled': null,           // No combat relevance
+  'tavern-brawler': TAVERN_BRAWLER_COMBAT,
+  'tough': null,             // HP bonus applied at character creation
+}
+
+export function getOriginFeatCombatData(id: OriginFeatId): OriginFeatCombat | null {
+  return ORIGIN_FEAT_COMBAT[id] ?? null
+}
+
+export function hasCombatRelevantFeat(originFeats: OriginFeatId[]): boolean {
+  return originFeats.some(id => ORIGIN_FEAT_COMBAT[id] !== null)
+}

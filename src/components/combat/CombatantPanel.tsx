@@ -1,13 +1,25 @@
+import { useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { useCombatStore, getCurrentCombatant } from '@/stores/combatStore'
 import { getCombatantTokenImage } from '@/lib/tokenImages'
-import { getMaxAttacksPerAction } from '@/engine/classAbilities'
+import { getMaxAttacksPerAction, getSecondWindMaxUses, getIndomitableMaxUses, getIndomitableFeature } from '@/engine/classAbilities'
 import { canAttackTarget } from '@/engine/combat'
-import type { Character, Monster, Combatant } from '@/types'
+import { hasCombatSuperiority, getMaxSuperiorityDice, getSuperiorityDieSize, getManeuverSaveDC } from '@/engine/maneuvers'
+import { getManeuverById } from '@/data/maneuvers'
+import type { Character, Monster, Combatant, FightingStyle } from '@/types'
+import type { Maneuver } from '@/types/maneuver'
 import { getAbilityModifier } from '@/types'
-import { Sword, Crosshair, Shield, Footprints, Zap, type LucideIcon } from 'lucide-react'
+import { Sword, Crosshair, Shield, Footprints, Zap, Swords, Target, X, type LucideIcon } from 'lucide-react'
+
+// ============================================
+// Selected Feature Types
+// ============================================
+
+type SelectedFeature =
+  | { type: 'fighting_style'; style: FightingStyle }
+  | { type: 'maneuver'; maneuver: Maneuver }
 
 function StatBlock({ label, value, subtext, icon: Icon }: { label: string; value: string | number; subtext?: string; icon?: LucideIcon }) {
   return (
@@ -35,6 +47,238 @@ function AbilityScoreDisplay({ name, score }: { name: string; score: number }) {
   )
 }
 
+// Fighting style display names and descriptions
+const FIGHTING_STYLE_INFO: Record<FightingStyle, { name: string; description: string }> = {
+  archery: {
+    name: 'Archery',
+    description: 'You gain a +2 bonus to attack rolls you make with ranged weapons.',
+  },
+  defense: {
+    name: 'Defense',
+    description: 'While you are wearing armor, you gain a +1 bonus to AC.',
+  },
+  dueling: {
+    name: 'Dueling',
+    description: 'When you are wielding a melee weapon in one hand and no other weapons, you gain a +2 bonus to damage rolls with that weapon.',
+  },
+  great_weapon: {
+    name: 'Great Weapon Fighting',
+    description: 'When you roll a 1 or 2 on a damage die for an attack you make with a melee weapon that you are wielding with two hands, you can reroll the die and must use the new roll.',
+  },
+  protection: {
+    name: 'Protection',
+    description: 'When a creature you can see attacks a target other than you that is within 5 feet of you, you can use your reaction to impose disadvantage on the attack roll. You must be wielding a shield.',
+  },
+  two_weapon: {
+    name: 'Two-Weapon Fighting',
+    description: 'When you engage in two-weapon fighting, you can add your ability modifier to the damage of the second attack.',
+  },
+}
+
+interface ClassFeaturesSectionProps {
+  character: Character
+  selectedFeature: SelectedFeature | null
+  onSelectFeature: (feature: SelectedFeature | null) => void
+}
+
+function ClassFeaturesSection({ character, selectedFeature, onSelectFeature }: ClassFeaturesSectionProps) {
+  const fightingStyles = character.fightingStyles ?? []
+  const knownManeuverIds = character.knownManeuverIds ?? []
+
+  // Nothing to show
+  if (fightingStyles.length === 0 && knownManeuverIds.length === 0) {
+    return null
+  }
+
+  const isStyleSelected = (style: FightingStyle) =>
+    selectedFeature?.type === 'fighting_style' && selectedFeature.style === style
+
+  const isManeuverSelected = (id: string) =>
+    selectedFeature?.type === 'maneuver' && selectedFeature.maneuver.id === id
+
+  return (
+    <div>
+      <div className="text-xs text-muted-foreground mb-1">Class Features</div>
+      <div className="space-y-2">
+        {/* Fighting Styles */}
+        {fightingStyles.length > 0 && (
+          <div className="flex flex-wrap gap-1">
+            {fightingStyles.map(style => (
+              <button
+                key={style}
+                onClick={() => onSelectFeature(isStyleSelected(style) ? null : { type: 'fighting_style', style })}
+                className={cn(
+                  'text-xs px-2 py-0.5 rounded flex items-center gap-1 transition-all',
+                  isStyleSelected(style)
+                    ? 'bg-orange-500 text-white ring-2 ring-orange-400'
+                    : 'bg-orange-900/50 text-orange-200 hover:bg-orange-800/50'
+                )}
+              >
+                <Swords className="w-3 h-3" />
+                {FIGHTING_STYLE_INFO[style].name}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Battle Master Maneuvers */}
+        {knownManeuverIds.length > 0 && (
+          <div>
+            <div className="text-xs text-muted-foreground mb-1">Maneuvers</div>
+            <div className="flex flex-wrap gap-1">
+              {knownManeuverIds.map(id => {
+                const maneuver = getManeuverById(id)
+                if (!maneuver) return null
+                return (
+                  <button
+                    key={id}
+                    onClick={() => onSelectFeature(isManeuverSelected(id) ? null : { type: 'maneuver', maneuver })}
+                    className={cn(
+                      'text-xs px-2 py-0.5 rounded flex items-center gap-1 transition-all',
+                      isManeuverSelected(id)
+                        ? 'bg-amber-500 text-white ring-2 ring-amber-400'
+                        : 'bg-amber-900/50 text-amber-200 hover:bg-amber-800/50'
+                    )}
+                  >
+                    <Target className="w-3 h-3" />
+                    {maneuver.name}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ============================================
+// Feature Detail Card
+// ============================================
+
+function getTriggerLabel(trigger: Maneuver['trigger']): string {
+  switch (trigger) {
+    case 'on_hit': return 'On Hit'
+    case 'pre_attack': return 'Before Attack Roll'
+    case 'bonus_action': return 'Bonus Action'
+    case 'reaction': return 'Reaction'
+    default: return trigger
+  }
+}
+
+function getTriggerColor(trigger: Maneuver['trigger']): string {
+  switch (trigger) {
+    case 'on_hit': return 'bg-red-500/20 text-red-300 border-red-500/50'
+    case 'pre_attack': return 'bg-yellow-500/20 text-yellow-300 border-yellow-500/50'
+    case 'bonus_action': return 'bg-green-500/20 text-green-300 border-green-500/50'
+    case 'reaction': return 'bg-blue-500/20 text-blue-300 border-blue-500/50'
+    default: return 'bg-slate-500/20 text-slate-300 border-slate-500/50'
+  }
+}
+
+interface FeatureDetailCardProps {
+  feature: SelectedFeature
+  combatant: Combatant
+  onClose: () => void
+}
+
+function FeatureDetailCard({ feature, combatant, onClose }: FeatureDetailCardProps) {
+  if (feature.type === 'fighting_style') {
+    const info = FIGHTING_STYLE_INFO[feature.style]
+    return (
+      <Card className="border-orange-500/50">
+        <CardHeader className="pb-2">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <Swords className="w-4 h-4 text-orange-400" />
+              {info.name}
+            </CardTitle>
+            <button
+              onClick={onClose}
+              className="p-1 hover:bg-slate-700 rounded transition-colors"
+            >
+              <X className="w-4 h-4 text-muted-foreground" />
+            </button>
+          </div>
+          <span className="text-xs bg-orange-500/20 text-orange-300 border border-orange-500/50 px-2 py-0.5 rounded w-fit">
+            Fighting Style
+          </span>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-muted-foreground leading-relaxed">
+            {info.description}
+          </p>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  // Maneuver detail
+  const { maneuver } = feature
+  const saveDC = getManeuverSaveDC(combatant)
+  const dieSize = getSuperiorityDieSize(combatant)
+
+  return (
+    <Card className="border-amber-500/50">
+      <CardHeader className="pb-2">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-sm flex items-center gap-2">
+            <Target className="w-4 h-4 text-amber-400" />
+            {maneuver.name}
+          </CardTitle>
+          <button
+            onClick={onClose}
+            className="p-1 hover:bg-slate-700 rounded transition-colors"
+          >
+            <X className="w-4 h-4 text-muted-foreground" />
+          </button>
+        </div>
+        <div className="flex flex-wrap gap-1">
+          <span className={cn('text-xs border px-2 py-0.5 rounded', getTriggerColor(maneuver.trigger))}>
+            {getTriggerLabel(maneuver.trigger)}
+          </span>
+          {maneuver.addsDamageDie && (
+            <span className="text-xs bg-rose-500/20 text-rose-300 border border-rose-500/50 px-2 py-0.5 rounded">
+              +1d{dieSize} damage
+            </span>
+          )}
+          {maneuver.addsToAttackRoll && (
+            <span className="text-xs bg-emerald-500/20 text-emerald-300 border border-emerald-500/50 px-2 py-0.5 rounded">
+              +1d{dieSize} to hit
+            </span>
+          )}
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <p className="text-sm text-muted-foreground leading-relaxed">
+          {maneuver.description}
+        </p>
+
+        {/* Saving Throw Info */}
+        {maneuver.savingThrow && (
+          <div className="bg-slate-800/50 rounded p-2">
+            <div className="text-xs text-muted-foreground mb-1">Saving Throw</div>
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-medium text-primary">
+                DC {saveDC} {maneuver.savingThrow.ability.toUpperCase()}
+              </span>
+              <span className="text-xs text-muted-foreground">
+                — {maneuver.savingThrow.effect}
+              </span>
+            </div>
+          </div>
+        )}
+
+        {/* Cost */}
+        <div className="text-xs text-amber-400 flex items-center gap-1">
+          <span className="font-medium">Cost:</span> 1 Superiority Die (d{dieSize})
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
 function ConditionBadge({ condition }: { condition: string }) {
   const colors: Record<string, string> = {
     unconscious: 'bg-rose-900 text-rose-200',
@@ -55,6 +299,118 @@ function ConditionBadge({ condition }: { condition: string }) {
     <span className={cn('text-xs px-2 py-0.5 rounded-full', colors[condition] || 'bg-slate-700 text-slate-200')}>
       {condition}
     </span>
+  )
+}
+
+// ============================================
+// Resource Tracker Component
+// ============================================
+
+interface ResourceDisplayProps {
+  name: string
+  current: number
+  max: number
+  color: string
+  dieSize?: number
+}
+
+function ResourceDisplay({ name, current, max, color, dieSize }: ResourceDisplayProps) {
+  return (
+    <div className="flex items-center justify-between py-1">
+      <span className="text-xs text-muted-foreground">
+        {name}
+        {dieSize && <span className="text-xs ml-1">(d{dieSize})</span>}
+      </span>
+      <div className="flex items-center gap-1">
+        {Array.from({ length: max }).map((_, i) => (
+          <div
+            key={i}
+            className={cn(
+              'w-3 h-3 rounded-full border-2 transition-all',
+              i < current
+                ? `${color} border-current`
+                : 'bg-slate-800 border-slate-600'
+            )}
+          />
+        ))}
+        <span className={cn('text-xs ml-1 font-medium', current > 0 ? color.replace('bg-', 'text-') : 'text-slate-500')}>
+          {current}/{max}
+        </span>
+      </div>
+    </div>
+  )
+}
+
+interface ClassResourcesProps {
+  combatant: Combatant
+  character: Character
+}
+
+function ClassResources({ combatant, character }: ClassResourcesProps) {
+  const resources: ResourceDisplayProps[] = []
+
+  // Check for Battle Master Superiority Dice
+  if (hasCombatSuperiority(combatant)) {
+    const maxDice = getMaxSuperiorityDice(combatant)
+    const dieSize = getSuperiorityDieSize(combatant)
+    resources.push({
+      name: 'Superiority Dice',
+      current: combatant.superiorityDiceRemaining,
+      max: maxDice,
+      color: 'bg-amber-500',
+      dieSize,
+    })
+  }
+
+  // Check for Indomitable (Fighter level 9+)
+  if (getIndomitableFeature(combatant)) {
+    const maxUses = getIndomitableMaxUses(combatant)
+    const currentUses = combatant.classFeatureUses['indomitable'] ?? maxUses
+    resources.push({
+      name: 'Indomitable',
+      current: currentUses,
+      max: maxUses,
+      color: 'bg-emerald-500',
+    })
+  }
+
+  // Check for Second Wind (Fighter)
+  if (character.class.id === 'fighter') {
+    const maxUses = getSecondWindMaxUses(combatant)
+    if (maxUses > 0) {
+      const currentUses = combatant.classFeatureUses['second-wind'] ?? maxUses
+      resources.push({
+        name: 'Second Wind',
+        current: currentUses,
+        max: maxUses,
+        color: 'bg-rose-500',
+      })
+    }
+  }
+
+  // Check for Action Surge (Fighter level 2+)
+  if (character.class.id === 'fighter' && character.level >= 2) {
+    const maxUses = 1 // Action Surge is 1/rest
+    const currentUses = combatant.classFeatureUses['action-surge'] ?? maxUses
+    resources.push({
+      name: 'Action Surge',
+      current: currentUses,
+      max: maxUses,
+      color: 'bg-violet-500',
+    })
+  }
+
+  if (resources.length === 0) return null
+
+  return (
+    <div className="bg-slate-800/50 rounded-lg p-2">
+      <div className="text-xs text-muted-foreground mb-1 font-medium">Class Resources</div>
+      <div className="space-y-0.5">
+        {resources.map((resource) => (
+          <ResourceDisplay key={resource.name} {...resource} />
+        ))}
+      </div>
+    </div>
   )
 }
 
@@ -203,6 +559,7 @@ export function CombatantPanel() {
   const state = useCombatStore()
   const { selectedCombatantId, combatants, phase } = state
   const currentCombatant = getCurrentCombatant(state)
+  const [selectedFeature, setSelectedFeature] = useState<SelectedFeature | null>(null)
 
   // Show current combatant if none selected, otherwise show selected
   const displayCombatant = selectedCombatantId
@@ -211,16 +568,18 @@ export function CombatantPanel() {
 
   if (!displayCombatant) {
     return (
-      <Card>
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm">Combatant Info</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p className="text-sm text-muted-foreground text-center py-4">
-            {phase === 'setup' ? 'Select a combatant to view details' : 'No combatant selected'}
-          </p>
-        </CardContent>
-      </Card>
+      <div className="space-y-4">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm">Combatant Info</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-muted-foreground text-center py-4">
+              {phase === 'setup' ? 'Select a combatant to view details' : 'No combatant selected'}
+            </p>
+          </CardContent>
+        </Card>
+      </div>
     )
   }
 
@@ -238,7 +597,8 @@ export function CombatantPanel() {
   const tokenImage = getCombatantTokenImage(displayCombatant.type, displayCombatant.data)
 
   return (
-    <Card className={cn(isCurrentTurn && phase === 'combat' && 'border-amber-500/50')}>
+    <div className="space-y-4">
+      <Card className={cn(isCurrentTurn && phase === 'combat' && 'border-amber-500/50')}>
       <CardHeader className="pb-2">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -302,6 +662,9 @@ export function CombatantPanel() {
             </div>
           )}
         </div>
+
+        {/* Class Resources (Superiority Dice, Indomitable, etc.) */}
+        {character && <ClassResources combatant={displayCombatant} character={character} />}
 
         {/* Core Stats */}
         <div className="grid grid-cols-3 gap-2 py-2">
@@ -393,6 +756,13 @@ export function CombatantPanel() {
                 </div>
               </div>
             )}
+
+            {/* Class Features: Fighting Styles, Maneuvers, etc. */}
+            <ClassFeaturesSection
+              character={character}
+              selectedFeature={selectedFeature}
+              onSelectFeature={setSelectedFeature}
+            />
           </>
         )}
 
@@ -485,5 +855,15 @@ export function CombatantPanel() {
           )}
       </CardContent>
     </Card>
+
+      {/* Feature Detail Card - shown when a feature is selected */}
+      {selectedFeature && isCharacter && (
+        <FeatureDetailCard
+          feature={selectedFeature}
+          combatant={displayCombatant}
+          onClose={() => setSelectedFeature(null)}
+        />
+      )}
+    </div>
   )
 }

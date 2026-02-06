@@ -128,6 +128,14 @@ export const classes: CharacterClass[] = [
         attackCount: 2,
       },
       {
+        id: 'tactical-shift',
+        type: 'generic',
+        name: 'Tactical Shift',
+        level: 5,
+        description: 'Whenever you activate your Second Wind with a Bonus Action, you can move up to half your Speed without provoking Opportunity Attacks.',
+        trigger: 'passive',
+      },
+      {
         id: 'asi-fighter-6',
         type: 'generic',
         name: 'Ability Score Improvement',
@@ -145,11 +153,13 @@ export const classes: CharacterClass[] = [
       },
       {
         id: 'indomitable',
-        type: 'generic',
+        type: 'indomitable',
         name: 'Indomitable',
         level: 9,
-        description: 'You can reroll a saving throw that you fail. If you do so, you must use the new roll.',
-        trigger: 'passive',
+        description: 'If you fail a saving throw, you can reroll it with a bonus equal to your Fighter level. You must use the new roll.',
+        trigger: 'reaction',
+        maxUses: 1,
+        maxUsesAtLevels: { 9: 1, 13: 2, 17: 3 },
       },
       {
         id: 'extra-attack-2',
