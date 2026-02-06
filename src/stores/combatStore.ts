@@ -68,6 +68,7 @@ import {
   getManeuverSaveDC,
   prepareRiposte,
   applyParry,
+  applyPrecisionAttack,
 } from '@/engine/maneuvers'
 import { getManeuverById } from '@/data/maneuvers'
 import type { TriggerOption, PendingTrigger } from '@/types'
@@ -189,7 +190,7 @@ interface CombatStore extends CombatState {
   // Combat actions
   dealDamage: (targetId: string, amount: number, source?: string) => void
   healDamage: (targetId: string, amount: number, source?: string) => void
-  performAttack: (attackerId: string, targetId: string, weapon?: Weapon, monsterAction?: MonsterAction, rangedWeapon?: Weapon, masteryOverride?: WeaponMastery) => AttackResult | null
+  performAttack: (attackerId: string, targetId: string, weapon?: Weapon, monsterAction?: MonsterAction, rangedWeapon?: Weapon, masteryOverride?: WeaponMastery, attackBonus?: number, skipPreAttackCheck?: boolean) => AttackResult | null
   performAttackReplacement: (attackerId: string, replacementId: string, targetPosition: Position) => boolean
   performOpportunityAttack: (attackerId: string, targetId: string, attackReplacementId?: string) => AttackResult | null
   useDash: () => void
@@ -359,6 +360,7 @@ const initialState: CombatState = {
   damagePopups: [],
   pendingReaction: undefined,
   pendingIndomitable: undefined,
+  pendingAttack: undefined,
   movementAnimation: undefined,
   pendingMovement: undefined,
 }
@@ -1063,14 +1065,65 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
   },
 
   resolveTrigger: (optionId: string | null) => {
-    const { pendingTrigger, combatants, grid, round } = get()
+    const { pendingTrigger, pendingAttack, combatants, grid, round } = get()
     if (!pendingTrigger) return
 
     const reactor = combatants.find(c => c.id === pendingTrigger.reactorId)
     const target = combatants.find(c => c.id === pendingTrigger.targetId)
     if (!reactor || !target) {
       // Clear trigger and return
-      set({ pendingTrigger: undefined })
+      set({ pendingTrigger: undefined, pendingAttack: undefined })
+      return
+    }
+
+    // Handle pre_attack maneuvers (Precision Attack)
+    if (pendingTrigger.type === 'pre_attack' && pendingAttack) {
+      let attackBonus = 0
+
+      if (optionId === 'precision-attack') {
+        // Apply Precision Attack
+        const maneuverResult = applyPrecisionAttack(reactor)
+        attackBonus = maneuverResult.attackBonus || 0
+
+        // Log the maneuver usage
+        get().addLogEntry({
+          type: 'other',
+          actorId: reactor.id,
+          actorName: reactor.name,
+          message: maneuverResult.message,
+          details: `Superiority die: d${maneuverResult.superiorityDieSize}`,
+        })
+
+        // Decrement superiority dice and mark maneuver as used this attack
+        set((state) => ({
+          combatants: state.combatants.map(c =>
+            c.id === reactor.id
+              ? {
+                  ...c,
+                  superiorityDiceRemaining: Math.max(0, c.superiorityDiceRemaining - 1),
+                  usedManeuverThisAttack: true,
+                }
+              : c
+          ),
+        }))
+      }
+
+      // Clear pending states
+      set({ pendingTrigger: undefined, pendingAttack: undefined })
+
+      // Resume the attack with the bonus (or without if declined)
+      // Call performAttack with skipPreAttackCheck=true to avoid infinite loop
+      get().performAttack(
+        pendingAttack.attackerId,
+        pendingAttack.targetId,
+        pendingAttack.weapon,
+        pendingAttack.monsterAction,
+        pendingAttack.rangedWeapon,
+        pendingAttack.masteryOverride,
+        attackBonus,  // Pass the precision attack bonus
+        true         // Skip pre-attack check to avoid re-prompting
+      )
+
       return
     }
 
@@ -1451,14 +1504,20 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
   },
 
   skipTrigger: () => {
-    const { pendingTrigger, combatants, grid, round } = get()
+    const { pendingTrigger, pendingAttack, combatants, grid, round } = get()
     if (!pendingTrigger) return
+
+    // For pre_attack triggers, just call resolveTrigger with null (no maneuver)
+    if (pendingTrigger.type === 'pre_attack' && pendingAttack) {
+      get().resolveTrigger(null)
+      return
+    }
 
     const reactor = combatants.find(c => c.id === pendingTrigger.reactorId)
     const target = combatants.find(c => c.id === pendingTrigger.targetId)
 
     if (!target) {
-      set({ pendingTrigger: undefined })
+      set({ pendingTrigger: undefined, pendingAttack: undefined })
       return
     }
 
@@ -2102,7 +2161,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
     })
   },
 
-  performAttack: (attackerId, targetId, weapon, monsterAction, rangedWeapon, masteryOverride) => {
+  performAttack: (attackerId, targetId, weapon, monsterAction, rangedWeapon, masteryOverride, attackBonus, skipPreAttackCheck) => {
     const { combatants, grid } = get()
     const attacker = combatants.find((c) => c.id === attackerId)
     const target = combatants.find((c) => c.id === targetId)
@@ -2145,6 +2204,59 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
       return null
     }
 
+    // Check for pre-attack maneuvers (Precision Attack) - only if not skipping
+    if (!skipPreAttackCheck) {
+      const preAttackManeuvers = getAvailableManeuvers(attacker, 'pre_attack')
+      if (
+        preAttackManeuvers.length > 0 &&
+        attacker.type === 'character' &&
+        attacker.superiorityDiceRemaining > 0 &&
+        !attacker.usedManeuverThisAttack
+      ) {
+        const dieSize = getSuperiorityDieSize(attacker)
+        const saveDC = getManeuverSaveDC(attacker)
+
+        const triggerOptions: TriggerOption[] = preAttackManeuvers.map(m => ({
+          id: m.id,
+          type: 'maneuver' as const,
+          name: m.name,
+          description: m.description,
+          cost: `1 Superiority Die (d${dieSize})`,
+          effect: m.addsToAttackRoll
+            ? `+1d${dieSize} to attack roll`
+            : m.addsDamageDie
+              ? `+1d${dieSize} damage`
+              : m.savingThrow
+                ? `${m.savingThrow.ability.toUpperCase()} save (DC ${saveDC}) or ${m.savingThrow.effect}`
+                : 'Unknown effect',
+        }))
+
+        // Store pending attack and trigger
+        const pendingTrigger: PendingTrigger = {
+          type: 'pre_attack',
+          triggererId: attackerId,
+          reactorId: attackerId,  // Attacker chooses their own maneuver
+          targetId,               // Target of the attack
+          options: triggerOptions,
+          context: {},            // Pre-attack doesn't have damage context yet
+        }
+
+        set({
+          pendingTrigger,
+          pendingAttack: {
+            attackerId,
+            targetId,
+            weapon: selectedWeapon,
+            monsterAction,
+            rangedWeapon,
+            masteryOverride,
+          },
+        })
+
+        return null  // Pause for player decision
+      }
+    }
+
     // Resolve the attack (pass all combatants for Sneak Attack check)
     const result = resolveAttack({
       attacker,
@@ -2154,6 +2266,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
       allCombatants: combatants,
       usedSneakAttackThisTurn: attacker.usedSneakAttackThisTurn,
       masteryOverride,
+      attackBonus,
     })
 
     // Log the attack

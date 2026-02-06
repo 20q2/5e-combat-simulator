@@ -1,7 +1,8 @@
 import { useCombatStore } from '@/stores/combatStore'
 import { cn } from '@/lib/utils'
-import { Shield, X, RotateCcw } from 'lucide-react'
+import { Shield, X, RotateCcw, GripHorizontal } from 'lucide-react'
 import { getIndomitableUses, getIndomitableBonus } from '@/engine/classAbilities'
+import { useDraggable } from './useDraggable'
 
 export function IndomitablePrompt() {
   const {
@@ -10,6 +11,11 @@ export function IndomitablePrompt() {
     resolveIndomitable,
     skipIndomitable,
   } = useCombatStore()
+
+  // Drag functionality
+  const { isDragging, containerProps, dragHandleAttr } = useDraggable({
+    resetKey: pendingIndomitable?.combatantId,
+  })
 
   if (!pendingIndomitable) return null
 
@@ -26,9 +32,24 @@ export function IndomitablePrompt() {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none">
-      <div className="bg-slate-900 border-2 border-amber-500 rounded-xl shadow-2xl p-4 max-w-md w-full mx-4 animate-in fade-in zoom-in duration-200 pointer-events-auto">
+      <div
+        className={cn(
+          "bg-slate-900 border-2 border-amber-500 rounded-xl shadow-2xl p-4 max-w-md w-full mx-4 pointer-events-auto",
+          !isDragging && "animate-in fade-in zoom-in duration-200"
+        )}
+        {...containerProps}
+      >
+        {/* Drag Handle */}
+        <div
+          {...dragHandleAttr}
+          className="flex justify-center mb-2 cursor-grab active:cursor-grabbing"
+          title="Drag to move"
+        >
+          <GripHorizontal className="w-6 h-4 text-slate-500 hover:text-slate-400" />
+        </div>
+
         {/* Header */}
-        <div className="flex items-center gap-3 mb-4">
+        <div className="flex items-center gap-3 mb-4" {...dragHandleAttr}>
           <div className="w-10 h-10 rounded-full bg-amber-500/20 flex items-center justify-center">
             <Shield className="w-6 h-6 text-amber-400" />
           </div>

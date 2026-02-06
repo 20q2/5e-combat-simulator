@@ -749,6 +749,15 @@ export interface CombatState {
       effect?: string             // Description of effect on failed save
     }
   }
+  // Pending attack (for pre-attack maneuvers like Precision Attack)
+  pendingAttack?: {
+    attackerId: string
+    targetId: string
+    weapon?: Weapon
+    monsterAction?: MonsterAction
+    rangedWeapon?: Weapon
+    masteryOverride?: WeaponMastery
+  }
 }
 
 // ============================================

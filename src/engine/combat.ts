@@ -49,6 +49,7 @@ export interface MeleeAttackOptions {
   allCombatants?: Combatant[]                                // For Sneak Attack ally check
   usedSneakAttackThisTurn?: boolean                          // Track if sneak attack already used
   masteryOverride?: WeaponMastery                            // Tactical Master mastery override
+  attackBonus?: number                                       // Additional attack bonus (e.g., Precision Attack)
 }
 
 /**
@@ -195,7 +196,7 @@ export function getAttackAdvantage(
  * Resolve a melee or ranged attack
  */
 export function resolveAttack(options: MeleeAttackOptions): AttackResult {
-  const { attacker, target, weapon, monsterAction, advantage = 'normal', allCombatants = [], usedSneakAttackThisTurn = false } = options
+  const { attacker, target, weapon, monsterAction, advantage = 'normal', allCombatants = [], usedSneakAttackThisTurn = false, attackBonus: additionalAttackBonus = 0 } = options
 
   // Calculate attack bonus
   let attackBonus: number
@@ -211,6 +212,9 @@ export function resolveAttack(options: MeleeAttackOptions): AttackResult {
       attackBonus += getArcheryBonus(attacker)
     }
 
+    // Apply additional attack bonus (e.g., from Precision Attack)
+    attackBonus += additionalAttackBonus
+
     let damageBonus = getCharacterDamageBonus(character, weapon)
 
     // Apply Fighting Style: Dueling (+2 damage with one-handed melee weapon)
@@ -222,6 +226,7 @@ export function resolveAttack(options: MeleeAttackOptions): AttackResult {
     damageType = weapon.damageType
   } else if (attacker.type === 'monster' && monsterAction) {
     attackBonus = monsterAction.attackBonus ?? 0
+    attackBonus += additionalAttackBonus
     damageExpression = monsterAction.damage ?? '1d4'
     damageType = monsterAction.damageType ?? 'bludgeoning'
   } else {
@@ -229,7 +234,7 @@ export function resolveAttack(options: MeleeAttackOptions): AttackResult {
     const strMod = attacker.type === 'character'
       ? getAbilityModifier((attacker.data as Character).abilityScores.strength)
       : getAbilityModifier((attacker.data as Monster).abilityScores.strength)
-    attackBonus = strMod
+    attackBonus = strMod + additionalAttackBonus
 
     // Tavern Brawler feat: use 1d4+STR instead of 1+STR
     if (hasTavernBrawler(attacker)) {
