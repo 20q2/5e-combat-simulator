@@ -260,6 +260,12 @@ export function CharacterSheet() {
       magicInitiateChoices: magicInitiateChoices.length > 0 ? magicInitiateChoices : undefined,
       level: draft.level,
       abilityScores: finalAbilityScores,
+      // Store base scores and ASI choices for editing
+      baseAbilityScores: { ...draft.baseAbilityScores },
+      abilityBonusMode: draft.abilityBonusMode,
+      abilityBonusPlus2: draft.abilityBonusPlus2,
+      abilityBonusPlus1: draft.abilityBonusPlus1,
+      abilityBonusPlus1Trio: draft.abilityBonusPlus1Trio.length > 0 ? [...draft.abilityBonusPlus1Trio] : undefined,
       maxHp: hp,
       currentHp: hp,
       temporaryHp: 0,

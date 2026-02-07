@@ -224,8 +224,9 @@ function RaceCard({
     <button
       onClick={onSelect}
       className={cn(
-        'w-full text-left p-4 rounded-lg border-2 transition-all hover:border-primary/50',
-        selected ? 'border-primary bg-primary/5' : 'border-border'
+        'w-full text-left p-4 rounded-lg border-2 transition-all cursor-pointer',
+        'hover:border-primary/50 hover:bg-slate-800/60',
+        selected ? 'border-primary bg-primary/5' : 'border-border bg-slate-800/40'
       )}
     >
       <div>

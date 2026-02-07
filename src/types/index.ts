@@ -365,7 +365,7 @@ export interface Spell {
 
 // Import Background type for Character interface
 import type { Background, OriginFeatId } from '@/data'
-import type { MagicInitiateChoice } from '@/stores/characterStore'
+import type { MagicInitiateChoice, AbilityBonusMode } from '@/stores/characterStore'
 
 export interface Character {
   id: string
@@ -378,6 +378,12 @@ export interface Character {
   magicInitiateChoices?: MagicInitiateChoice[] // Spell choices for Magic Initiate feat(s)
   level: number
   abilityScores: AbilityScores
+  // For editing: store the base scores and ASI choices so we can reconstruct the draft
+  baseAbilityScores?: AbilityScores
+  abilityBonusMode?: AbilityBonusMode
+  abilityBonusPlus2?: AbilityName | null
+  abilityBonusPlus1?: AbilityName | null
+  abilityBonusPlus1Trio?: AbilityName[]
   maxHp: number
   currentHp: number
   temporaryHp: number

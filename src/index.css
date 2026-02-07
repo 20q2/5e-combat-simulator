@@ -4,7 +4,7 @@
   /* Dark mode colors as default */
   --color-background: hsl(222.2 84% 4.9%);
   --color-foreground: hsl(210 40% 98%);
-  --color-card: hsl(224 71% 8%);
+  --color-card: hsl(224 71% 4%);
   --color-card-foreground: hsl(210 40% 98%);
   --color-popover: hsl(224 71% 8%);
   --color-popover-foreground: hsl(210 40% 98%);
@@ -31,7 +31,7 @@
   /* Dark mode as default */
   --background: 222.2 84% 4.9%;
   --foreground: 210 40% 98%;
-  --card: 224 71% 8%;
+  --card: 224 71% 4%;
   --card-foreground: 210 40% 98%;
   --popover: 224 71% 8%;
   --popover-foreground: 210 40% 98%;

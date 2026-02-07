@@ -4,16 +4,18 @@ import { Button } from '@/components/ui/button'
 import { CharacterCreator } from '@/components/character/CharacterCreator'
 import { useCharacterStore } from '@/stores/characterStore'
 import type { Character } from '@/types'
-import { Swords, Trash2, Plus, Users, Heart, Shield, Footprints } from 'lucide-react'
+import { Swords, Trash2, Plus, Users, Heart, Shield, Footprints, Pencil } from 'lucide-react'
 
 function SavedCharacterCard({
   character,
   onDelete,
   onSelect,
+  onEdit,
 }: {
   character: Character
   onDelete: () => void
   onSelect: () => void
+  onEdit: () => void
 }) {
   return (
     <Card>
@@ -48,6 +50,10 @@ function SavedCharacterCard({
             <Swords className="w-4 h-4 mr-1" />
             Use in Combat
           </Button>
+          <Button size="sm" variant="outline" onClick={onEdit}>
+            <Pencil className="w-4 h-4 mr-1" />
+            Edit
+          </Button>
           <Button size="sm" variant="destructive" onClick={onDelete}>
             <Trash2 className="w-4 h-4 mr-1" />
             Delete
@@ -59,7 +65,7 @@ function SavedCharacterCard({
 }
 
 export function CharacterPage() {
-  const { savedCharacters, deleteCharacter, resetDraft } = useCharacterStore()
+  const { savedCharacters, deleteCharacter, resetDraft, loadCharacterForEditing } = useCharacterStore()
   const [showCreator, setShowCreator] = useState(savedCharacters.length === 0)
 
   const handleNewCharacter = () => {
@@ -71,6 +77,11 @@ export function CharacterPage() {
     // Store selected character ID for use in encounter/combat
     localStorage.setItem('selectedCharacterId', character.id)
     alert(`${character.name} selected for combat!`)
+  }
+
+  const handleEditCharacter = (character: Character) => {
+    loadCharacterForEditing(character.id)
+    setShowCreator(true)
   }
 
   if (showCreator) {
@@ -131,6 +142,7 @@ export function CharacterPage() {
               character={character}
               onDelete={() => deleteCharacter(character.id)}
               onSelect={() => handleSelectCharacter(character)}
+              onEdit={() => handleEditCharacter(character)}
             />
           ))}
         </div>

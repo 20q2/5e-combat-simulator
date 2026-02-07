@@ -560,16 +560,24 @@ export const useCharacterStore = create<CharacterState>()(
         const character = get().savedCharacters.find((c) => c.id === characterId)
         if (!character) return false
 
+        // Use stored base scores if available, otherwise fall back to final scores
+        // (for backwards compatibility with characters saved before this feature)
+        const baseScores = character.baseAbilityScores ?? character.abilityScores
+        const bonusMode = character.abilityBonusMode ?? 'standard'
+        const bonusPlus2 = character.abilityBonusPlus2 ?? null
+        const bonusPlus1 = character.abilityBonusPlus1 ?? null
+        const bonusPlus1Trio = character.abilityBonusPlus1Trio ?? []
+
         // Map Character back to CharacterDraft
         set({
           draft: {
             name: character.name,
             abilityScoreMethod: 'point-buy', // Can't know original method, default to point-buy
-            baseAbilityScores: character.abilityScores, // Use final scores as base
-            abilityBonusMode: 'standard',
-            abilityBonusPlus2: null, // Already applied to abilityScores
-            abilityBonusPlus1: null,
-            abilityBonusPlus1Trio: [],
+            baseAbilityScores: { ...baseScores },
+            abilityBonusMode: bonusMode,
+            abilityBonusPlus2: bonusPlus2,
+            abilityBonusPlus1: bonusPlus1,
+            abilityBonusPlus1Trio: [...bonusPlus1Trio],
             raceId: character.race.id,
             dragonbornAncestry: null, // These would need to be stored on Character to restore
             elfLineage: null,

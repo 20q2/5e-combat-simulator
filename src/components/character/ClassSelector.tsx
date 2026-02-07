@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils'
 import { getAllClasses, getClassById, getClassFeaturesByLevel, getSubclassFeaturesByLevel } from '@/data'
 import { useCharacterStore } from '@/stores/characterStore'
 import type { CharacterClass, ClassFeature } from '@/types'
-import { Minus, Plus, Crown, TrendingUp, Sparkles, Shield, BookOpen, Info, Wand2 } from 'lucide-react'
+import { Minus, Plus, Crown, TrendingUp, Sparkles, Shield, Info, Wand2 } from 'lucide-react'
 
 const ABILITY_LABELS: Record<string, string> = {
   strength: 'STR',
@@ -33,8 +33,9 @@ function ClassCard({
     <button
       onClick={onSelect}
       className={cn(
-        'w-full text-left p-4 rounded-lg border-2 transition-all hover:border-primary/50',
-        selected ? 'border-primary bg-primary/5' : 'border-border'
+        'w-full text-left p-4 rounded-lg border-2 transition-all cursor-pointer',
+        'hover:border-primary/50 hover:bg-slate-800/60',
+        selected ? 'border-primary bg-primary/5' : 'border-border bg-slate-800/40'
       )}
     >
       <div className="flex justify-between items-start">
@@ -166,7 +167,7 @@ function ClassDetails({ characterClass, level, subclassId }: {
 }
 
 export function ClassSelector() {
-  const { draft, setClass, setSubclass, setLevel } = useCharacterStore()
+  const { draft, setClass, setLevel } = useCharacterStore()
   const classes = getAllClasses()
   const selectedClass = draft.classId ? getClassById(draft.classId) : null
 
@@ -296,60 +297,6 @@ export function ClassSelector() {
         )}
       </div>
 
-      {/* Subclass Selector - show when level >= 3 and class has subclasses */}
-      {draft.level >= 3 && selectedClass && selectedClass.subclasses.length > 0 && (
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-lg flex items-center gap-2">
-              <BookOpen className="w-5 h-5 text-violet-400" />
-              {selectedClass.name} Subclass
-            </CardTitle>
-            <CardDescription>
-              Choose your specialization within the {selectedClass.name} class
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-              {selectedClass.subclasses.map((subclass) => {
-                const featuresAtLevel = getSubclassFeaturesByLevel(selectedClass, subclass.id, draft.level)
-                return (
-                  <button
-                    key={subclass.id}
-                    onClick={() => setSubclass(subclass.id)}
-                    className={cn(
-                      'p-4 rounded-lg border-2 transition-all text-left hover:border-primary/50',
-                      draft.subclassId === subclass.id
-                        ? 'border-primary bg-primary/10'
-                        : 'border-border'
-                    )}
-                  >
-                    <div className="font-semibold mb-2">{subclass.name}</div>
-                    {featuresAtLevel.length > 0 ? (
-                      <ul className="space-y-1">
-                        {featuresAtLevel.slice(0, 4).map((feature) => (
-                          <li key={feature.name} className="text-xs text-muted-foreground flex items-start gap-1">
-                            <span className="text-primary">•</span>
-                            <span className="line-clamp-1">{feature.name}</span>
-                          </li>
-                        ))}
-                        {featuresAtLevel.length > 4 && (
-                          <li className="text-xs text-muted-foreground italic">
-                            +{featuresAtLevel.length - 4} more features
-                          </li>
-                        )}
-                      </ul>
-                    ) : (
-                      <div className="text-xs text-muted-foreground italic">
-                        Features unlock at higher levels
-                      </div>
-                    )}
-                  </button>
-                )
-              })}
-            </div>
-          </CardContent>
-        </Card>
-      )}
     </div>
   )
 }

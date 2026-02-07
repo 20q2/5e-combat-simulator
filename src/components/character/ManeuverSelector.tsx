@@ -47,7 +47,7 @@ function getTriggerLabel(trigger: Maneuver['trigger']): string {
 }
 
 function getTriggerColorClass(trigger: Maneuver['trigger'], isSelected: boolean): string {
-  if (!isSelected) return 'border-border hover:border-primary/50'
+  if (!isSelected) return 'border-border bg-slate-800/40 hover:border-primary/50 hover:bg-slate-800/60'
 
   switch (trigger) {
     case 'on_hit':
@@ -77,6 +77,7 @@ function ManeuverCard({ maneuver, isSelected, isDisabled, onToggle }: ManeuverCa
       disabled={isDisabled}
       className={cn(
         'w-full text-left p-3 rounded-lg border-2 transition-all',
+        !isDisabled && 'cursor-pointer',
         getTriggerColorClass(maneuver.trigger, isSelected),
         isDisabled && !isSelected && 'opacity-50 cursor-not-allowed'
       )}
@@ -181,7 +182,7 @@ export function ManeuverSelector() {
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <div className="space-y-4">
+        <div className="space-y-8">
           {/* On-Hit Maneuvers */}
           {maneuversByTrigger.on_hit.length > 0 && (
             <div>

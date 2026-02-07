@@ -5,6 +5,7 @@ import { AbilityScoreSelector } from './AbilityScoreSelector'
 import { RaceSelector } from './RaceSelector'
 import { BackgroundSelector } from './BackgroundSelector'
 import { ClassSelector } from './ClassSelector'
+import { SubclassSelector } from './SubclassSelector'
 import { SpellSelector } from './SpellSelector'
 import { EquipmentSelector } from './EquipmentSelector'
 import { CharacterSheet } from './CharacterSheet'
@@ -21,6 +22,7 @@ import {
   Check,
   ChevronLeft,
   ChevronRight,
+  Zap,
   type LucideIcon,
 } from 'lucide-react'
 
@@ -29,9 +31,10 @@ const STEPS: { id: number; label: string; component: React.ComponentType; icon: 
   { id: 1, label: 'Race', component: RaceSelector, icon: Users },
   { id: 2, label: 'Background', component: BackgroundSelector, icon: BookOpen },
   { id: 3, label: 'Class', component: ClassSelector, icon: Crown },
-  { id: 4, label: 'Spells', component: SpellSelector, icon: Sparkles },
-  { id: 5, label: 'Equipment', component: EquipmentSelector, icon: Shield },
-  { id: 6, label: 'Review', component: CharacterSheet, icon: ScrollText },
+  { id: 4, label: 'Class Options', component: SubclassSelector, icon: Zap },
+  { id: 5, label: 'Spells', component: SpellSelector, icon: Sparkles },
+  { id: 6, label: 'Equipment', component: EquipmentSelector, icon: Shield },
+  { id: 7, label: 'Review', component: CharacterSheet, icon: ScrollText },
 ]
 
 function StepIndicator({
@@ -100,8 +103,31 @@ export function CharacterCreator() {
   const selectedClass = draft.classId ? getClassById(draft.classId) : null
   const hasSpellcasting = selectedClass?.spellcasting !== undefined
 
-  // Filter steps - skip spells if class doesn't have spellcasting
+  // Check if character has selectable class/subclass options
+  const hasSubclassFeatures = selectedClass
+    ? (() => {
+        // Show if needs subclass selection (level 3+)
+        if (draft.level >= 3 && selectedClass.subclasses.length > 0) return true
+
+        const allFeatures = [
+          ...selectedClass.features,
+          ...(selectedClass.subclasses.find(s => s.id === draft.subclassId)?.features ?? []),
+        ]
+
+        // Check for Fighting Style, Maneuvers, or Weapon Mastery
+        return allFeatures.some(f => {
+          if (f.level > draft.level) return false
+          if (f.type === 'fighting_style' && f.availableStyles && f.availableStyles.length > 0) return true
+          if (f.type === 'combat_superiority') return true
+          if (f.type === 'weapon_mastery') return true
+          return false
+        })
+      })()
+    : false
+
+  // Filter steps - skip class options/spells if not applicable
   const visibleSteps = STEPS.filter((step) => {
+    if (step.label === 'Class Options' && !hasSubclassFeatures) return false
     if (step.label === 'Spells' && !hasSpellcasting) return false
     return true
   })
@@ -146,6 +172,45 @@ export function CharacterCreator() {
         return !!draft.backgroundId && !!draft.backgroundOriginFeat
       case 'Class':
         return !!draft.classId
+      case 'Class Options': {
+        if (!selectedClass) return true
+
+        // Check Subclass requirement (level 3+)
+        if (draft.level >= 3 && selectedClass.subclasses.length > 0 && !draft.subclassId) {
+          return false
+        }
+
+        const allFeatures = [
+          ...selectedClass.features,
+          ...(selectedClass.subclasses.find(s => s.id === draft.subclassId)?.features ?? []),
+        ]
+
+        // Check Fighting Style requirement
+        const fightingStyleFeature = allFeatures.find(f =>
+          f.type === 'fighting_style' && f.level <= draft.level && f.availableStyles && f.availableStyles.length > 0
+        )
+        if (fightingStyleFeature && !draft.fightingStyle) return false
+
+        // Check Maneuvers requirement
+        const combatSuperiorityFeature = allFeatures.find(f =>
+          f.type === 'combat_superiority' && f.level <= draft.level
+        )
+        if (combatSuperiorityFeature) {
+          // Get required maneuver count
+          let maneuversRequired = (combatSuperiorityFeature as any).maneuversKnown || 0
+          const scalingLevels = (combatSuperiorityFeature as any).maneuversKnownAtLevels
+          if (scalingLevels) {
+            for (const [lvl, count] of Object.entries(scalingLevels)) {
+              if (draft.level >= parseInt(lvl)) {
+                maneuversRequired = count as number
+              }
+            }
+          }
+          if (draft.selectedManeuverIds.length < maneuversRequired) return false
+        }
+
+        return true
+      }
       default:
         return true
     }

@@ -54,7 +54,7 @@ const FIGHTING_STYLE_INFO: Record<FightingStyle, FightingStyleInfo> = {
 }
 
 function getStyleColorClass(style: FightingStyle, isSelected: boolean): string {
-  if (!isSelected) return 'border-border hover:border-primary/50'
+  if (!isSelected) return 'border-border bg-slate-800/40 hover:border-primary/50 hover:bg-slate-800/60'
 
   switch (style) {
     case 'archery':
@@ -90,6 +90,7 @@ function StyleCard({ style, isSelected, isDisabled, onSelect }: StyleCardProps) 
       disabled={isDisabled}
       className={cn(
         'w-full text-left p-3 rounded-lg border-2 transition-all',
+        !isDisabled && 'cursor-pointer',
         getStyleColorClass(style, isSelected),
         isDisabled && 'opacity-50 cursor-not-allowed'
       )}
