@@ -127,6 +127,7 @@ function createBattleMasterCombatant(
     featUses: {},
     usedSavageAttackerThisTurn: false,
     usedTavernBrawlerPushThisTurn: false,
+    heroicInspiration: false,
   } as Combatant
 }
 
@@ -191,6 +192,7 @@ function createNonBattleMasterCombatant(): Combatant {
     featUses: {},
     usedSavageAttackerThisTurn: false,
     usedTavernBrawlerPushThisTurn: false,
+    heroicInspiration: false,
   } as Combatant
 }
 

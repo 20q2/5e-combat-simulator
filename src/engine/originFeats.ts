@@ -412,3 +412,30 @@ export function useFeatCharge(
 export function getUnarmedDamageType(): DamageType {
   return 'bludgeoning'
 }
+
+// ============================================
+// Musician Feat (Heroic Inspiration)
+// ============================================
+
+/**
+ * Check if combatant has the Musician feat
+ */
+export function hasMusician(combatant: Combatant): boolean {
+  return hasFeat(combatant, 'musician')
+}
+
+/**
+ * Check if a combatant starts combat with Heroic Inspiration
+ * (Musician feat grants this)
+ */
+export function startsWithHeroicInspiration(combatant: Combatant): boolean {
+  return hasMusician(combatant)
+}
+
+/**
+ * Check if combatant can use Heroic Inspiration
+ * (has it and hasn't used it yet)
+ */
+export function canUseHeroicInspiration(combatant: Combatant): boolean {
+  return combatant.heroicInspiration === true
+}

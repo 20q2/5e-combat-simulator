@@ -547,6 +547,7 @@ export interface Combatant {
   featUses: Record<string, number>  // feat id -> remaining uses (e.g., { lucky: 2 })
   usedSavageAttackerThisTurn: boolean  // Track if Savage Attacker was used this turn (once per turn)
   usedTavernBrawlerPushThisTurn: boolean  // Track if Tavern Brawler push was used this turn (once per turn)
+  heroicInspiration: boolean  // Musician feat: can reroll a failed attack or save (one use per combat)
 }
 
 export interface GridCell {
@@ -747,6 +748,25 @@ export interface CombatState {
       halfDamageOnSave?: boolean  // Whether save halves damage
       damageType?: DamageType
       effect?: string             // Description of effect on failed save
+    }
+  }
+  // Heroic Inspiration reroll prompt (Musician feat)
+  pendingHeroicInspiration?: {
+    combatantId: string           // Who has Heroic Inspiration
+    type: 'attack' | 'save'       // What type of roll failed
+    originalRoll: number          // The original d20 roll (natural)
+    originalTotal: number         // The original roll total
+    modifier: number              // The modifier applied
+    targetValue: number           // AC (for attack) or DC (for save)
+    context: {
+      targetId?: string           // Target of the attack (for attacks)
+      targetName?: string         // Name of target
+      weapon?: Weapon             // Weapon used (for attacks)
+      ability?: AbilityName       // Ability for save (for saves)
+      sourceName?: string         // What caused the save
+      damage?: number             // Pending damage on failed save
+      halfDamageOnSave?: boolean  // Whether save halves damage
+      damageType?: DamageType
     }
   }
   // Pending attack (for pre-attack maneuvers like Precision Attack)

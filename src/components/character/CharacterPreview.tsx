@@ -61,8 +61,13 @@ export function CharacterPreview() {
   )
   const proficiencyBonus = getProficiencyBonus(draft.level)
 
+  // Collect origin feats from human and background choices
+  const originFeats = [draft.humanOriginFeat, draft.backgroundOriginFeat].filter(
+    (f): f is NonNullable<typeof f> => f !== null
+  )
+
   const hp = characterClass
-    ? calculateHP(characterClass, draft.level, finalAbilityScores.constitution)
+    ? calculateHP(characterClass, draft.level, finalAbilityScores.constitution, originFeats)
     : 0
 
   const ac = calculateAC(

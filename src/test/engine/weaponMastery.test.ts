@@ -98,6 +98,7 @@ function createCharacterCombatant(
     featUses: {},
     usedSavageAttackerThisTurn: false,
     usedTavernBrawlerPushThisTurn: false,
+    heroicInspiration: false,
   } as Combatant
 }
 

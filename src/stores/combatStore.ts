@@ -86,6 +86,8 @@ import {
   canUseBattleMedic,
   getBattleMedicTargets as getOriginFeatBattleMedicTargets,
   rollBattleMedicHealing,
+  startsWithHeroicInspiration,
+  canUseHeroicInspiration,
 } from '@/engine/originFeats'
 
 /**
@@ -175,6 +177,10 @@ interface CombatStore extends CombatState {
   // Indomitable (Fighter save reroll)
   resolveIndomitable: (useReroll: boolean) => void
   skipIndomitable: () => void
+
+  // Heroic Inspiration (Musician feat reroll)
+  resolveHeroicInspiration: (useReroll: boolean) => void
+  skipHeroicInspiration: () => void
 
   // Movement
   moveCombatant: (id: string, to: Position) => void
@@ -430,6 +436,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
       featUses: {},
       usedSavageAttackerThisTurn: false,
       usedTavernBrawlerPushThisTurn: false,
+      heroicInspiration: false,
     }
 
     // Initialize racial and class ability uses for characters
@@ -449,6 +456,8 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
       }
       // Initialize origin feat uses (e.g., Lucky luck points)
       combatant.featUses = initializeFeatUses(combatant)
+      // Initialize Heroic Inspiration for Musician feat
+      combatant.heroicInspiration = startsWithHeroicInspiration(combatant)
     }
 
     // Update grid cell occupancy immutably
@@ -1062,6 +1071,138 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
   skipIndomitable: () => {
     // Same as resolveIndomitable(false)
     get().resolveIndomitable(false)
+  },
+
+  resolveHeroicInspiration: (useReroll: boolean) => {
+    const { pendingHeroicInspiration, combatants } = get()
+    if (!pendingHeroicInspiration) return
+
+    const combatant = combatants.find(c => c.id === pendingHeroicInspiration.combatantId)
+    if (!combatant) {
+      set({ pendingHeroicInspiration: undefined })
+      return
+    }
+
+    const { type, modifier, targetValue, context } = pendingHeroicInspiration
+
+    if (useReroll) {
+      // Use Heroic Inspiration - reroll d20 (must take new result)
+      const reroll = rollD20(modifier, 'normal')
+      const success = type === 'attack'
+        ? reroll.total >= targetValue || reroll.isNatural20
+        : reroll.total >= targetValue
+
+      // Consume Heroic Inspiration
+      set((state) => ({
+        combatants: state.combatants.map(c =>
+          c.id === combatant.id
+            ? { ...c, heroicInspiration: false }
+            : c
+        ),
+      }))
+
+      if (type === 'attack') {
+        // Handle attack reroll
+        get().addLogEntry({
+          type: 'other',
+          actorId: combatant.id,
+          actorName: combatant.name,
+          message: `${combatant.name} uses Heroic Inspiration! Rerolls attack: ${reroll.naturalRoll} + ${modifier} = ${reroll.total} vs AC ${targetValue}`,
+          details: success ? 'HIT!' : 'Still misses...',
+        })
+
+        if (success) {
+          get().addCombatPopup(context.targetId!, reroll.isNatural20 ? 'critical' : 'damage')
+          // Attack hit - need to roll and apply damage
+          // For now, just log the hit - a full implementation would need to roll damage here
+          // This is simplified since the attack was originally resolved
+          get().addLogEntry({
+            type: 'attack',
+            actorId: combatant.id,
+            actorName: combatant.name,
+            targetId: context.targetId,
+            targetName: context.targetName,
+            message: `${combatant.name} hits ${context.targetName} with Heroic Inspiration reroll!`,
+            details: `${reroll.naturalRoll} + ${modifier} = ${reroll.total} vs AC ${targetValue}`,
+          })
+
+          // Roll and apply damage if we have weapon info
+          if (context.weapon) {
+            const isCrit = reroll.isNatural20
+            const damageResult = rollDamage(context.weapon.damage, isCrit)
+            const target = combatants.find(c => c.id === context.targetId)
+            if (target) {
+              get().dealDamage(target.id, damageResult.total, combatant.name)
+              get().addDamagePopup(target.id, damageResult.total, context.weapon.damageType as DamageType, isCrit)
+              if (isCrit) {
+                get().addCombatPopup(target.id, 'critical')
+              }
+              get().addLogEntry({
+                type: 'damage',
+                actorId: combatant.id,
+                actorName: combatant.name,
+                targetId: target.id,
+                targetName: target.name,
+                message: `${damageResult.total} ${context.weapon.damageType} damage`,
+                details: damageResult.breakdown,
+              })
+            }
+          }
+        } else {
+          // Still missed
+          get().addCombatPopup(context.targetId!, 'miss')
+        }
+      } else {
+        // Handle saving throw reroll
+        get().addLogEntry({
+          type: 'other',
+          actorId: combatant.id,
+          actorName: combatant.name,
+          message: `${combatant.name} uses Heroic Inspiration! Rerolls ${context.ability} save: ${reroll.naturalRoll} + ${modifier} = ${reroll.total} vs DC ${targetValue}`,
+          details: success ? 'SUCCESS!' : 'Still fails...',
+        })
+
+        if (success) {
+          // Save succeeded on reroll
+          get().addCombatPopup(combatant.id, 'saved')
+
+          // Handle half damage on successful save
+          if (context.damage && context.halfDamageOnSave) {
+            const halfDamage = Math.floor(context.damage / 2)
+            if (halfDamage > 0) {
+              get().dealDamage(combatant.id, halfDamage, context.sourceName)
+              get().addDamagePopup(combatant.id, halfDamage, context.damageType || 'bludgeoning', false)
+            }
+          }
+        } else {
+          // Still failed - apply full effect
+          if (context.damage) {
+            get().dealDamage(combatant.id, context.damage, context.sourceName)
+            get().addDamagePopup(combatant.id, context.damage, context.damageType || 'bludgeoning', false)
+          }
+        }
+      }
+    } else {
+      // Chose not to use Heroic Inspiration - accept original failure
+      if (type === 'save' && context.damage) {
+        get().dealDamage(combatant.id, context.damage, context.sourceName)
+        get().addDamagePopup(combatant.id, context.damage, context.damageType || 'bludgeoning', false)
+      }
+      // For attacks, the miss was already handled when the prompt was shown
+    }
+
+    // Clear pending state
+    set({ pendingHeroicInspiration: undefined })
+
+    // If this was during an AI turn, continue
+    if (get().isAITurn()) {
+      setTimeout(() => get().endTurn(), 500)
+    }
+  },
+
+  skipHeroicInspiration: () => {
+    // Same as resolveHeroicInspiration(false)
+    get().resolveHeroicInspiration(false)
   },
 
   resolveTrigger: (optionId: string | null) => {
@@ -2312,6 +2453,51 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
       })
       // Show miss popup on target
       get().addCombatPopup(targetId, 'miss')
+
+      // Check for Heroic Inspiration (Musician feat) - attacker can reroll
+      if (
+        attacker.type === 'character' &&
+        canUseHeroicInspiration(attacker) &&
+        !result.criticalMiss  // Can't reroll a nat 1 (already auto-miss)
+      ) {
+        // Set pending Heroic Inspiration prompt
+        set({
+          pendingHeroicInspiration: {
+            combatantId: attackerId,
+            type: 'attack',
+            originalRoll: result.attackRoll.naturalRoll,
+            originalTotal: result.attackRoll.total,
+            modifier: result.attackRoll.total - result.attackRoll.naturalRoll,
+            targetValue: result.targetAC,
+            context: {
+              targetId,
+              targetName: target.name,
+              weapon: selectedWeapon,
+            },
+          },
+        })
+
+        // Update attacker state before pausing
+        const newAttacksMade = attacker.attacksMadeThisTurn + 1
+        const maxAttacksForAttacker = getMaxAttacksPerAction(attacker)
+        const allAttacksUsed = newAttacksMade >= maxAttacksForAttacker
+
+        set((state) => ({
+          combatants: state.combatants.map((c) =>
+            c.id === attackerId
+              ? {
+                  ...c,
+                  attacksMadeThisTurn: newAttacksMade,
+                  hasActed: allAttacksUsed,
+                }
+              : c
+          ),
+          selectedAction: undefined,
+          targetingMode: undefined,
+        }))
+
+        return result  // Pause for Heroic Inspiration decision
+      }
 
       // Apply Graze mastery damage on miss (if applicable)
       if (selectedWeapon) {
@@ -3598,7 +3784,31 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
               return true
             }
 
-            // No Indomitable available - apply damage immediately
+            // Check if target can use Heroic Inspiration (Musician feat)
+            if (target.type === 'character' && canUseHeroicInspiration(target)) {
+              // Set pending Heroic Inspiration prompt
+              set({
+                pendingHeroicInspiration: {
+                  combatantId: target.id,
+                  type: 'save',
+                  originalRoll: saveResult.roll.naturalRoll,
+                  originalTotal: saveResult.roll.total,
+                  modifier: saveResult.modifier,
+                  targetValue: dc,
+                  context: {
+                    ability: spell.savingThrow,
+                    sourceName: `${caster.name}'s ${spell.name}`,
+                    damage: damage.total,
+                    halfDamageOnSave: true,
+                    damageType: spell.damage.type,
+                  },
+                },
+              })
+              // Return early - the Heroic Inspiration resolution handler will apply damage
+              return true
+            }
+
+            // No reroll options available - apply damage immediately
             get().dealDamage(currentTargetId, damage.total, caster.name)
             get().addDamagePopup(currentTargetId, damage.total, spell.damage.type, false)
             get().addLogEntry({

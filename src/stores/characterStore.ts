@@ -644,13 +644,21 @@ export function calculateFinalAbilityScores(
 export function calculateHP(
   characterClass: CharacterClass,
   level: number,
-  constitution: number
+  constitution: number,
+  originFeats: OriginFeatId[] = []
 ): number {
   const conMod = getAbilityModifier(constitution)
   // Max HP at level 1, then average for subsequent levels
   const firstLevel = characterClass.hitDie + conMod
   const subsequentLevels = (level - 1) * (Math.floor(characterClass.hitDie / 2) + 1 + conMod)
-  return Math.max(1, firstLevel + subsequentLevels)
+  let hp = Math.max(1, firstLevel + subsequentLevels)
+
+  // Tough feat: +2 HP per level
+  if (originFeats.includes('tough')) {
+    hp += level * 2
+  }
+
+  return hp
 }
 
 export function calculateAC(

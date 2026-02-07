@@ -216,6 +216,7 @@ import type {
   LuckyFeatCombat,
   SavageAttackerFeatCombat,
   TavernBrawlerFeatCombat,
+  MusicianFeatCombat,
 } from '@/types/originFeat'
 
 const ALERT_COMBAT: AlertFeatCombat = {
@@ -258,13 +259,20 @@ const TAVERN_BRAWLER_COMBAT: TavernBrawlerFeatCombat = {
   pushOncePerTurn: true,
 }
 
+const MUSICIAN_COMBAT: MusicianFeatCombat = {
+  id: 'musician',
+  type: 'musician',
+  trigger: 'on_attack_roll',
+  grantsHeroicInspiration: true,
+}
+
 export const ORIGIN_FEAT_COMBAT: Record<OriginFeatId, OriginFeatCombat | null> = {
   'alert': ALERT_COMBAT,
   'crafter': null,           // No combat relevance
   'healer': HEALER_COMBAT,
   'lucky': LUCKY_COMBAT,
   'magic-initiate': null,    // Handled separately via spell system
-  'musician': null,          // No combat relevance
+  'musician': MUSICIAN_COMBAT,
   'savage-attacker': SAVAGE_ATTACKER_COMBAT,
   'skilled': null,           // No combat relevance
   'tavern-brawler': TAVERN_BRAWLER_COMBAT,

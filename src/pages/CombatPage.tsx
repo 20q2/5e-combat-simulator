@@ -12,6 +12,7 @@ import { ManeuverPrompt } from '@/components/combat/ManeuverPrompt'
 import { InitiativeSwapPrompt } from '@/components/combat/InitiativeSwapPrompt'
 import { SavageAttackerPrompt } from '@/components/combat/SavageAttackerPrompt'
 import { IndomitablePrompt } from '@/components/combat/IndomitablePrompt'
+import { HeroicInspirationPrompt } from '@/components/combat/HeroicInspirationPrompt'
 import { useCombatStore } from '@/stores/combatStore'
 import { useCharacterStore } from '@/stores/characterStore'
 import { getMonsterById } from '@/data'
@@ -293,6 +294,9 @@ export function CombatPage() {
 
       {/* Indomitable Reroll Prompt (Fighter level 9+) */}
       <IndomitablePrompt />
+
+      {/* Heroic Inspiration Reroll Prompt (Musician feat) */}
+      <HeroicInspirationPrompt />
     </div>
   )
 }

@@ -71,6 +71,13 @@ export interface TavernBrawlerFeatCombat extends OriginFeatCombatBase {
   pushOncePerTurn: true
 }
 
+// Musician - Heroic Inspiration
+export interface MusicianFeatCombat extends OriginFeatCombatBase {
+  type: 'musician'
+  trigger: 'on_attack_roll'  // Can also be used on saves
+  grantsHeroicInspiration: true
+}
+
 // ============================================
 // Union Type
 // ============================================
@@ -81,6 +88,7 @@ export type OriginFeatCombat =
   | LuckyFeatCombat
   | SavageAttackerFeatCombat
   | TavernBrawlerFeatCombat
+  | MusicianFeatCombat
 
 // ============================================
 // Type Guards
@@ -104,4 +112,8 @@ export function isSavageAttackerFeat(f: OriginFeatCombat): f is SavageAttackerFe
 
 export function isTavernBrawlerFeat(f: OriginFeatCombat): f is TavernBrawlerFeatCombat {
   return f.type === 'tavern_brawler'
+}
+
+export function isMusicianFeat(f: OriginFeatCombat): f is MusicianFeatCombat {
+  return f.type === 'musician'
 }
