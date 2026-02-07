@@ -1,6 +1,7 @@
 import type { Combatant, Monster, Position, MonsterAction, Grid, Character } from '@/types'
 import { getDistance, canAttackTarget } from './combat'
 import { findPath, getReachablePositions, calculatePathCost } from '@/lib/pathfinding'
+import { hasLineOfSight } from '@/lib/lineOfSight'
 import {
   canUseSecondWind,
   getMaxAttacksPerAction,
@@ -109,20 +110,61 @@ function findNearestEnemy(combatants: Combatant[], self: Combatant): Combatant |
 }
 
 /**
- * Get the monster's best attack action
+ * Check if an attack is ranged (has range property but no reach)
  */
-function getBestAttack(monster: Monster): MonsterAction | null {
+function isRangedAttack(action: MonsterAction): boolean {
+  return action.range !== undefined && action.reach === undefined
+}
+
+/**
+ * Check if an attack is melee (has reach property or no range)
+ */
+function isMeleeAttack(action: MonsterAction): boolean {
+  return action.reach !== undefined || action.range === undefined
+}
+
+/**
+ * Get the best usable attack for the monster given its distance to target
+ */
+function getBestUsableAttack(
+  monster: Monster,
+  self: Combatant,
+  target: Combatant,
+  grid: Grid
+): MonsterAction | null {
   const attacks = monster.actions.filter((a) => a.attackBonus !== undefined || a.damage)
   if (attacks.length === 0) return null
 
-  // Prefer highest damage attack
-  return attacks.reduce((best, current) => {
-    // Simple heuristic: prefer attacks with higher attack bonus
-    const currentBonus = current.attackBonus ?? 0
-    const bestBonus = best.attackBonus ?? 0
-    return currentBonus > bestBonus ? current : best
-  }, attacks[0])
+  const distance = getDistance(self, target)
+
+  // Separate melee and ranged attacks
+  const meleeAttacks = attacks.filter(isMeleeAttack)
+  const rangedAttacks = attacks.filter(isRangedAttack)
+
+  // Check if we're in melee range - prefer melee attacks
+  for (const attack of meleeAttacks) {
+    const reach = attack.reach ?? 5
+    if (distance <= reach) {
+      return attack
+    }
+  }
+
+  // Check ranged attacks if melee isn't an option
+  for (const attack of rangedAttacks) {
+    const normalRange = attack.range?.normal ?? 30
+    if (distance <= normalRange) {
+      // Check line of sight for ranged attacks
+      const hasLOS = hasLineOfSight(grid, self.position, target.position)
+      if (hasLOS) {
+        return attack
+      }
+    }
+  }
+
+  // No usable attack from current position - return best melee for movement planning
+  return meleeAttacks[0] ?? rangedAttacks[0] ?? attacks[0]
 }
+
 
 /**
  * Calculate path toward a target position using A* pathfinding
@@ -255,9 +297,6 @@ export function decideMonsterAction(
   const monsterData = isMonster ? monster.data as Monster : null
   const characterData = isCharacter ? monster.data as Character : null
 
-  // Get best attack
-  const bestAttack = monsterData ? getBestAttack(monsterData) : null
-
   // Find best target (smarter than just nearest)
   const bestTarget = findBestTarget(combatants, monster)
   if (!bestTarget) {
@@ -277,12 +316,6 @@ export function decideMonsterAction(
     actions.push(cunningAction)
   }
 
-  // Check if we can attack from current position
-  const attackCheck = bestAttack
-    ? canAttackTarget(monster, bestTarget, grid, undefined, bestAttack)
-    : { canAttack: false }
-  const canAttackNow = attackCheck.canAttack
-
   // Get occupied positions
   const occupiedPositions = new Set(
     combatants
@@ -298,20 +331,31 @@ export function decideMonsterAction(
   const maxAttacks = getMaxAttacksPerAction(monster)
   const attacksRemaining = maxAttacks - monster.attacksMadeThisTurn
 
-  if (canAttackNow) {
-    // Attack the best target
-    if (attacksRemaining > 0 && bestAttack) {
+  // Find the best usable attack from current position (considers ranged options)
+  const usableAttack = monsterData
+    ? getBestUsableAttack(monsterData, monster, bestTarget, grid)
+    : null
+
+  // Check if the usable attack can actually hit from here
+  const attackCheck = usableAttack
+    ? canAttackTarget(monster, bestTarget, grid, undefined, usableAttack)
+    : { canAttack: false }
+  const canAttackNow = attackCheck.canAttack
+
+  if (canAttackNow && usableAttack) {
+    // Attack the best target with the usable attack
+    if (attacksRemaining > 0) {
       actions.push({
         type: 'attack',
         targetId: bestTarget.id,
-        action: bestAttack,
+        action: usableAttack,
       })
     }
 
     // After attacking, could move away or stay
     actions.push({ type: 'end' })
   } else {
-    // Need to move toward enemy
+    // Can't attack from here - move toward enemy to get in melee range
     if (remainingMovement > 0) {
       const moveTarget = getPositionTowardTarget(
         monster.position,
@@ -335,13 +379,18 @@ export function decideMonsterAction(
       const simulatedPosition = moveAction.targetPosition!
       const simulatedMonster = { ...monster, position: simulatedPosition }
 
-      if (bestAttack && attacksRemaining > 0) {
-        const canAttackAfterMove = canAttackTarget(simulatedMonster, bestTarget, grid, undefined, bestAttack)
+      // Get the best usable attack from the new position
+      const attackAfterMove = monsterData
+        ? getBestUsableAttack(monsterData, simulatedMonster, bestTarget, grid)
+        : null
+
+      if (attackAfterMove && attacksRemaining > 0) {
+        const canAttackAfterMove = canAttackTarget(simulatedMonster, bestTarget, grid, undefined, attackAfterMove)
         if (canAttackAfterMove.canAttack) {
           actions.push({
             type: 'attack',
             targetId: bestTarget.id,
-            action: bestAttack,
+            action: attackAfterMove,
           })
         }
       }

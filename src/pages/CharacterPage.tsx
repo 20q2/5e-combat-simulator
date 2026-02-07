@@ -4,17 +4,15 @@ import { Button } from '@/components/ui/button'
 import { CharacterCreator } from '@/components/character/CharacterCreator'
 import { useCharacterStore } from '@/stores/characterStore'
 import type { Character } from '@/types'
-import { Swords, Trash2, Plus, Users, Heart, Shield, Footprints, Pencil } from 'lucide-react'
+import { Trash2, Plus, Users, Heart, Shield, Footprints, Pencil } from 'lucide-react'
 
 function SavedCharacterCard({
   character,
   onDelete,
-  onSelect,
   onEdit,
 }: {
   character: Character
   onDelete: () => void
-  onSelect: () => void
   onEdit: () => void
 }) {
   return (
@@ -46,10 +44,6 @@ function SavedCharacterCard({
           </span>
         </div>
         <div className="flex gap-2">
-          <Button size="sm" onClick={onSelect}>
-            <Swords className="w-4 h-4 mr-1" />
-            Use in Combat
-          </Button>
           <Button size="sm" variant="outline" onClick={onEdit}>
             <Pencil className="w-4 h-4 mr-1" />
             Edit
@@ -71,12 +65,6 @@ export function CharacterPage() {
   const handleNewCharacter = () => {
     resetDraft()
     setShowCreator(true)
-  }
-
-  const handleSelectCharacter = (character: Character) => {
-    // Store selected character ID for use in encounter/combat
-    localStorage.setItem('selectedCharacterId', character.id)
-    alert(`${character.name} selected for combat!`)
   }
 
   const handleEditCharacter = (character: Character) => {
@@ -141,7 +129,6 @@ export function CharacterPage() {
               key={character.id}
               character={character}
               onDelete={() => deleteCharacter(character.id)}
-              onSelect={() => handleSelectCharacter(character)}
               onEdit={() => handleEditCharacter(character)}
             />
           ))}

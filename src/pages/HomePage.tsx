@@ -28,7 +28,7 @@ function CharacterCard({
   return (
     <div
       className={cn(
-        'w-full text-left p-4 rounded-lg border-2 transition-all',
+        'group w-full text-left p-4 rounded-lg border-2 transition-all relative',
         isSelected
           ? 'border-primary bg-primary/10 ring-2 ring-primary'
           : 'border-slate-700 bg-slate-800/50 hover:border-primary/50 hover:bg-slate-800'
@@ -70,18 +70,16 @@ function CharacterCard({
         </div>
       </button>
       {onEdit && (
-        <div className="flex justify-end mt-2 pt-2 border-t border-slate-700">
-          <button
-            onClick={(e) => {
-              e.stopPropagation()
-              onEdit()
-            }}
-            className="text-xs text-muted-foreground hover:text-primary flex items-center gap-1 transition-colors"
-          >
-            <Pencil className="w-3 h-3" />
-            Edit
-          </button>
-        </div>
+        <button
+          onClick={(e) => {
+            e.stopPropagation()
+            onEdit()
+          }}
+          className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity p-2 rounded-md bg-slate-900/90 hover:bg-primary/20 border border-slate-700 hover:border-primary/50"
+          title="Edit character"
+        >
+          <Pencil className="w-4 h-4 text-muted-foreground group-hover:text-primary" />
+        </button>
       )}
     </div>
   )
