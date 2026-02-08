@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { cn } from '@/lib/utils'
 import {
   Dialog,
   DialogContent,
@@ -30,6 +31,7 @@ import {
 } from '@/stores/characterStore'
 import { getAbilityModifier, getProficiencyBonus } from '@/types'
 import { getCharacterTokenImage } from '@/lib/tokenImages'
+import { getClassIcon } from '@/lib/classIcons'
 import { CharacterSaveSuccess } from './CharacterSaveSuccess'
 import type { Character, AbilityName } from '@/types'
 import type { ClassFeature, FightingStyleFeature, FightingStyle, SneakAttackFeature, ImprovedCriticalFeature, ExtraAttackFeature, CunningActionFeature } from '@/types/classFeature'
@@ -84,22 +86,60 @@ function getFeatureDetail(feature: ClassFeature, level: number): string | null {
     case 'sneak_attack': {
       const sneakAttack = feature as SneakAttackFeature
       const dice = sneakAttack.diceScaling[level] || sneakAttack.baseDice
-      return dice
+      return `${dice} damage`
     }
     case 'improved_critical':
       return `Crit on ${(feature as ImprovedCriticalFeature).criticalRange}+`
     case 'extra_attack':
-      return `${(feature as ExtraAttackFeature).attackCount} attacks`
+      return `${(feature as ExtraAttackFeature).attackCount} attacks per Attack action`
     case 'cunning_action': {
       const actions = (feature as CunningActionFeature).allowedActions
-      return actions.map(a => a.charAt(0).toUpperCase() + a.slice(1)).join(', ')
+      return `Bonus Action: ${actions.map(a => a.charAt(0).toUpperCase() + a.slice(1)).join(', ')}`
     }
-    case 'second_wind':
-      return `1d10+${level} HP`
-    case 'action_surge':
-      return 'Extra action'
+    case 'second_wind': {
+      const maxUses = (feature as any).maxUsesAtLevels
+        ? Object.entries((feature as any).maxUsesAtLevels)
+            .sort(([a], [b]) => Number(b) - Number(a))
+            .find(([lvl]) => level >= Number(lvl))?.[1] || (feature as any).maxUses
+        : (feature as any).maxUses
+      return `Bonus Action: Regain 1d10+${level} HP (${maxUses} uses per combat)`
+    }
+    case 'action_surge': {
+      const maxUses = (feature as any).maxUsesAtLevels
+        ? Object.entries((feature as any).maxUsesAtLevels)
+            .sort(([a], [b]) => Number(b) - Number(a))
+            .find(([lvl]) => level >= Number(lvl))?.[1] || (feature as any).maxUses
+        : (feature as any).maxUses
+      return `Take an additional action on your turn (${maxUses} ${maxUses === 1 ? 'use' : 'uses'} per combat)`
+    }
+    case 'indomitable': {
+      const maxUses = (feature as any).maxUsesAtLevels
+        ? Object.entries((feature as any).maxUsesAtLevels)
+            .sort(([a], [b]) => Number(b) - Number(a))
+            .find(([lvl]) => level >= Number(lvl))?.[1] || (feature as any).maxUses
+        : (feature as any).maxUses
+      return `Reroll a failed saving throw (${maxUses} ${maxUses === 1 ? 'use' : 'uses'} per combat)`
+    }
+    case 'relentless': {
+      const maxUses = (feature as any).maxUses
+      return maxUses ? `${maxUses} temporary HP when you roll initiative` : 'Gain temporary HP when you roll initiative'
+    }
+    case 'studied_attacks':
+      return 'Missing an attack grants Advantage on your next attack against that target'
+    case 'tactical_master':
+      return 'Replace weapon mastery with Push, Sap, or Slow'
+    case 'weapon_mastery': {
+      const wm = feature as any
+      return wm.count ? `Master ${wm.count} weapons` : 'Master weapons for special properties'
+    }
+    case 'combat_superiority': {
+      const cs = feature as any
+      return `${cs.diceCount}d${cs.diceSize} superiority dice, learn ${cs.maneuverCount} maneuvers`
+    }
+    case 'generic':
     default:
-      return null
+      // For generic and other types, return the feature's description
+      return feature.description || null
   }
 }
 
@@ -349,8 +389,12 @@ export function CharacterSheet() {
                 <span className="text-sm bg-primary/20 text-primary px-2 py-0.5 rounded font-medium">
                   Level {draft.level}
                 </span>
-                <span className="text-sm text-muted-foreground">
-                  {race?.name ?? 'No race'} {characterClass?.name ?? 'No class'}
+                <span className="text-sm text-muted-foreground flex items-center gap-1.5">
+                  {race?.name ?? 'No race'}
+                  {characterClass && getClassIcon(characterClass.id) && (
+                    <img src={getClassIcon(characterClass.id)} alt="" className="w-5 h-5 object-contain" />
+                  )}
+                  {characterClass?.name ?? 'No class'}
                 </span>
                 {subclass && (
                   <span className="text-sm text-amber-400 font-medium">

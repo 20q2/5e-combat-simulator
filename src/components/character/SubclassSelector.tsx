@@ -4,6 +4,7 @@ import { ManeuverSelector } from './ManeuverSelector'
 import { ASISelector } from './ASISelector'
 import { useCharacterStore } from '@/stores/characterStore'
 import { getClassById, getSubclassFeaturesByLevel } from '@/data'
+import { getClassIcon } from '@/lib/classIcons'
 import { useMemo } from 'react'
 import {
   isFightingStyleFeature,
@@ -110,7 +111,11 @@ export function SubclassSelector() {
             </div>
             <div className="hidden md:block">
               <div className="w-24 h-24 rounded-full bg-primary/10 flex items-center justify-center border-2 border-primary/30">
-                <Sparkles className="w-12 h-12 text-primary" />
+                {getClassIcon(characterClass.id) ? (
+                  <img src={getClassIcon(characterClass.id)} alt="" className="w-14 h-14 object-contain invert opacity-80" />
+                ) : (
+                  <Sparkles className="w-12 h-12 text-primary" />
+                )}
               </div>
             </div>
           </div>

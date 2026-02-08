@@ -3,6 +3,7 @@ import { useNavigate, useLocation, Link } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
+import { getClassIcon } from '@/lib/classIcons'
 import { presetCharacters, encounterPresets, getMonsterById } from '@/data'
 import { useCombatStore } from '@/stores/combatStore'
 import { useCharacterStore } from '@/stores/characterStore'
@@ -24,6 +25,7 @@ function CharacterCard({
   const hpDisplay = `${character.maxHp} HP`
   const acDisplay = `AC ${character.ac}`
   const tokenImage = getCharacterTokenImage(character)
+  const classIcon = getClassIcon(character.class.id)
 
   return (
     <div
@@ -42,6 +44,10 @@ function CharacterCard({
               alt={character.name}
               className="w-12 h-12 rounded-full object-cover border-2 border-violet-500"
             />
+          ) : classIcon ? (
+            <div className="w-12 h-12 rounded-full flex items-center justify-center bg-slate-700 border-2 border-slate-600">
+              <img src={classIcon} alt={character.class.name} className="w-8 h-8 object-contain" />
+            </div>
           ) : (
             <div className={cn(
               'w-12 h-12 rounded-full flex items-center justify-center text-white font-bold text-lg',
@@ -56,7 +62,7 @@ function CharacterCard({
           )}
           <div className="flex-1 min-w-0 text-left">
             <div className="font-semibold truncate">{character.name}</div>
-            <div className="text-sm text-muted-foreground">
+            <div className="text-sm text-muted-foreground flex items-center gap-1.5">
               Level {character.level} {character.race.name} {character.class.name}
               {character.subclass && ` (${character.subclass.name})`}
             </div>

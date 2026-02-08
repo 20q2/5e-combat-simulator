@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import { getClassIcon } from '@/lib/classIcons'
 import { useCombatStore, getCurrentCombatant } from '@/stores/combatStore'
 import { getCombatantTokenImage } from '@/lib/tokenImages'
 import { getMaxAttacksPerAction, getSecondWindMaxUses, getIndomitableMaxUses, getIndomitableFeature } from '@/engine/classAbilities'
@@ -621,10 +622,18 @@ export function CombatantPanel() {
             )}
             <div>
               <CardTitle className="text-sm">{displayCombatant.name}</CardTitle>
-              <p className="text-xs text-muted-foreground">
-                {isCharacter
-                  ? `Level ${character!.level} ${character!.race.name} ${character!.class.name}`
-                  : `${monster!.size} ${monster!.type}`}
+              <p className="text-xs text-muted-foreground flex items-center gap-1">
+                {isCharacter ? (
+                  <>
+                    Level {character!.level} {character!.race.name}
+                    {getClassIcon(character!.class.id) && (
+                      <img src={getClassIcon(character!.class.id)} alt="" className="w-4 h-4 object-contain" />
+                    )}
+                    {character!.class.name}
+                  </>
+                ) : (
+                  `${monster!.size} ${monster!.type}`
+                )}
               </p>
             </div>
           </div>

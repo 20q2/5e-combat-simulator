@@ -2,6 +2,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import { getClassIcon } from '@/lib/classIcons'
 import { getAllClasses, getClassById, getClassFeaturesByLevel, getSubclassFeaturesByLevel } from '@/data'
 import { useCharacterStore } from '@/stores/characterStore'
 import type { CharacterClass, ClassFeature } from '@/types'
@@ -28,6 +29,7 @@ function ClassCard({
   const primaryAbilities = characterClass.primaryAbility
     .map((a) => ABILITY_LABELS[a])
     .join('/')
+  const classIcon = getClassIcon(characterClass.id)
 
   return (
     <button
@@ -39,11 +41,16 @@ function ClassCard({
       )}
     >
       <div className="flex justify-between items-start">
-        <div>
-          <h3 className="font-semibold">{characterClass.name}</h3>
-          <p className="text-sm text-muted-foreground">
-            d{characterClass.hitDie} Hit Die · {primaryAbilities}
-          </p>
+        <div className="flex items-start gap-3">
+          {classIcon && (
+            <img src={classIcon} alt={characterClass.name} className="w-10 h-10 object-contain invert" />
+          )}
+          <div>
+            <h3 className="font-semibold">{characterClass.name}</h3>
+            <p className="text-sm text-muted-foreground">
+              d{characterClass.hitDie} Hit Die · {primaryAbilities}
+            </p>
+          </div>
         </div>
         {characterClass.spellcasting && (
           <span className="text-xs font-medium bg-secondary px-2 py-1 rounded">
@@ -115,12 +122,17 @@ function ClassDetails({ characterClass, level, subclassId }: {
     : []
 
   const selectedSubclass = characterClass.subclasses.find(s => s.id === subclassId)
+  const classIcon = getClassIcon(characterClass.id)
 
   return (
     <Card className="h-full flex flex-col">
       <CardHeader className="pb-3">
         <CardTitle className="text-lg flex items-center gap-2">
-          <Info className="w-5 h-5 text-blue-400" />
+          {classIcon ? (
+            <img src={classIcon} alt={characterClass.name} className="w-8 h-8 object-contain invert" />
+          ) : (
+            <Info className="w-5 h-5 text-blue-400" />
+          )}
           {characterClass.name}
         </CardTitle>
         <CardDescription>

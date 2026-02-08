@@ -487,6 +487,14 @@ export const useCharacterStore = create<CharacterState>()(
       setClassAsiSelection: (index, selection) =>
         set((state) => {
           const newSelections = [...state.draft.classAsiSelections]
+          // Ensure array has enough elements to prevent sparse arrays
+          while (newSelections.length <= index) {
+            newSelections.push({
+              level: 0, // Will be set when actually used
+              mode: 'plus2-plus1',
+              plus1Abilities: [],
+            })
+          }
           newSelections[index] = selection
           return {
             draft: { ...state.draft, classAsiSelections: newSelections },
@@ -702,8 +710,8 @@ export function calculateFinalAbilityScores(
     }
   }
 
-  // Apply class ASI bonuses
-  for (const asiSelection of classAsiSelections) {
+  // Apply class ASI bonuses (filter out undefined/null entries)
+  for (const asiSelection of classAsiSelections.filter(Boolean)) {
     if (asiSelection.mode === 'plus2-plus1') {
       // +2 to one ability, +1 to another
       if (asiSelection.plus2Ability) {
