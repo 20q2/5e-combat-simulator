@@ -384,6 +384,13 @@ export interface Character {
   abilityBonusPlus2?: AbilityName | null
   abilityBonusPlus1?: AbilityName | null
   abilityBonusPlus1Trio?: AbilityName[]
+  // Class ASI selections for reconstruction when editing
+  classAsiSelections?: Array<{
+    level: number
+    mode: 'plus2-plus1' | 'plus1-plus1'
+    plus2Ability?: AbilityName
+    plus1Abilities: AbilityName[]
+  }>
   maxHp: number
   currentHp: number
   temporaryHp: number

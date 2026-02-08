@@ -11,6 +11,7 @@ import type {
 } from '@/types'
 import { getAbilityModifier } from '@/types'
 import type { OriginFeatId } from '@/data/originFeats'
+import { getClassById } from '@/data'
 
 export type AbilityScoreMethod = 'point-buy' | 'standard-array' | 'manual'
 export type AbilityBonusMode = 'standard' | 'three-plus-one'
@@ -71,6 +72,13 @@ export interface CharacterDraft {
   fightingStyle: FightingStyle | null
   additionalFightingStyle: FightingStyle | null  // For Champion level 10
   selectedManeuverIds: string[]  // Battle Master maneuvers
+  // Class ASI selections - array of ASI choices indexed by order
+  classAsiSelections: Array<{
+    level: number  // Which level grants this ASI (4, 6, 8, etc.)
+    mode: 'plus2-plus1' | 'plus1-plus1'  // +2 to one OR +1 to two
+    plus2Ability?: AbilityName  // If mode is 'plus2-plus1'
+    plus1Abilities: AbilityName[]  // 1 ability if 'plus2-plus1', 2 if 'plus1-plus1'
+  }>
   editingCharacterId: string | null // Set when editing an existing character
 }
 
@@ -117,6 +125,9 @@ interface CharacterState {
   setAdditionalFightingStyle: (style: FightingStyle | null) => void
   setSelectedManeuvers: (maneuverIds: string[]) => void
   toggleManeuver: (maneuverId: string) => void
+  setClassAsiSelection: (index: number, selection: CharacterDraft['classAsiSelections'][0]) => void
+  clearClassAsiSelection: (index: number) => void
+  resetClassAsiSelections: () => void
   setAbilityBonusPlus2: (ability: AbilityName | null) => void
   setAbilityBonusPlus1: (ability: AbilityName | null) => void
   setAbilityBonusMode: (mode: AbilityBonusMode) => void
@@ -175,6 +186,7 @@ const initialDraft: CharacterDraft = {
   fightingStyle: null,
   additionalFightingStyle: null,
   selectedManeuverIds: [],
+  classAsiSelections: [],
   editingCharacterId: null,
 }
 
@@ -331,6 +343,7 @@ export const useCharacterStore = create<CharacterState>()(
             fightingStyle: null, // Reset fighting style when class changes
             additionalFightingStyle: null,
             selectedManeuverIds: [], // Reset maneuvers when class changes
+            classAsiSelections: [], // Reset ASI selections when class changes
           },
         })),
 
@@ -344,9 +357,27 @@ export const useCharacterStore = create<CharacterState>()(
         })),
 
       setLevel: (level) =>
-        set((state) => ({
-          draft: { ...state.draft, level: Math.max(1, Math.min(20, level)) },
-        })),
+        set((state) => {
+          const newLevel = Math.max(1, Math.min(20, level))
+          // Get available ASI levels for current class
+          const classData = state.draft.classId ? getClassById(state.draft.classId) : null
+          const availableAsiLevels = classData
+            ? getClassAsiLevels(classData, newLevel)
+            : []
+
+          // Trim ASI selections that are no longer available
+          const trimmedAsiSelections = state.draft.classAsiSelections.filter(
+            (_, index) => index < availableAsiLevels.length
+          )
+
+          return {
+            draft: {
+              ...state.draft,
+              level: newLevel,
+              classAsiSelections: trimmedAsiSelections,
+            },
+          }
+        }),
 
       toggleSpell: (spellId) =>
         set((state) => {
@@ -452,6 +483,28 @@ export const useCharacterStore = create<CharacterState>()(
             },
           }
         }),
+
+      setClassAsiSelection: (index, selection) =>
+        set((state) => {
+          const newSelections = [...state.draft.classAsiSelections]
+          newSelections[index] = selection
+          return {
+            draft: { ...state.draft, classAsiSelections: newSelections },
+          }
+        }),
+
+      clearClassAsiSelection: (index) =>
+        set((state) => {
+          const newSelections = state.draft.classAsiSelections.filter((_, i) => i !== index)
+          return {
+            draft: { ...state.draft, classAsiSelections: newSelections },
+          }
+        }),
+
+      resetClassAsiSelections: () =>
+        set((state) => ({
+          draft: { ...state.draft, classAsiSelections: [] },
+        })),
 
       setAbilityBonusPlus2: (ability) =>
         set((state) => ({
@@ -604,6 +657,7 @@ export const useCharacterStore = create<CharacterState>()(
             fightingStyle: character.fightingStyles?.[0] ?? null,
             additionalFightingStyle: character.fightingStyles?.[1] ?? null,
             selectedManeuverIds: character.knownManeuverIds ?? [],
+            classAsiSelections: character.classAsiSelections ?? [],
             editingCharacterId: character.id,
           },
           currentStep: 0,
@@ -627,10 +681,12 @@ export function calculateFinalAbilityScores(
   abilityBonusPlus2: AbilityName | null,
   abilityBonusPlus1: AbilityName | null,
   abilityBonusMode: AbilityBonusMode = 'standard',
-  abilityBonusPlus1Trio: AbilityName[] = []
+  abilityBonusPlus1Trio: AbilityName[] = [],
+  classAsiSelections: CharacterDraft['classAsiSelections'] = []
 ): AbilityScores {
   const result = { ...baseScores }
 
+  // Apply background bonuses
   if (abilityBonusMode === 'standard') {
     // +2 to one stat, +1 to another
     if (abilityBonusPlus2) {
@@ -643,6 +699,24 @@ export function calculateFinalAbilityScores(
     // Three +1s to different stats
     for (const ability of abilityBonusPlus1Trio) {
       result[ability] += 1
+    }
+  }
+
+  // Apply class ASI bonuses
+  for (const asiSelection of classAsiSelections) {
+    if (asiSelection.mode === 'plus2-plus1') {
+      // +2 to one ability, +1 to another
+      if (asiSelection.plus2Ability) {
+        result[asiSelection.plus2Ability] = Math.min(20, result[asiSelection.plus2Ability] + 2)
+      }
+      if (asiSelection.plus1Abilities[0]) {
+        result[asiSelection.plus1Abilities[0]] = Math.min(20, result[asiSelection.plus1Abilities[0]] + 1)
+      }
+    } else {
+      // +1 to two different abilities
+      for (const ability of asiSelection.plus1Abilities.slice(0, 2)) {
+        result[ability] = Math.min(20, result[ability] + 1)
+      }
     }
   }
 
@@ -672,7 +746,8 @@ export function calculateHP(
 export function calculateAC(
   armor: Armor | null,
   shield: boolean,
-  dexterity: number
+  dexterity: number,
+  fightingStyles: FightingStyle[] = []
 ): number {
   const dexMod = getAbilityModifier(dexterity)
   let ac = 10 + dexMod // Base AC without armor
@@ -693,7 +768,34 @@ export function calculateAC(
     ac += 2 // Standard shield bonus
   }
 
+  // Defense fighting style: +1 AC when wearing armor
+  if (fightingStyles.includes('defense') && armor && armor.category !== 'shield') {
+    ac += 1
+  }
+
   return ac
+}
+
+/**
+ * Get all ASI levels available for a class at the given character level.
+ * Returns an array of levels where the class grants ASI features.
+ *
+ * @example Fighter level 12 returns [4, 6, 8, 12]
+ * @example Rogue level 8 returns [4, 8]
+ */
+export function getClassAsiLevels(
+  characterClass: CharacterClass,
+  characterLevel: number
+): number[] {
+  return characterClass.features
+    .filter(
+      (feature) =>
+        feature.type === 'generic' &&
+        feature.name === 'Ability Score Improvement' &&
+        feature.level <= characterLevel
+    )
+    .map((feature) => feature.level)
+    .sort((a, b) => a - b)
 }
 
 export function getPointBuyCost(score: number): number {

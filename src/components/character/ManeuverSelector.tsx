@@ -142,16 +142,9 @@ export function ManeuverSelector() {
     return count
   }, [combatSuperiorityFeature, draft.level])
 
-  // Don't render if no combat superiority feature
-  if (!combatSuperiorityFeature) {
-    return null
-  }
-
-  const allManeuvers = getAllManeuvers()
-  const selectedCount = draft.selectedManeuverIds.length
-  const canSelectMore = selectedCount < maneuversKnownCount
-
   // Group maneuvers by trigger type for organization
+  // Must be called before early return to maintain consistent hook order
+  const allManeuvers = getAllManeuvers()
   const maneuversByTrigger = useMemo(() => {
     const groups: Record<string, Maneuver[]> = {
       on_hit: [],
@@ -166,6 +159,14 @@ export function ManeuverSelector() {
 
     return groups
   }, [allManeuvers])
+
+  // Don't render if no combat superiority feature
+  if (!combatSuperiorityFeature) {
+    return null
+  }
+
+  const selectedCount = draft.selectedManeuverIds.length
+  const canSelectMore = selectedCount < maneuversKnownCount
 
   return (
     <Card>

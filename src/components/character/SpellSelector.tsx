@@ -23,8 +23,8 @@ function SpellCard({
       disabled={disabled && !selected}
       className={cn(
         'w-full text-left p-3 rounded-lg border-2 transition-all',
-        selected ? 'border-primary bg-primary/5' : 'border-border',
-        disabled && !selected ? 'opacity-50 cursor-not-allowed' : 'hover:border-primary/50'
+        selected ? 'border-primary bg-primary/5' : 'border-border bg-slate-800/40',
+        disabled && !selected ? 'opacity-50 cursor-not-allowed' : 'hover:border-primary/50 hover:bg-slate-800/60 cursor-pointer'
       )}
     >
       <div className="flex justify-between items-start gap-2">

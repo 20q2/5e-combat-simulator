@@ -58,8 +58,8 @@ function WeaponCard({
     <button
       onClick={onSelect}
       className={cn(
-        'w-full text-left p-3 rounded-lg border-2 transition-all hover:border-primary/50',
-        selected ? 'border-primary bg-primary/5' : 'border-border'
+        'w-full text-left p-3 rounded-lg border-2 transition-all hover:border-primary/50 hover:bg-slate-800/60 cursor-pointer',
+        selected ? 'border-primary bg-primary/5' : 'border-border bg-slate-800/40'
       )}
     >
       <div className="flex justify-between items-start">
@@ -109,8 +109,8 @@ function ArmorCard({
       disabled={!canUse}
       className={cn(
         'w-full text-left p-3 rounded-lg border-2 transition-all',
-        selected ? 'border-primary bg-primary/5' : 'border-border',
-        canUse ? 'hover:border-primary/50' : 'opacity-50 cursor-not-allowed'
+        selected ? 'border-primary bg-primary/5' : 'border-border bg-slate-800/40',
+        canUse ? 'hover:border-primary/50 hover:bg-slate-800/60 cursor-pointer' : 'opacity-50 cursor-not-allowed'
       )}
     >
       <div className="flex justify-between items-start">
@@ -252,8 +252,8 @@ export function EquipmentSelector() {
                 <button
                   onClick={() => handleMeleeWeaponSelect(null)}
                   className={cn(
-                    'w-full text-left p-3 rounded-lg border-2 transition-all hover:border-primary/50',
-                    !draft.meleeWeaponId ? 'border-primary bg-primary/5' : 'border-border'
+                    'w-full text-left p-3 rounded-lg border-2 transition-all hover:border-primary/50 hover:bg-slate-800/60 cursor-pointer',
+                    !draft.meleeWeaponId ? 'border-primary bg-primary/5' : 'border-border bg-slate-800/40'
                   )}
                 >
                   <h4 className="font-medium text-sm">None</h4>
@@ -282,8 +282,8 @@ export function EquipmentSelector() {
                 <button
                   onClick={() => setRangedWeapon(null)}
                   className={cn(
-                    'w-full text-left p-3 rounded-lg border-2 transition-all hover:border-primary/50',
-                    !draft.rangedWeaponId ? 'border-primary bg-primary/5' : 'border-border'
+                    'w-full text-left p-3 rounded-lg border-2 transition-all hover:border-primary/50 hover:bg-slate-800/60 cursor-pointer',
+                    !draft.rangedWeaponId ? 'border-primary bg-primary/5' : 'border-border bg-slate-800/40'
                   )}
                 >
                   <h4 className="font-medium text-sm">None</h4>
@@ -368,8 +368,8 @@ export function EquipmentSelector() {
                 <button
                   onClick={() => setArmor(null)}
                   className={cn(
-                    'w-full text-left p-3 rounded-lg border-2 transition-all hover:border-primary/50',
-                    !draft.armorId ? 'border-primary bg-primary/5' : 'border-border'
+                    'w-full text-left p-3 rounded-lg border-2 transition-all hover:border-primary/50 hover:bg-slate-800/60 cursor-pointer',
+                    !draft.armorId ? 'border-primary bg-primary/5' : 'border-border bg-slate-800/40'
                   )}
                 >
                   <h4 className="font-medium text-sm">No Armor</h4>
@@ -444,10 +444,10 @@ export function EquipmentSelector() {
                     setOffhandWeapon(null)
                   }}
                   className={cn(
-                    'px-3 py-2 rounded-lg border-2 transition-all text-sm',
+                    'px-3 py-2 rounded-lg border-2 transition-all text-sm cursor-pointer',
                     !draft.shieldEquipped && !draft.offhandWeaponId
                       ? 'border-primary bg-primary/5'
-                      : 'border-border hover:border-primary/50'
+                      : 'border-border bg-slate-800/40 hover:border-primary/50 hover:bg-slate-800/60'
                   )}
                 >
                   None
@@ -462,8 +462,8 @@ export function EquipmentSelector() {
                       'px-3 py-2 rounded-lg border-2 transition-all text-sm',
                       draft.shieldEquipped
                         ? 'border-primary bg-primary/5'
-                        : 'border-border',
-                      canUseShield ? 'hover:border-primary/50' : 'opacity-50 cursor-not-allowed'
+                        : 'border-border bg-slate-800/40',
+                      canUseShield ? 'hover:border-primary/50 hover:bg-slate-800/60 cursor-pointer' : 'opacity-50 cursor-not-allowed'
                     )}
                   >
                     Shield (+2 AC)
@@ -482,8 +482,8 @@ export function EquipmentSelector() {
                       'px-3 py-2 rounded-lg border-2 transition-all text-sm',
                       draft.offhandWeaponId === weapon.id
                         ? 'border-primary bg-primary/5'
-                        : 'border-border',
-                      mainWeaponIsLight ? 'hover:border-primary/50' : 'opacity-50 cursor-not-allowed'
+                        : 'border-border bg-slate-800/40',
+                      mainWeaponIsLight ? 'hover:border-primary/50 hover:bg-slate-800/60 cursor-pointer' : 'opacity-50 cursor-not-allowed'
                     )}
                   >
                     {weapon.name}

@@ -54,8 +54,8 @@ function SpellOption({
       disabled={disabled && !selected}
       className={cn(
         'w-full text-left p-2 rounded-lg border transition-all text-sm',
-        selected ? 'border-primary bg-primary/10' : 'border-border',
-        disabled && !selected ? 'opacity-50 cursor-not-allowed' : 'hover:border-primary/50'
+        selected ? 'border-primary bg-primary/10' : 'border-border bg-slate-800/40',
+        disabled && !selected ? 'opacity-50 cursor-not-allowed' : 'hover:border-primary/50 hover:bg-slate-800/60 cursor-pointer'
       )}
     >
       <div className="flex justify-between items-center gap-2">

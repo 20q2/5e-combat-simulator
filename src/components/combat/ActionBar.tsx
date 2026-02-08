@@ -1350,9 +1350,7 @@ export function ActionBar() {
       monsterActions[0],
       isRanged ? weapon : undefined
     )
-    setIsSelectingWeapon(false)
-    setIsSelectingTarget(false)
-    setSelectedAction(undefined)
+    // Store will handle keeping selectedAction if attacks remain
   }
 
   const handleTargetSelect = (targetId: string) => {
@@ -1362,11 +1360,12 @@ export function ActionBar() {
     if (selectedSpell) {
       castSpell(currentCombatant.id, selectedSpell, targetId)
       setSelectedSpell(undefined)
+      setIsSelectingTarget(false)
+      setSelectedAction(undefined)
     } else {
       performAttack(currentCombatant.id, targetId, meleeWeapon, monsterActions[0], rangedWeapon)
+      // Store will handle keeping selectedAction if attacks remain
     }
-    setIsSelectingTarget(false)
-    setSelectedAction(undefined)
   }
 
   const handleCancelTarget = () => {

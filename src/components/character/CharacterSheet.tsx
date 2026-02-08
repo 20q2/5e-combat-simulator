@@ -147,7 +147,8 @@ export function CharacterSheet() {
     draft.abilityBonusPlus2,
     draft.abilityBonusPlus1,
     draft.abilityBonusMode,
-    draft.abilityBonusPlus1Trio
+    draft.abilityBonusPlus1Trio,
+    draft.classAsiSelections
   )
   const proficiencyBonus = getProficiencyBonus(draft.level)
 
@@ -160,10 +161,14 @@ export function CharacterSheet() {
     ? calculateHP(characterClass, draft.level, finalAbilityScores.constitution, originFeats)
     : 0
 
+  const fightingStyles = [draft.fightingStyle, draft.additionalFightingStyle].filter(
+    (s): s is NonNullable<typeof s> => s !== null
+  )
   const ac = calculateAC(
     armor?.category !== 'shield' ? armor : null,
     draft.shieldEquipped,
-    finalAbilityScores.dexterity
+    finalAbilityScores.dexterity,
+    fightingStyles
   )
 
   // Get features
@@ -266,6 +271,7 @@ export function CharacterSheet() {
       abilityBonusPlus2: draft.abilityBonusPlus2,
       abilityBonusPlus1: draft.abilityBonusPlus1,
       abilityBonusPlus1Trio: draft.abilityBonusPlus1Trio.length > 0 ? [...draft.abilityBonusPlus1Trio] : undefined,
+      classAsiSelections: draft.classAsiSelections.length > 0 ? [...draft.classAsiSelections] : undefined,
       maxHp: hp,
       currentHp: hp,
       temporaryHp: 0,

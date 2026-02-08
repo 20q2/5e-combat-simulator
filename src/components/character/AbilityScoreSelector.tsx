@@ -351,7 +351,7 @@ export function AbilityScoreSelector() {
             <button
               onClick={() => setAbilityBonusMode('standard')}
               className={cn(
-                'px-4 py-2 text-sm transition-all',
+                'px-4 py-2 text-sm transition-all cursor-pointer',
                 abilityBonusMode === 'standard'
                   ? 'bg-primary text-primary-foreground'
                   : 'bg-background hover:bg-muted'
@@ -362,7 +362,7 @@ export function AbilityScoreSelector() {
             <button
               onClick={() => setAbilityBonusMode('three-plus-one')}
               className={cn(
-                'px-4 py-2 text-sm transition-all border-l border-border',
+                'px-4 py-2 text-sm transition-all border-l border-border cursor-pointer',
                 abilityBonusMode === 'three-plus-one'
                   ? 'bg-primary text-primary-foreground'
                   : 'bg-background hover:bg-muted'

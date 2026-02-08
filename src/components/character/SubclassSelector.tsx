@@ -1,14 +1,13 @@
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card'
 import { FightingStyleSelector } from './FightingStyleSelector'
 import { ManeuverSelector } from './ManeuverSelector'
-import { WeaponMasterySelector } from './WeaponMasterySelector'
+import { ASISelector } from './ASISelector'
 import { useCharacterStore } from '@/stores/characterStore'
 import { getClassById, getSubclassFeaturesByLevel } from '@/data'
 import { useMemo } from 'react'
 import {
   isFightingStyleFeature,
   isCombatSuperiorityFeature,
-  isWeaponMasteryFeature,
 } from '@/types'
 import { cn } from '@/lib/utils'
 import { Sparkles, BookOpen } from 'lucide-react'
@@ -19,7 +18,6 @@ import { Sparkles, BookOpen } from 'lucide-react'
  * Shows relevant selectors based on character's class and subclass:
  * - Fighting Styles (Fighter, Paladin, Ranger - class feature)
  * - Battle Master Maneuvers (Fighter - Battle Master subclass feature)
- * - Weapon Mastery (Martial classes - class feature)
  */
 
 // Class-specific flavor descriptions
@@ -63,11 +61,13 @@ export function SubclassSelector() {
     const hasManeuvers = allFeatures.some(f =>
       isCombatSuperiorityFeature(f) && f.level <= draft.level
     )
-    const hasMastery = allFeatures.some(f =>
-      isWeaponMasteryFeature(f) && f.level <= draft.level
+    const hasAsi = characterClass.features.some(f =>
+      f.type === 'generic' &&
+      f.name === 'Ability Score Improvement' &&
+      f.level <= draft.level
     )
 
-    return hasFightingStyle || hasManeuvers || hasMastery
+    return hasFightingStyle || hasManeuvers || hasAsi
   }, [characterClass, draft.subclassId, draft.level])
 
   // Don't render if no features to select
@@ -176,11 +176,11 @@ export function SubclassSelector() {
       {/* Fighting Style Selection */}
       <FightingStyleSelector />
 
+      {/* Ability Score Improvements */}
+      <ASISelector />
+
       {/* Battle Master Maneuver Selection */}
       <ManeuverSelector />
-
-      {/* Weapon Mastery Selection */}
-      <WeaponMasterySelector />
     </div>
   )
 }

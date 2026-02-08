@@ -2495,8 +2495,8 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
                 }
               : c
           ),
-          selectedAction: undefined,
-          targetingMode: undefined,
+          // Only clear selectedAction if all attacks are used
+          ...(allAttacksUsed && { selectedAction: undefined, targetingMode: undefined }),
         }))
 
         return result  // Pause for Heroic Inspiration decision
@@ -2572,8 +2572,8 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
               : c
           ),
           pendingTrigger,
-          selectedAction: undefined,
-          targetingMode: undefined,
+          // Only clear selectedAction if all attacks are used
+          ...(allAttacksUsed && { selectedAction: undefined, targetingMode: undefined }),
         }))
 
         return result  // Don't continue - wait for Riposte decision
@@ -2670,8 +2670,8 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
               : c
           ),
           pendingTrigger,
-          selectedAction: undefined,
-          targetingMode: undefined,
+          // Only clear selectedAction if all attacks are used
+          ...(allAttacksUsed && { selectedAction: undefined, targetingMode: undefined }),
         }))
 
         return result  // Don't deal damage yet - wait for maneuver decision
@@ -2761,8 +2761,8 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
                 : c
             ),
             pendingTrigger,
-            selectedAction: undefined,
-            targetingMode: undefined,
+            // Only clear selectedAction if all attacks are used
+            ...(allAttacksUsed && { selectedAction: undefined, targetingMode: undefined }),
           }))
 
           return result  // Don't deal damage yet - wait for reaction decision
@@ -2946,8 +2946,10 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
       ),
     }))
 
-    // Clear targeting mode
-    set({ selectedAction: undefined, targetingMode: undefined })
+    // Clear targeting mode only if all attacks are used
+    if (allAttacksUsed) {
+      set({ selectedAction: undefined, targetingMode: undefined })
+    }
 
     return result
   },
@@ -3104,9 +3106,9 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
       // Update state
       set({
         combatants: updatedCombatants,
-        selectedAction: undefined,
-        targetingMode: undefined,
         aoePreview: undefined,
+        // Only clear selectedAction if all attacks are used
+        ...(allAttacksUsed && { selectedAction: undefined, targetingMode: undefined }),
       })
 
       return true
