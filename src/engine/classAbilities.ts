@@ -10,6 +10,7 @@ import type {
   ImprovedCriticalFeature,
   IndomitableFeature,
   TacticalMasterFeature,
+  StudiedAttacksFeature,
   FightingStyle,
 } from '@/types/classFeature'
 import {
@@ -22,6 +23,7 @@ import {
   isImprovedCriticalFeature,
   isIndomitableFeature,
   isTacticalMasterFeature,
+  isStudiedAttacksFeature,
 } from '@/types/classFeature'
 import { roll } from './dice'
 
@@ -356,6 +358,37 @@ export function getActionSurgeFeature(combatant: Combatant): ActionSurgeFeature 
 }
 
 /**
+ * Get max uses for Action Surge (handles level scaling)
+ */
+export function getActionSurgeMaxUses(combatant: Combatant): number {
+  const feature = getActionSurgeFeature(combatant)
+  if (!feature) return 0
+  if (feature.maxUses === undefined) return 0
+
+  // If no level scaling, use base maxUses
+  if (!feature.maxUsesAtLevels) return feature.maxUses
+
+  // Get character level
+  if (combatant.type !== 'character') return feature.maxUses
+  const character = combatant.data as Character
+  const level = character.level
+
+  // Find the highest threshold that applies
+  let effectiveMax = feature.maxUses
+  const thresholds = Object.keys(feature.maxUsesAtLevels)
+    .map(Number)
+    .sort((a, b) => a - b)
+
+  for (const threshold of thresholds) {
+    if (level >= threshold) {
+      effectiveMax = feature.maxUsesAtLevels[threshold]
+    }
+  }
+
+  return effectiveMax
+}
+
+/**
  * Check if Action Surge can be used (has uses remaining and has already used action)
  */
 export function canUseActionSurge(
@@ -366,12 +399,11 @@ export function canUseActionSurge(
   if (!feature) return false
 
   // Check uses remaining
-  if (feature.maxUses !== undefined) {
-    const uses = classFeatureUses[feature.id] ?? feature.maxUses
-    if (uses <= 0) return false
-  }
+  const maxUses = getActionSurgeMaxUses(combatant)
+  if (maxUses <= 0) return false
 
-  return true
+  const uses = classFeatureUses[feature.id] ?? maxUses
+  return uses > 0
 }
 
 /**
@@ -383,8 +415,9 @@ export function getActionSurgeUses(
 ): number {
   const feature = getActionSurgeFeature(combatant)
   if (!feature) return 0
-  if (feature.maxUses === undefined) return -1 // Unlimited
-  return classFeatureUses[feature.id] ?? feature.maxUses
+  const maxUses = getActionSurgeMaxUses(combatant)
+  if (maxUses <= 0) return 0
+  return classFeatureUses[feature.id] ?? maxUses
 }
 
 // ============================================
@@ -513,6 +546,9 @@ export function initializeClassFeatureUses(combatant: Combatant): Record<string,
       } else if (isIndomitableFeature(feature)) {
         // Handle Indomitable level scaling
         uses[feature.id] = getIndomitableMaxUses(combatant)
+      } else if (isActionSurgeFeature(feature)) {
+        // Handle Action Surge level scaling
+        uses[feature.id] = getActionSurgeMaxUses(combatant)
       } else {
         uses[feature.id] = feature.maxUses
       }
@@ -659,4 +695,22 @@ export function hasTacticalMaster(combatant: Combatant): boolean {
 export function getTacticalMasterMasteries(combatant: Combatant): ('push' | 'sap' | 'slow')[] {
   const feature = getTacticalMasterFeature(combatant)
   return feature?.allowedMasteries ?? []
+}
+
+// ============================================
+// Studied Attacks (Fighter Level 13)
+// ============================================
+
+/**
+ * Get the Studied Attacks feature for a combatant
+ */
+export function getStudiedAttacksFeature(combatant: Combatant): StudiedAttacksFeature | undefined {
+  return getFeatureOfType(combatant, isStudiedAttacksFeature)
+}
+
+/**
+ * Check if combatant has Studied Attacks (Fighter level 13+)
+ */
+export function hasStudiedAttacks(combatant: Combatant): boolean {
+  return getStudiedAttacksFeature(combatant) !== undefined
 }

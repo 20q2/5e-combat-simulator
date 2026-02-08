@@ -101,6 +101,7 @@ export const classes: CharacterClass[] = [
         description: 'Take one additional action on your turn. Once per combat.',
         trigger: 'action',
         maxUses: 1,
+        maxUsesAtLevels: { 2: 1, 17: 2 },
       },
       {
         id: 'martial-archetype',
@@ -185,6 +186,14 @@ export const classes: CharacterClass[] = [
         name: 'Ability Score Improvement',
         level: 12,
         description: 'You can increase one ability score of your choice by 2, or you can increase two ability scores of your choice by 1.',
+        trigger: 'passive',
+      },
+      {
+        id: 'studied-attacks',
+        type: 'studied_attacks',
+        name: 'Studied Attacks',
+        level: 13,
+        description: 'If you miss with an attack roll, you have Advantage on your next attack roll against that target before the end of your next turn.',
         trigger: 'passive',
       },
       {

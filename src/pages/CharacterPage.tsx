@@ -3,6 +3,8 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/com
 import { Button } from '@/components/ui/button'
 import { CharacterCreator } from '@/components/character/CharacterCreator'
 import { useCharacterStore } from '@/stores/characterStore'
+import { getCharacterTokenImage } from '@/lib/tokenImages'
+import { cn } from '@/lib/utils'
 import type { Character } from '@/types'
 import { Trash2, Plus, Users, Heart, Shield, Footprints, Pencil } from 'lucide-react'
 
@@ -15,13 +17,33 @@ function SavedCharacterCard({
   onDelete: () => void
   onEdit: () => void
 }) {
+  const tokenImage = getCharacterTokenImage(character)
+
   return (
     <Card>
-      <CardHeader className="pb-2">
-        <div className="flex justify-between items-start">
-          <div>
-            <CardTitle className="text-lg">{character.name}</CardTitle>
-            <CardDescription>
+      <CardHeader className="pb-3">
+        <div className="flex items-start gap-3">
+          {tokenImage ? (
+            <img
+              src={tokenImage}
+              alt={character.name}
+              className="w-16 h-16 rounded-full object-cover border-2 border-primary"
+            />
+          ) : (
+            <div className={cn(
+              'w-16 h-16 rounded-full flex items-center justify-center text-white font-bold text-xl shrink-0',
+              character.class.name === 'Fighter' && 'bg-orange-600',
+              character.class.name === 'Rogue' && 'bg-emerald-600',
+              character.class.name === 'Wizard' && 'bg-violet-600',
+              character.class.name === 'Cleric' && 'bg-amber-600',
+              !['Fighter', 'Rogue', 'Wizard', 'Cleric'].includes(character.class.name) && 'bg-slate-600'
+            )}>
+              {character.name.charAt(0)}
+            </div>
+          )}
+          <div className="flex-1 min-w-0">
+            <CardTitle className="text-lg truncate">{character.name}</CardTitle>
+            <CardDescription className="line-clamp-2">
               {character.race.name} {character.class.name}
               {character.subclass && ` (${character.subclass.name})`} · Level {character.level}
             </CardDescription>
@@ -44,13 +66,11 @@ function SavedCharacterCard({
           </span>
         </div>
         <div className="flex gap-2">
-          <Button size="sm" variant="outline" onClick={onEdit}>
-            <Pencil className="w-4 h-4 mr-1" />
-            Edit
+          <Button size="icon" variant="outline" onClick={onEdit} title="Edit character">
+            <Pencil className="w-4 h-4" />
           </Button>
-          <Button size="sm" variant="destructive" onClick={onDelete}>
-            <Trash2 className="w-4 h-4 mr-1" />
-            Delete
+          <Button size="icon" variant="destructive" onClick={onDelete} title="Delete character">
+            <Trash2 className="w-4 h-4" />
           </Button>
         </div>
       </CardContent>

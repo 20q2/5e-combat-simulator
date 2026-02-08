@@ -17,6 +17,7 @@ import {
   canSneakAttack,
   rollSneakAttackDamage,
   getCriticalRange,
+  hasStudiedAttacks,
 } from './classAbilities'
 import {
   hasTavernBrawler,
@@ -178,6 +179,11 @@ export function getAttackAdvantage(
 
   // Check for Vex mastery advantage (attacker previously hit this target with Vex)
   if (target.vexedBy && target.vexedBy.attackerId === attacker.id && target.vexedBy.expiresOnRound >= currentRound) {
+    hasAdvantage = true
+  }
+
+  // Check for Studied Attacks advantage (Fighter level 13+, missed previous attack vs this target)
+  if (hasStudiedAttacks(attacker) && attacker.studiedTargetId === target.id) {
     hasAdvantage = true
   }
 

@@ -206,6 +206,22 @@ export const presetCharacters = [
     shieldId: 'shield',
     spellIds: ['sacred-flame', 'cure-wounds', 'guiding-bolt', 'healing-word'],
   }),
+
+  // Human Fighter Level 20 - Champion with 4 attacks, crits on 18+, Survivor
+  createPresetCharacter({
+    id: 'preset-fighter-20',
+    name: 'Vorn the Undying',
+    raceId: 'human',
+    classId: 'fighter',
+    subclassId: 'champion',
+    level: 20,
+    abilityScores: { strength: 20, dexterity: 14, constitution: 20, intelligence: 10, wisdom: 14, charisma: 10 },
+    meleeWeaponId: 'greatsword',
+    rangedWeaponId: 'longbow',
+    armorId: 'plate',
+    masteredWeaponIds: ['greatsword', 'longbow', 'glaive'],
+    fightingStyles: ['great_weapon', 'defense'],
+  }),
 ].filter((c): c is Character => c !== null)
 
 // Encounter presets

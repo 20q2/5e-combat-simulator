@@ -549,6 +549,8 @@ export interface Combatant {
   superiorityDiceRemaining: number  // Current number of superiority dice available
   usedManeuverThisAttack: boolean  // Track if a maneuver was used on the current attack (for on-hit maneuvers)
   goadedBy?: string  // ID of combatant who goaded this target (for Goading Attack disadvantage)
+  // Fighter Studied Attacks tracking (level 13)
+  studiedTargetId?: string  // ID of combatant this fighter has advantage against (after missing them)
   // Origin Feat tracking
   featUses: Record<string, number>  // feat id -> remaining uses (e.g., { lucky: 2 })
   usedSavageAttackerThisTurn: boolean  // Track if Savage Attacker was used this turn (once per turn)

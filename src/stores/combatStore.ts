@@ -54,6 +54,7 @@ import {
   canUseIndomitable,
   getIndomitableFeature,
   getIndomitableBonus,
+  hasStudiedAttacks,
 } from '@/engine/classAbilities'
 import {
   applyOnHitMasteryEffect,
@@ -432,6 +433,8 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
       superiorityDiceRemaining: 0,
       usedManeuverThisAttack: false,
       goadedBy: undefined,
+      // Fighter Studied Attacks tracking (level 13)
+      studiedTargetId: undefined,
       // Origin Feat tracking
       featUses: {},
       usedSavageAttackerThisTurn: false,
@@ -2916,6 +2919,18 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
     const maxAttacksForAttacker = getMaxAttacksPerAction(attacker)
     const allAttacksUsed = newAttacksMade >= maxAttacksForAttacker
 
+    // Studied Attacks (Fighter level 13+): track missed target for advantage on next attack
+    let newStudiedTargetId: string | undefined = attacker.studiedTargetId
+    if (hasStudiedAttacks(attacker)) {
+      if (result.hit && attacker.studiedTargetId === targetId) {
+        // Clear studied target after hitting them
+        newStudiedTargetId = undefined
+      } else if (!result.hit && !result.criticalMiss) {
+        // Set studied target after missing (but not on critical miss)
+        newStudiedTargetId = targetId
+      }
+    }
+
     set((state) => ({
       combatants: state.combatants.map((c) =>
         c.id === attackerId
@@ -2925,6 +2940,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
               hasActed: allAttacksUsed,
               usedSneakAttackThisTurn: c.usedSneakAttackThisTurn || (result.sneakAttackUsed ?? false),
               usedSavageAttackerThisTurn: c.usedSavageAttackerThisTurn || usedSavageAttackerFeat,
+              studiedTargetId: newStudiedTargetId,
             }
           : c
       ),

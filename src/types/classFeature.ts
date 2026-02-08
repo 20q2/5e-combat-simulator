@@ -63,6 +63,7 @@ export interface SneakAttackFeature extends ClassFeatureBase {
 // Action Surge - Fighter extra action (level 2)
 export interface ActionSurgeFeature extends ClassFeatureBase {
   type: 'action_surge'
+  maxUsesAtLevels?: Record<number, number>  // Level scaling (e.g., {2: 1, 17: 2})
 }
 
 // Cunning Action - Rogue bonus action Dash/Disengage/Hide (level 2)
@@ -123,6 +124,11 @@ export interface TacticalMasterFeature extends ClassFeatureBase {
   allowedMasteries: ('push' | 'sap' | 'slow')[]  // Available replacement masteries
 }
 
+// Studied Attacks - Fighter level 13 feature (miss grants advantage on next attack vs that creature)
+export interface StudiedAttacksFeature extends ClassFeatureBase {
+  type: 'studied_attacks'
+}
+
 // ============================================
 // Union Type
 // ============================================
@@ -141,6 +147,7 @@ export type ClassFeature =
   | RelentlessFeature
   | IndomitableFeature
   | TacticalMasterFeature
+  | StudiedAttacksFeature
   | GenericClassFeature
 
 // ============================================
@@ -201,4 +208,8 @@ export function isIndomitableFeature(f: ClassFeature): f is IndomitableFeature {
 
 export function isTacticalMasterFeature(f: ClassFeature): f is TacticalMasterFeature {
   return f.type === 'tactical_master'
+}
+
+export function isStudiedAttacksFeature(f: ClassFeature): f is StudiedAttacksFeature {
+  return f.type === 'studied_attacks'
 }
