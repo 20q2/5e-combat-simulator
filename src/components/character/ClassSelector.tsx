@@ -75,21 +75,29 @@ function FeatureList({ features, title }: { features: ClassFeature[]; title: str
       </h4>
       {Object.entries(featuresByLevel)
         .sort(([a], [b]) => parseInt(a) - parseInt(b))
-        .map(([level, levelFeatures]) => (
-          <div key={level} className="pl-3 border-l-2 border-muted">
+        .map(([level, levelFeatures], idx) => (
+          <div key={level} className={cn(
+            "pl-3 border-l-2 rounded-r-lg py-2 pr-2 -ml-1",
+            idx % 2 === 0 ? "bg-muted/20 border-muted-foreground/30" : "bg-muted/10 border-muted-foreground/20"
+          )}>
             <div className="text-xs font-medium text-muted-foreground mb-1">
               Level {level}
             </div>
-            {levelFeatures.map((feature) => (
-              <div key={feature.name} className="mb-2">
-                <span className="font-medium text-sm">{feature.name}.</span>{' '}
-                <span className="text-sm text-muted-foreground">
-                  {feature.description.length > 200
-                    ? feature.description.substring(0, 200) + '...'
-                    : feature.description}
-                </span>
-              </div>
-            ))}
+            {levelFeatures.map((feature) => {
+              const isAsi = feature.name === 'Ability Score Improvement'
+              return (
+                <div key={feature.name} className={cn("mb-2", isAsi && "opacity-50")}>
+                  <span className={cn("text-sm", isAsi ? "text-muted-foreground" : "font-medium")}>{feature.name}.</span>{' '}
+                  {!isAsi && (
+                    <span className="text-sm text-muted-foreground">
+                      {feature.description.length > 200
+                        ? feature.description.substring(0, 200) + '...'
+                        : feature.description}
+                    </span>
+                  )}
+                </div>
+              )
+            })}
           </div>
         ))}
     </div>
@@ -268,7 +276,7 @@ export function ClassSelector() {
             </CardDescription>
           </CardHeader>
           <CardContent className="flex-1">
-            <div className="space-y-2 max-h-[400px] overflow-y-auto pr-2">
+            <div className="space-y-2 overflow-y-auto pr-2">
               {classes.map((c) => (
                 <ClassCard
                   key={c.id}

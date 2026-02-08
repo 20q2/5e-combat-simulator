@@ -571,10 +571,14 @@ export function CharacterSheet() {
                   {[...classFeatures, ...subclassFeatures].map((feature, idx) => {
                     const detail = getFeatureDetail(feature, draft.level)
                     const isSubclassFeature = subclassFeatures.some(sf => sf.id === feature.id)
+                    const isAsi = feature.name === 'Ability Score Improvement'
                     return (
-                      <div key={`${feature.name}-${idx}`} className="px-3 py-2 bg-muted/50 rounded-lg">
+                      <div key={`${feature.name}-${idx}`} className={cn(
+                        "px-3 py-2 rounded-lg",
+                        isAsi ? "bg-muted/20 opacity-60" : "bg-muted/50"
+                      )}>
                         <div className="flex items-center justify-between">
-                          <span className="font-medium text-sm">
+                          <span className={cn("text-sm", isAsi ? "text-muted-foreground" : "font-medium")}>
                             {feature.name}
                             {isSubclassFeature && subclass && (
                               <span className="text-muted-foreground font-normal"> — {subclass.name}</span>
@@ -582,7 +586,7 @@ export function CharacterSheet() {
                           </span>
                           <span className="text-xs text-muted-foreground">Lv.{feature.level}</span>
                         </div>
-                        {detail && (
+                        {detail && !isAsi && (
                           <div className="text-xs text-primary mt-0.5">{detail}</div>
                         )}
                       </div>
