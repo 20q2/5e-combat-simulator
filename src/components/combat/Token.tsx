@@ -121,6 +121,7 @@ export function Token({
       ref={tokenRef}
       className={cn(
         'relative w-full h-full',
+        isCurrentTurn && 'z-10',
         showTooltip && 'z-[100]'
       )}
       onMouseEnter={handleMouseEnter}
@@ -134,8 +135,8 @@ export function Token({
         onClick={onClick}
         className={cn(
           'w-full h-full rounded-full p-[2px] transition-all cursor-pointer',
-          isCurrentTurn && 'ring-2 ring-emerald-400 ring-offset-1 ring-offset-slate-900',
-          isHoveredTarget && 'ring-4 ring-rose-500 ring-offset-2 ring-offset-slate-900 scale-110 animate-pulse',
+          isCurrentTurn && 'ring-2 ring-emerald-400 ring-offset-1 ring-offset-slate-900 scale-110 shadow-lg shadow-black/50',
+          isHoveredTarget && 'ring-4 ring-rose-500 ring-offset-2 ring-offset-slate-900 scale-[1.15] animate-pulse',
           // Concentration glow effect
           isConcentrating && !isSelected && !isHoveredTarget && 'ring-2 ring-purple-400/70 ring-offset-1 ring-offset-slate-900',
           // Death state: play animation when just died, otherwise show dead state (prone/rotated 90deg)

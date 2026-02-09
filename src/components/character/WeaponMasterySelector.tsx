@@ -82,6 +82,11 @@ export function WeaponMasterySelector() {
   // Get equipped weapons
   const meleeWeapon = draft.meleeWeaponId ? getWeaponById(draft.meleeWeaponId) : null
   const rangedWeapon = draft.rangedWeaponId ? getWeaponById(draft.rangedWeaponId) : null
+  const offhandWeapon = draft.offhandWeaponId ? getWeaponById(draft.offhandWeaponId) : null
+
+  // Check if offhand has a different mastery than main melee weapon
+  const offhandHasDifferentMastery = offhandWeapon?.mastery &&
+    offhandWeapon.mastery !== meleeWeapon?.mastery
 
   // Auto-sync mastered weapons with equipped weapons
   useEffect(() => {
@@ -90,6 +95,10 @@ export function WeaponMasterySelector() {
     const weaponIds: string[] = []
     if (meleeWeapon?.mastery) weaponIds.push(meleeWeapon.id)
     if (rangedWeapon?.mastery) weaponIds.push(rangedWeapon.id)
+    // Include offhand if it has a different mastery
+    if (offhandWeapon?.mastery && offhandWeapon.mastery !== meleeWeapon?.mastery) {
+      weaponIds.push(offhandWeapon.id)
+    }
 
     const current = draft.masteredWeaponIds
     const isDifferent = weaponIds.length !== current.length ||
@@ -98,7 +107,7 @@ export function WeaponMasterySelector() {
     if (isDifferent) {
       setMasteredWeapons(weaponIds)
     }
-  }, [masteryFeature, meleeWeapon, rangedWeapon, draft.masteredWeaponIds, setMasteredWeapons])
+  }, [masteryFeature, meleeWeapon, rangedWeapon, offhandWeapon, draft.masteredWeaponIds, setMasteredWeapons])
 
   // Don't show if class doesn't have weapon mastery
   if (!masteryFeature) {
@@ -106,7 +115,7 @@ export function WeaponMasterySelector() {
   }
 
   // Check if any equipped weapon has mastery
-  const hasAnyMastery = meleeWeapon?.mastery || rangedWeapon?.mastery
+  const hasAnyMastery = meleeWeapon?.mastery || rangedWeapon?.mastery || offhandHasDifferentMastery
 
   if (!hasAnyMastery) {
     return (
@@ -119,14 +128,25 @@ export function WeaponMasterySelector() {
     )
   }
 
+  // Count how many masteries we're showing for grid layout
+  const masteryCount = [
+    meleeWeapon?.mastery,
+    rangedWeapon?.mastery,
+    offhandHasDifferentMastery ? offhandWeapon?.mastery : null
+  ].filter(Boolean).length
+
   return (
     <div className="p-3 rounded-lg border border-border bg-card space-y-2">
       <div className="flex items-center gap-2">
         <Swords className="w-4 h-4 text-primary" />
         <span className="text-sm font-medium">Weapon Mastery</span>
       </div>
-      <div className="grid grid-cols-2 gap-2">
+      <div className={cn(
+        'grid gap-2',
+        masteryCount === 1 ? 'grid-cols-1' : masteryCount === 2 ? 'grid-cols-2' : 'grid-cols-3'
+      )}>
         {meleeWeapon?.mastery && <WeaponMasteryInfo weapon={meleeWeapon} />}
+        {offhandHasDifferentMastery && offhandWeapon && <WeaponMasteryInfo weapon={offhandWeapon} />}
         {rangedWeapon?.mastery && <WeaponMasteryInfo weapon={rangedWeapon} />}
       </div>
     </div>

@@ -616,6 +616,7 @@ export type CombatPopupType =
   | 'critical'    // "CRITICAL!" - shown separately from damage on crits
   | 'heal'        // Shows heal number in green
   | 'saved'       // "SAVED" - passed saving throw
+  | 'save_failed' // "FAILED" - failed saving throw
   | 'dodged'      // "DODGED" - attack missed due to Dodge action
   | 'resisted'    // "RESISTED" - damage reduced by resistance
   | 'condition'   // Shows condition name (e.g., "Frightened", "Prone")

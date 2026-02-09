@@ -1049,6 +1049,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
         }
       } else {
         // Still failed - apply full effect
+        get().addCombatPopup(combatant.id, 'save_failed')
         if (context.damage) {
           get().dealDamage(combatant.id, context.damage, context.sourceName)
           get().addDamagePopup(combatant.id, context.damage, context.damageType || 'bludgeoning', false)
@@ -1056,6 +1057,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
       }
     } else {
       // Chose not to use Indomitable - apply original failure effect
+      get().addCombatPopup(combatant.id, 'save_failed')
       if (context.damage) {
         get().dealDamage(combatant.id, context.damage, context.sourceName)
         get().addDamagePopup(combatant.id, context.damage, context.damageType || 'bludgeoning', false)
@@ -1179,6 +1181,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
           }
         } else {
           // Still failed - apply full effect
+          get().addCombatPopup(combatant.id, 'save_failed')
           if (context.damage) {
             get().dealDamage(combatant.id, context.damage, context.sourceName)
             get().addDamagePopup(combatant.id, context.damage, context.damageType || 'bludgeoning', false)
@@ -1187,9 +1190,12 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
       }
     } else {
       // Chose not to use Heroic Inspiration - accept original failure
-      if (type === 'save' && context.damage) {
-        get().dealDamage(combatant.id, context.damage, context.sourceName)
-        get().addDamagePopup(combatant.id, context.damage, context.damageType || 'bludgeoning', false)
+      if (type === 'save') {
+        get().addCombatPopup(combatant.id, 'save_failed')
+        if (context.damage) {
+          get().dealDamage(combatant.id, context.damage, context.sourceName)
+          get().addDamagePopup(combatant.id, context.damage, context.damageType || 'bludgeoning', false)
+        }
       }
       // For attacks, the miss was already handled when the prompt was shown
     }
@@ -1511,6 +1517,15 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
           details: `Superiority die: d${maneuverResult.superiorityDieSize}`,
         })
 
+        // Show save result popup for maneuvers with saving throws
+        if (maneuver.savingThrow && maneuverResult.savingThrowMade !== undefined) {
+          if (maneuverResult.savingThrowMade) {
+            get().addCombatPopup(target.id, 'saved')
+          } else {
+            get().addCombatPopup(target.id, 'save_failed')
+          }
+        }
+
         // Apply condition if save failed
         if (maneuverResult.conditionApplied) {
           set((state) => ({
@@ -1611,18 +1626,23 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
               break
 
             case 'topple':
-              if (masteryResult.toppleResult && !masteryResult.toppleResult.savePassed) {
-                set((state) => ({
-                  combatants: state.combatants.map((c) =>
-                    c.id === target.id
-                      ? {
-                          ...c,
-                          conditions: [...c.conditions, { condition: 'prone' as const, duration: -1 }],
-                        }
-                      : c
-                  ),
-                }))
-                get().addCombatPopup(target.id, 'condition', 'Prone')
+              if (masteryResult.toppleResult) {
+                if (!masteryResult.toppleResult.savePassed) {
+                  get().addCombatPopup(target.id, 'save_failed')
+                  set((state) => ({
+                    combatants: state.combatants.map((c) =>
+                      c.id === target.id
+                        ? {
+                            ...c,
+                            conditions: [...c.conditions, { condition: 'prone' as const, duration: -1 }],
+                          }
+                        : c
+                    ),
+                  }))
+                  get().addCombatPopup(target.id, 'condition', 'Prone')
+                } else {
+                  get().addCombatPopup(target.id, 'saved')
+                }
               }
               break
 
@@ -1736,18 +1756,23 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
               break
 
             case 'topple':
-              if (masteryResult.toppleResult && !masteryResult.toppleResult.savePassed) {
-                set((state) => ({
-                  combatants: state.combatants.map((c) =>
-                    c.id === target.id
-                      ? {
-                          ...c,
-                          conditions: [...c.conditions, { condition: 'prone' as const, duration: -1 }],
-                        }
-                      : c
-                  ),
-                }))
-                get().addCombatPopup(target.id, 'condition', 'Prone')
+              if (masteryResult.toppleResult) {
+                if (!masteryResult.toppleResult.savePassed) {
+                  get().addCombatPopup(target.id, 'save_failed')
+                  set((state) => ({
+                    combatants: state.combatants.map((c) =>
+                      c.id === target.id
+                        ? {
+                            ...c,
+                            conditions: [...c.conditions, { condition: 'prone' as const, duration: -1 }],
+                          }
+                        : c
+                    ),
+                  }))
+                  get().addCombatPopup(target.id, 'condition', 'Prone')
+                } else {
+                  get().addCombatPopup(target.id, 'saved')
+                }
               }
               break
 
@@ -1829,34 +1854,67 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
       const isDisengaging = combatant.conditions.some((c) => c.condition === 'disengaging' as any)
 
       if (!isDisengaging) {
-        // Find all enemies currently threatening this combatant
-        const threateningEnemies = get().getThreateningEnemies(id)
+        // Check each step along the path for opportunity attacks
+        // We need to check each position in the path to see if we're adjacent to an enemy
+        // and then moving away from them on the next step
+        for (let i = 0; i < path.length - 1; i++) {
+          const currentPos = path[i]
+          const nextPos = path[i + 1]
 
-        // Get destination footprint cells
-        const destCells = getOccupiedCells(to, size)
+          // Get cells occupied at current position
+          const currentCells = getOccupiedCells(currentPos, size)
 
-        // For each threatening enemy, check if we're leaving their reach
-        for (const enemy of threateningEnemies) {
-          const enemySize = getCombatantSize(enemy)
-          const enemyCells = getOccupiedCells(enemy.position, enemySize)
+          // Find all enemies adjacent to the current position
+          const adjacentEnemies = combatants.filter((c) => {
+            if (c.id === id) return false // Not ourselves
+            if (isDead(c)) return false // Not dead enemies
+            if (c.type === combatant.type) return false // Not allies
 
-          // Check if any destination cell is adjacent to any enemy cell
-          let stillAdjacent = false
-          for (const destCell of destCells) {
-            for (const enemyCell of enemyCells) {
-              const dx = Math.abs(destCell.x - enemyCell.x)
-              const dy = Math.abs(destCell.y - enemyCell.y)
-              if (dx <= 1 && dy <= 1) {
-                stillAdjacent = true
-                break
+            const enemySize = getCombatantSize(c)
+            const enemyCells = getOccupiedCells(c.position, enemySize)
+
+            // Check if any current cell is adjacent to any enemy cell
+            for (const currentCell of currentCells) {
+              for (const enemyCell of enemyCells) {
+                const dx = Math.abs(currentCell.x - enemyCell.x)
+                const dy = Math.abs(currentCell.y - enemyCell.y)
+                if (dx <= 1 && dy <= 1 && !(dx === 0 && dy === 0)) {
+                  return true // Adjacent
+                }
               }
             }
-            if (stillAdjacent) break
-          }
+            return false
+          })
 
-          // If we're moving out of reach (no longer adjacent), trigger opportunity attack
-          if (!stillAdjacent) {
-            threateningEnemyIds.push(enemy.id)
+          // For each adjacent enemy, check if we're moving away from them
+          for (const enemy of adjacentEnemies) {
+            // Skip if already added to threatening list
+            if (threateningEnemyIds.includes(enemy.id)) continue
+
+            const enemySize = getCombatantSize(enemy)
+            const enemyCells = getOccupiedCells(enemy.position, enemySize)
+
+            // Get cells occupied at next position
+            const nextCells = getOccupiedCells(nextPos, size)
+
+            // Check if we'll still be adjacent at the next position
+            let stillAdjacent = false
+            for (const nextCell of nextCells) {
+              for (const enemyCell of enemyCells) {
+                const dx = Math.abs(nextCell.x - enemyCell.x)
+                const dy = Math.abs(nextCell.y - enemyCell.y)
+                if (dx <= 1 && dy <= 1 && !(dx === 0 && dy === 0)) {
+                  stillAdjacent = true
+                  break
+                }
+              }
+              if (stillAdjacent) break
+            }
+
+            // If we're moving away (no longer adjacent), this enemy gets an opportunity attack
+            if (!stillAdjacent) {
+              threateningEnemyIds.push(enemy.id)
+            }
           }
         }
       }
@@ -2851,19 +2909,24 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
               break
 
             case 'topple':
-              if (masteryResult.toppleResult && !masteryResult.toppleResult.savePassed) {
-                // Target failed save, add prone condition
-                set((state) => ({
-                  combatants: state.combatants.map((c) =>
-                    c.id === targetId
-                      ? {
-                          ...c,
-                          conditions: [...c.conditions, { condition: 'prone' as const, duration: -1 }],
-                        }
-                      : c
-                  ),
-                }))
-                get().addCombatPopup(targetId, 'condition', 'Prone')
+              if (masteryResult.toppleResult) {
+                if (!masteryResult.toppleResult.savePassed) {
+                  // Target failed save, add prone condition
+                  get().addCombatPopup(targetId, 'save_failed')
+                  set((state) => ({
+                    combatants: state.combatants.map((c) =>
+                      c.id === targetId
+                        ? {
+                            ...c,
+                            conditions: [...c.conditions, { condition: 'prone' as const, duration: -1 }],
+                          }
+                        : c
+                    ),
+                  }))
+                  get().addCombatPopup(targetId, 'condition', 'Prone')
+                } else {
+                  get().addCombatPopup(targetId, 'saved')
+                }
               }
               break
 
@@ -3057,6 +3120,8 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
         get().addDamagePopup(target.id, damage, aoeReplacement.damageType, false)
         if (saved) {
           get().addCombatPopup(target.id, 'saved')
+        } else {
+          get().addCombatPopup(target.id, 'save_failed')
         }
         if (resistanceApplied) {
           get().addCombatPopup(target.id, 'resisted')
@@ -3827,6 +3892,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
             }
 
             // No reroll options available - apply damage immediately
+            get().addCombatPopup(currentTargetId, 'save_failed')
             get().dealDamage(currentTargetId, damage.total, caster.name)
             get().addDamagePopup(currentTargetId, damage.total, spell.damage.type, false)
             get().addLogEntry({
