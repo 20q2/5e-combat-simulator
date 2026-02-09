@@ -4,6 +4,7 @@ import { useCombatStore, isCurrentTurn } from '@/stores/combatStore'
 import { useMovementAnimation } from '@/hooks/useMovementAnimation'
 import { Token } from './Token'
 import { DamagePopup } from './DamagePopup'
+import { Projectile } from './Projectile'
 import { ContextMenu } from './ContextMenu'
 import { calculateMovementDistance } from '@/lib/movement'
 import { findPath, calculatePathCost } from '@/lib/pathfinding'
@@ -323,6 +324,7 @@ export function CombatGrid() {
     aoePreview,
     selectedSpell,
     damagePopups,
+    activeProjectiles,
     mapBackgroundImage,
     movementAnimation,
     selectCombatant,
@@ -420,7 +422,7 @@ export function CombatGrid() {
     const combatantId = draggingCombatantId || currentTurnId
     if (!combatantId) return []
 
-    if (!isCurrentTurn({ turnOrder, currentTurnIndex, combatants, grid, round: 0, phase, log: [], selectedCombatantId, damagePopups: [] }, combatantId)) return []
+    if (!isCurrentTurn({ turnOrder, currentTurnIndex, combatants, grid, round: 0, phase, log: [], selectedCombatantId, damagePopups: [], activeProjectiles: [] }, combatantId)) return []
 
     return getReachablePositions(combatantId)
   }, [draggingCombatantId, selectedCombatantId, phase, selectedAction, turnOrder, currentTurnIndex, currentTurnId, getReachablePositions, combatants, grid])
@@ -1089,6 +1091,16 @@ export function CombatGrid() {
             </div>
           )
         })}
+
+        {/* Projectile animations layer */}
+        {activeProjectiles.map((projectile) => (
+          <Projectile
+            key={projectile.id}
+            from={projectile.from}
+            to={projectile.to}
+            duration={projectile.duration}
+          />
+        ))}
 
         {/* Damage popups layer */}
         {damagePopups.map((popup) => (

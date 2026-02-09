@@ -9,6 +9,7 @@ import { useCombatStore } from '@/stores/combatStore'
 import { useCharacterStore } from '@/stores/characterStore'
 import { getCharacterTokenImage } from '@/lib/tokenImages'
 import type { Character } from '@/types'
+import { findValidPosition } from '@/lib/combatPlacement'
 import { Check, Skull, Dices, User, ArrowRight, Pencil } from 'lucide-react'
 
 function CharacterCard({
@@ -183,39 +184,17 @@ export function HomePage() {
       initializeGrid(gridWidth, gridHeight)
     }
 
-    // Helper to check if a position is blocked by an obstacle
-    const isPositionBlocked = (x: number, y: number): boolean => {
-      if (!selectedEncounter.terrain) return false
-      return selectedEncounter.terrain.some(
-        t => t.x === x && t.y === y && t.obstacle?.blocksMovement
-      )
-    }
-
-    // Find a valid position near the target that's not blocked
-    const findValidPosition = (startX: number, startY: number, searchDirection: 1 | -1): { x: number; y: number } => {
-      // Try the exact position first
-      if (!isPositionBlocked(startX, startY)) {
-        return { x: startX, y: startY }
-      }
-      // Search nearby positions
-      for (let radius = 1; radius < 5; radius++) {
-        for (let dy = -radius; dy <= radius; dy++) {
-          const x = startX + (radius * searchDirection)
-          const y = startY + dy
-          if (y >= 0 && y < gridHeight && x >= 0 && x < gridWidth && !isPositionBlocked(x, y)) {
-            return { x, y }
-          }
-        }
-      }
-      return { x: startX, y: startY } // Fallback
-    }
+    // Track occupied positions to prevent overlaps
+    const occupiedPositions = new Set<string>()
+    const terrain = selectedEncounter.terrain
 
     // Calculate total monster count for placement
     const totalMonsters = selectedEncounter.monsters.reduce((sum, m) => sum + m.count, 0)
 
     // Place player character on the left side, vertically centered
     const playerY = Math.floor(gridHeight / 2)
-    const playerPos = findValidPosition(2, playerY, 1)
+    const playerPos = findValidPosition(2, playerY, gridWidth, gridHeight, terrain, occupiedPositions, 1)
+    occupiedPositions.add(`${playerPos.x},${playerPos.y}`)
     addCombatant({
       name: selectedCharacter.name,
       type: 'character',
@@ -239,7 +218,8 @@ export function HomePage() {
         const baseX = monsterX - col * 2
         const baseY = monsterStartY + row
 
-        const monsterPos = findValidPosition(baseX, baseY, -1)
+        const monsterPos = findValidPosition(baseX, baseY, gridWidth, gridHeight, terrain, occupiedPositions, -1)
+        occupiedPositions.add(`${monsterPos.x},${monsterPos.y}`)
 
         addCombatant({
           name: count > 1 ? `${monster.name} ${i + 1}` : monster.name,

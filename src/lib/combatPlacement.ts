@@ -27,6 +27,72 @@ interface PlacementOptions {
 }
 
 /**
+ * Check if a grid position is blocked by an obstacle or already occupied
+ */
+function isPositionBlocked(
+  x: number,
+  y: number,
+  gridWidth: number,
+  gridHeight: number,
+  terrain: TerrainDefinition[] | undefined,
+  occupiedPositions: Set<string>
+): boolean {
+  // Out of bounds
+  if (x < 0 || x >= gridWidth || y < 0 || y >= gridHeight) return true
+  // Already occupied by another combatant
+  if (occupiedPositions.has(`${x},${y}`)) return true
+  // Blocked by obstacle
+  if (terrain?.some(t => t.x === x && t.y === y && t.obstacle?.blocksMovement)) return true
+  return false
+}
+
+/**
+ * Find a valid position near the target that's not blocked by obstacles or other combatants.
+ * Searches in expanding rings around the start position, preferring the given search direction.
+ * searchDirection: 1 = prefer right (for characters), -1 = prefer left (for monsters)
+ */
+export function findValidPosition(
+  startX: number,
+  startY: number,
+  gridWidth: number,
+  gridHeight: number,
+  terrain: TerrainDefinition[] | undefined,
+  occupiedPositions: Set<string>,
+  searchDirection: 1 | -1 = 1
+): Position {
+  // Try the exact position first
+  if (!isPositionBlocked(startX, startY, gridWidth, gridHeight, terrain, occupiedPositions)) {
+    return { x: startX, y: startY }
+  }
+  // Search in expanding radius, checking all cells at each distance
+  for (let radius = 1; radius <= Math.max(gridWidth, gridHeight); radius++) {
+    // First check along the preferred direction, then expand
+    for (let dy = -radius; dy <= radius; dy++) {
+      const x = startX + radius * searchDirection
+      const y = startY + dy
+      if (!isPositionBlocked(x, y, gridWidth, gridHeight, terrain, occupiedPositions)) {
+        return { x, y }
+      }
+    }
+    // Then check remaining perimeter cells at this radius
+    for (let dx = -radius; dx <= radius; dx++) {
+      for (let dy = -radius; dy <= radius; dy++) {
+        if (Math.abs(dx) !== radius && Math.abs(dy) !== radius) continue
+        // Skip the preferred direction column (already checked above)
+        if (dx === radius * searchDirection) continue
+        const x = startX + dx
+        const y = startY + dy
+        if (!isPositionBlocked(x, y, gridWidth, gridHeight, terrain, occupiedPositions)) {
+          return { x, y }
+        }
+      }
+    }
+  }
+  // Absolute fallback — shouldn't happen unless grid is completely full
+  return { x: startX, y: startY }
+}
+
+/**
  * Calculate positions for combatants on the grid
  * - Characters placed on left side (x=2), vertically centered
  * - Monsters placed on right side, spread vertically with column wrapping
@@ -87,7 +153,7 @@ export function setupCombatWithPlacement(
   // Calculate total monster count
   const totalMonsters = monsters.reduce((sum, m) => sum + m.count, 0)
 
-  // Calculate positions
+  // Calculate ideal positions
   const { characterPositions, monsterPositions } = calculateCombatantPositions(
     characters.length,
     totalMonsters,
@@ -95,25 +161,36 @@ export function setupCombatWithPlacement(
     gridHeight
   )
 
-  // Add characters with positions
+  // Track occupied positions to prevent overlaps
+  const occupiedPositions = new Set<string>()
+
+  // Add characters with validated positions
   characters.forEach((character, index) => {
+    const ideal = characterPositions[index] ?? { x: 2, y: Math.floor(gridHeight / 2) }
+    const pos = findValidPosition(ideal.x, ideal.y, gridWidth, gridHeight, terrain, occupiedPositions, 1)
+    occupiedPositions.add(`${pos.x},${pos.y}`)
+
     combatStore.addCombatant({
       name: character.name,
       type: 'character',
       data: character,
-      position: characterPositions[index] ?? { x: 2, y: Math.floor(gridHeight / 2) },
+      position: pos,
     })
   })
 
-  // Add monsters with positions
+  // Add monsters with validated positions
   let monsterIndex = 0
   monsters.forEach(({ monster, count }) => {
     for (let i = 0; i < count; i++) {
+      const ideal = monsterPositions[monsterIndex] ?? { x: gridWidth - 3, y: Math.floor(gridHeight / 2) }
+      const pos = findValidPosition(ideal.x, ideal.y, gridWidth, gridHeight, terrain, occupiedPositions, -1)
+      occupiedPositions.add(`${pos.x},${pos.y}`)
+
       combatStore.addCombatant({
         name: count > 1 ? `${monster.name} ${i + 1}` : monster.name,
         type: 'monster',
         data: { ...monster },
-        position: monsterPositions[monsterIndex] ?? { x: gridWidth - 3, y: Math.floor(gridHeight / 2) },
+        position: pos,
       })
       monsterIndex++
     }

@@ -112,6 +112,26 @@ body {
   animation: token-death 0.6s ease-out forwards;
 }
 
+/* Hit animation for combat tokens - shrink and bounce back */
+@keyframes token-hit {
+  0% {
+    transform: scale(1);
+  }
+  40% {
+    transform: scale(0.75);
+  }
+  70% {
+    transform: scale(1.05);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.animate-hit {
+  animation: token-hit 0.3s ease-out;
+}
+
 /* Damage popup animation - pops up and falls/fades with horizontal drift */
 @keyframes damage-popup {
   0% {

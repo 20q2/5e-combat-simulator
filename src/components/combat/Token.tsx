@@ -37,22 +37,38 @@ export function Token({
   const [showTooltip, setShowTooltip] = useState(false)
   const [tooltipPosition, setTooltipPosition] = useState<'right' | 'left'>('right')
   const [isPlayingDeathAnimation, setIsPlayingDeathAnimation] = useState(false)
+  const [isPlayingHitAnimation, setIsPlayingHitAnimation] = useState(false)
   const tokenRef = useRef<HTMLDivElement>(null)
   const hoverTimeoutRef = useRef<number | null>(null)
+  const hitAnimationTimerRef = useRef<number | null>(null)
   const prevHpRef = useRef(combatant.currentHp)
 
   const hpPercent = (combatant.currentHp / combatant.maxHp) * 100
   const isDead = combatant.currentHp <= 0
   const isConcentrating = !!combatant.concentratingOn
 
-  // Detect when combatant dies and trigger animation
+  // Detect when combatant dies or takes damage and trigger animations
   useEffect(() => {
     if (combatant.currentHp <= 0 && prevHpRef.current > 0) {
-      // Combatant just died - trigger animation
+      // Combatant just died - trigger death animation
       setIsPlayingDeathAnimation(true)
-      // Animation lasts 600ms, then it just stays in the final state
+    } else if (combatant.currentHp < prevHpRef.current && combatant.currentHp > 0) {
+      // Took damage but still alive - trigger hit animation
+      setIsPlayingHitAnimation(true)
+      if (hitAnimationTimerRef.current) {
+        clearTimeout(hitAnimationTimerRef.current)
+      }
+      hitAnimationTimerRef.current = window.setTimeout(() => {
+        setIsPlayingHitAnimation(false)
+        hitAnimationTimerRef.current = null
+      }, 300)
     }
     prevHpRef.current = combatant.currentHp
+    return () => {
+      if (hitAnimationTimerRef.current) {
+        clearTimeout(hitAnimationTimerRef.current)
+      }
+    }
   }, [combatant.currentHp])
 
   // Get token image if available
@@ -145,6 +161,8 @@ export function Token({
           isHoveredTarget && 'ring-4 ring-rose-500 ring-offset-2 ring-offset-slate-900 scale-[1.15] animate-pulse',
           // Concentration glow effect
           isConcentrating && !isSelected && !isHoveredTarget && 'ring-2 ring-purple-400/70 ring-offset-1 ring-offset-slate-900',
+          // Hit animation: shrink and bounce back
+          isPlayingHitAnimation && !isDead && 'animate-hit',
           // Death state: play animation when just died, otherwise show dead state (prone/rotated 90deg)
           isPlayingDeathAnimation && 'animate-death',
           isDead && !isPlayingDeathAnimation && 'opacity-50 grayscale scale-[0.85] rotate-90',

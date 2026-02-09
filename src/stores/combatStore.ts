@@ -13,6 +13,7 @@ import type {
   Spell,
   TerrainDefinition,
   DamagePopup,
+  ActiveProjectile,
   DamageType,
   CombatPopupType,
   Condition,
@@ -20,7 +21,7 @@ import type {
 } from '@/types'
 import { rollInitiative, rollDie, rollD20 } from '@/engine/dice'
 import { getAbilityModifier } from '@/types'
-import { resolveAttack, canAttackTarget, getSpellSaveDC, getSpellAttackBonus, rollCombatantSavingThrow, rollDeathSave, selectWeaponForTarget, type AttackResult } from '@/engine/combat'
+import { resolveAttack, canAttackTarget, getSpellSaveDC, getSpellAttackBonus, rollCombatantSavingThrow, rollDeathSave, selectWeaponForTarget, isRangedAttack, type AttackResult } from '@/engine/combat'
 import { rollAttack, rollDamage } from '@/engine/dice'
 import { getNextAIAction } from '@/engine/ai'
 // Movement calculations now handled by pathfinding module
@@ -245,6 +246,10 @@ interface CombatStore extends CombatState {
   addHealPopup: (targetId: string, amount: number) => void
   removeDamagePopup: (id: string) => void
 
+  // Projectile animations (ranged attacks)
+  launchProjectile: (from: Position, to: Position, onComplete: () => void) => string
+  removeProjectile: (id: string) => void
+
   // Debug utilities
   debugApplyCondition: (combatantId: string, condition: Condition) => void
   debugRemoveCondition: (combatantId: string, condition: Condition) => void
@@ -365,12 +370,17 @@ const initialState: CombatState = {
   targetingMode: undefined,
   hoveredTargetId: undefined,
   damagePopups: [],
+  activeProjectiles: [],
   pendingReaction: undefined,
   pendingIndomitable: undefined,
   pendingAttack: undefined,
   movementAnimation: undefined,
   pendingMovement: undefined,
 }
+
+// Module-level map for deferred projectile callbacks (not stored in Zustand state)
+const projectileCallbacks = new Map<string, () => void>()
+const PROJECTILE_FLIGHT_DURATION = 400 // ms
 
 export const useCombatStore = create<CombatStore>((set, get) => ({
   ...initialState,
@@ -2389,6 +2399,16 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
       selectedWeapon = selectWeaponForTarget(attacker, target, grid, weapon, rangedWeapon)
     }
 
+    // Determine if this is a ranged attack (for projectile animation)
+    const isRanged = isRangedAttack(selectedWeapon, monsterAction)
+    const deferIfRanged = (fn: () => void) => {
+      if (isRanged) {
+        get().launchProjectile({ ...attacker.position }, { ...target.position }, fn)
+      } else {
+        fn()
+      }
+    }
+
     // Check range and line of sight
     const attackCheck = canAttackTarget(attacker, target, grid, selectedWeapon, monsterAction)
     if (!attackCheck.canAttack) {
@@ -2512,8 +2532,10 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
         message: `${attacker.name} misses ${target.name}`,
         details: `${result.attackRoll.breakdown} vs AC ${result.targetAC}`,
       })
-      // Show miss popup on target
-      get().addCombatPopup(targetId, 'miss')
+      // Show miss popup on target (deferred for ranged attacks until projectile arrives)
+      deferIfRanged(() => {
+        get().addCombatPopup(targetId, 'miss')
+      })
 
       // Check for Heroic Inspiration (Musician feat) - attacker can reroll
       if (
@@ -2564,16 +2586,19 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
       if (selectedWeapon) {
         const grazeResult = applyGrazeOnMiss(attacker, target, selectedWeapon, masteryOverride)
         if (grazeResult && grazeResult.applied && grazeResult.grazeDamage && grazeResult.grazeDamage > 0) {
-          get().dealDamage(targetId, grazeResult.grazeDamage, attacker.name)
-          get().addDamagePopup(targetId, grazeResult.grazeDamage, selectedWeapon.damageType as DamageType, false)
-          get().addLogEntry({
-            type: 'damage',
-            actorId: attackerId,
-            actorName: attacker.name,
-            targetId,
-            targetName: target.name,
-            message: `Graze: ${grazeResult.grazeDamage} ${selectedWeapon.damageType} damage`,
-            details: 'Weapon mastery: Graze',
+          const grazeDmg = grazeResult.grazeDamage
+          deferIfRanged(() => {
+            get().dealDamage(targetId, grazeDmg, attacker.name)
+            get().addDamagePopup(targetId, grazeDmg, selectedWeapon.damageType as DamageType, false)
+            get().addLogEntry({
+              type: 'damage',
+              actorId: attackerId,
+              actorName: attacker.name,
+              targetId,
+              targetName: target.name,
+              message: `Graze: ${grazeResult.grazeDamage} ${selectedWeapon.damageType} damage`,
+              details: 'Weapon mastery: Graze',
+            })
           })
         }
       }
@@ -2827,154 +2852,156 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
         }
       }
 
-      // No reactions available, deal damage immediately
-      get().dealDamage(targetId, totalDamage, attacker.name)
-      get().addDamagePopup(targetId, totalDamage, (result.damageType ?? 'bludgeoning') as DamageType, result.critical)
-      if (result.critical) {
-        get().addCombatPopup(targetId, 'critical')
-      }
+      // No reactions available, deal damage (deferred for ranged attacks until projectile arrives)
+      deferIfRanged(() => {
+        get().dealDamage(targetId, totalDamage, attacker.name)
+        get().addDamagePopup(targetId, totalDamage, (result.damageType ?? 'bludgeoning') as DamageType, result.critical)
+        if (result.critical) {
+          get().addCombatPopup(targetId, 'critical')
+        }
 
-      const damageDetails = bonusDamageDetails.length > 0
-        ? `${result.damage.breakdown} + ${bonusDamageDetails.join(' + ')}`
-        : result.damage.breakdown
+        const damageDetails = bonusDamageDetails.length > 0
+          ? `${result.damage!.breakdown} + ${bonusDamageDetails.join(' + ')}`
+          : result.damage!.breakdown
 
-      get().addLogEntry({
-        type: 'damage',
-        actorId: attackerId,
-        actorName: attacker.name,
-        targetId,
-        targetName: target.name,
-        message: `${totalDamage} ${result.damageType} damage`,
-        details: damageDetails,
-      })
-
-      // Log Sneak Attack if used
-      if (result.sneakAttackUsed) {
         get().addLogEntry({
-          type: 'other',
+          type: 'damage',
           actorId: attackerId,
           actorName: attacker.name,
-          message: `${attacker.name} deals Sneak Attack damage! (+${result.sneakAttackDamage?.total})`,
+          targetId,
+          targetName: target.name,
+          message: `${totalDamage} ${result.damageType} damage`,
+          details: damageDetails,
         })
-      }
 
-      // Apply on-hit weapon mastery effects
-      if (selectedWeapon) {
-        const { round, combatants: currentCombatants } = get()
-        const masteryResult = applyOnHitMasteryEffect(attacker, target, selectedWeapon, grid, currentCombatants, round, masteryOverride)
-
-        if (masteryResult && masteryResult.applied) {
-          // Log the mastery effect
+        // Log Sneak Attack if used
+        if (result.sneakAttackUsed) {
           get().addLogEntry({
             type: 'other',
             actorId: attackerId,
             actorName: attacker.name,
-            message: masteryResult.description,
-            details: `Weapon mastery: ${masteryResult.mastery}`,
+            message: `${attacker.name} deals Sneak Attack damage! (+${result.sneakAttackDamage?.total})`,
           })
+        }
 
-          // Apply specific effects based on mastery type
-          switch (masteryResult.mastery) {
-            case 'push':
-              if (masteryResult.pushResult) {
-                // Update target position
-                set((state) => ({
-                  combatants: state.combatants.map((c) =>
-                    c.id === targetId
-                      ? { ...c, position: masteryResult.pushResult!.newPosition }
-                      : c
-                  ),
-                }))
-              }
-              break
+        // Apply on-hit weapon mastery effects
+        if (selectedWeapon) {
+          const { round, combatants: currentCombatants } = get()
+          const masteryResult = applyOnHitMasteryEffect(attacker, target, selectedWeapon, grid, currentCombatants, round, masteryOverride)
 
-            case 'sap':
-              // Add sapped condition to target (disadvantage on next attack)
-              set((state) => ({
-                combatants: state.combatants.map((c) =>
-                  c.id === targetId
-                    ? {
-                        ...c,
-                        conditions: [...c.conditions, { condition: 'sapped' as const, duration: 1 }],
-                      }
-                    : c
-                ),
-              }))
-              get().addCombatPopup(targetId, 'condition', 'Sapped')
-              break
+          if (masteryResult && masteryResult.applied) {
+            // Log the mastery effect
+            get().addLogEntry({
+              type: 'other',
+              actorId: attackerId,
+              actorName: attacker.name,
+              message: masteryResult.description,
+              details: `Weapon mastery: ${masteryResult.mastery}`,
+            })
 
-            case 'slow':
-              // Slow is tracked via speed reduction - handled by combat calculations
-              // For now just log it; speed reduction is applied automatically in movement
-              break
-
-            case 'topple':
-              if (masteryResult.toppleResult) {
-                if (!masteryResult.toppleResult.savePassed) {
-                  // Target failed save, add prone condition
-                  get().addCombatPopup(targetId, 'save_failed')
+            // Apply specific effects based on mastery type
+            switch (masteryResult.mastery) {
+              case 'push':
+                if (masteryResult.pushResult) {
+                  // Update target position
                   set((state) => ({
                     combatants: state.combatants.map((c) =>
                       c.id === targetId
-                        ? {
-                            ...c,
-                            conditions: [...c.conditions, { condition: 'prone' as const, duration: -1 }],
-                          }
+                        ? { ...c, position: masteryResult.pushResult!.newPosition }
                         : c
                     ),
                   }))
-                  get().addCombatPopup(targetId, 'condition', 'Prone')
-                } else {
-                  get().addCombatPopup(targetId, 'saved')
                 }
-              }
-              break
+                break
 
-            case 'vex':
-              // Set vexedBy on target so attacker has advantage on next attack
-              set((state) => ({
-                combatants: state.combatants.map((c) =>
-                  c.id === targetId
-                    ? {
-                        ...c,
-                        vexedBy: { attackerId, expiresOnRound: round + 1 },
-                      }
-                    : c
-                ),
-              }))
-              break
+              case 'sap':
+                // Add sapped condition to target (disadvantage on next attack)
+                set((state) => ({
+                  combatants: state.combatants.map((c) =>
+                    c.id === targetId
+                      ? {
+                          ...c,
+                          conditions: [...c.conditions, { condition: 'sapped' as const, duration: 1 }],
+                        }
+                      : c
+                  ),
+                }))
+                get().addCombatPopup(targetId, 'condition', 'Sapped')
+                break
+
+              case 'slow':
+                // Slow is tracked via speed reduction - handled by combat calculations
+                // For now just log it; speed reduction is applied automatically in movement
+                break
+
+              case 'topple':
+                if (masteryResult.toppleResult) {
+                  if (!masteryResult.toppleResult.savePassed) {
+                    // Target failed save, add prone condition
+                    get().addCombatPopup(targetId, 'save_failed')
+                    set((state) => ({
+                      combatants: state.combatants.map((c) =>
+                        c.id === targetId
+                          ? {
+                              ...c,
+                              conditions: [...c.conditions, { condition: 'prone' as const, duration: -1 }],
+                            }
+                          : c
+                      ),
+                    }))
+                    get().addCombatPopup(targetId, 'condition', 'Prone')
+                  } else {
+                    get().addCombatPopup(targetId, 'saved')
+                  }
+                }
+                break
+
+              case 'vex':
+                // Set vexedBy on target so attacker has advantage on next attack
+                set((state) => ({
+                  combatants: state.combatants.map((c) =>
+                    c.id === targetId
+                      ? {
+                          ...c,
+                          vexedBy: { attackerId, expiresOnRound: round + 1 },
+                        }
+                      : c
+                  ),
+                }))
+                break
+            }
           }
         }
-      }
 
-      // Tavern Brawler feat: push on unarmed hit (automatic, once per turn)
-      if (isUnarmedStrike(selectedWeapon) && canTavernBrawlerPush(attacker)) {
-        const pushPos = calculatePushPosition(attacker, target, grid)
-        if (pushPos) {
-          // Update grid occupancy
-          const gridUpdates = [
-            { x: target.position.x, y: target.position.y, occupiedBy: undefined },
-            { x: pushPos.x, y: pushPos.y, occupiedBy: targetId },
-          ]
-          set((state) => ({
-            combatants: state.combatants.map((c) =>
-              c.id === targetId
-                ? { ...c, position: pushPos }
-                : c.id === attackerId
-                ? { ...c, usedTavernBrawlerPushThisTurn: true }
-                : c
-            ),
-            grid: updateGridOccupancy(state.grid, gridUpdates),
-          }))
+        // Tavern Brawler feat: push on unarmed hit (automatic, once per turn)
+        if (isUnarmedStrike(selectedWeapon) && canTavernBrawlerPush(attacker)) {
+          const pushPos = calculatePushPosition(attacker, target, grid)
+          if (pushPos) {
+            // Update grid occupancy
+            const gridUpdates = [
+              { x: target.position.x, y: target.position.y, occupiedBy: undefined },
+              { x: pushPos.x, y: pushPos.y, occupiedBy: targetId },
+            ]
+            set((state) => ({
+              combatants: state.combatants.map((c) =>
+                c.id === targetId
+                  ? { ...c, position: pushPos }
+                  : c.id === attackerId
+                  ? { ...c, usedTavernBrawlerPushThisTurn: true }
+                  : c
+              ),
+              grid: updateGridOccupancy(state.grid, gridUpdates),
+            }))
 
-          get().addLogEntry({
-            type: 'other',
-            actorId: attackerId,
-            actorName: attacker.name,
-            message: `pushes ${target.name} 5ft (Tavern Brawler)`,
-          })
+            get().addLogEntry({
+              type: 'other',
+              actorId: attackerId,
+              actorName: attacker.name,
+              message: `pushes ${target.name} 5ft (Tavern Brawler)`,
+            })
+          }
         }
-      }
+      })
     }
 
     // Update attacker state: increment attacks made, mark sneak attack if used
@@ -3739,6 +3766,16 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
 
         // Spell attack or saving throw?
         if (spell.attackType) {
+          // Determine if ranged spell attack for projectile animation
+          const isRangedSpell = spell.attackType === 'ranged'
+          const deferIfRangedSpell = (fn: () => void) => {
+            if (isRangedSpell) {
+              get().launchProjectile({ ...caster.position }, { ...target.position }, fn)
+            } else {
+              fn()
+            }
+          }
+
           // Spell attack roll
           const spellAttackBonus = getSpellAttackBonus(character)
           const attackRoll = rollAttack(spellAttackBonus)
@@ -3756,7 +3793,9 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
               message: `${caster.name} misses ${target.name} with ${spell.name} (natural 1)`,
               details: attackRoll.breakdown,
             })
-            get().addCombatPopup(currentTargetId, 'miss')
+            deferIfRangedSpell(() => {
+              get().addCombatPopup(currentTargetId, 'miss')
+            })
           } else if (attackRoll.isNatural20 || attackRoll.total >= targetAC) {
             const isCrit = attackRoll.isNatural20
             const damage = rollDamage(spell.damage.dice, isCrit)
@@ -3773,19 +3812,22 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
               details: `${attackRoll.breakdown} vs AC ${targetAC}`,
             })
 
-            get().dealDamage(currentTargetId, damage.total, caster.name)
-            get().addDamagePopup(currentTargetId, damage.total, spell.damage.type, isCrit)
-            if (isCrit) {
-              get().addCombatPopup(currentTargetId, 'critical')
-            }
-            get().addLogEntry({
-              type: 'damage',
-              actorId: casterId,
-              actorName: caster.name,
-              targetId: currentTargetId,
-              targetName: target.name,
-              message: `${damage.total} ${spell.damage.type} damage`,
-              details: damage.breakdown,
+            const spellDamageType = spell.damage!.type
+            deferIfRangedSpell(() => {
+              get().dealDamage(currentTargetId, damage.total, caster.name)
+              get().addDamagePopup(currentTargetId, damage.total, spellDamageType, isCrit)
+              if (isCrit) {
+                get().addCombatPopup(currentTargetId, 'critical')
+              }
+              get().addLogEntry({
+                type: 'damage',
+                actorId: casterId,
+                actorName: caster.name,
+                targetId: currentTargetId,
+                targetName: target.name,
+                message: `${damage.total} ${spellDamageType} damage`,
+                details: damage.breakdown,
+              })
             })
           } else {
             get().addLogEntry({
@@ -3797,8 +3839,9 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
               message: `${caster.name} misses ${target.name} with ${spell.name}`,
               details: `${attackRoll.breakdown} vs AC ${targetAC}`,
             })
-            get().addCombatPopup(currentTargetId, 'miss')
-            get().addCombatPopup(currentTargetId, 'miss')
+            deferIfRangedSpell(() => {
+              get().addCombatPopup(currentTargetId, 'miss')
+            })
           }
         } else if (spell.savingThrow) {
           // Saving throw spell
@@ -4400,6 +4443,11 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
           get().performAttack(current.id, action.targetId, undefined, action.action)
         }
 
+        // Wait for any active projectiles to complete before ending turn
+        while (get().activeProjectiles.length > 0) {
+          await new Promise((resolve) => setTimeout(resolve, 50))
+        }
+
         // Check if there's a pending reaction - if so, don't end turn yet
         // The reaction handlers (useReactionSpell/skipReaction) will end the turn
         const hasPendingReaction = get().pendingReaction !== undefined
@@ -4506,6 +4554,43 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
   removeDamagePopup: (id) => {
     set((state) => ({
       damagePopups: state.damagePopups.filter((p) => p.id !== id),
+    }))
+  },
+
+  launchProjectile: (from, to, onComplete) => {
+    const id = generateId()
+
+    // Store callback in module-level map (not in Zustand state)
+    projectileCallbacks.set(id, onComplete)
+
+    const projectile: ActiveProjectile = {
+      id,
+      from: { ...from },
+      to: { ...to },
+      timestamp: Date.now(),
+      duration: PROJECTILE_FLIGHT_DURATION,
+    }
+
+    set((state) => ({
+      activeProjectiles: [...state.activeProjectiles, projectile],
+    }))
+
+    // Schedule completion: execute deferred damage then remove projectile
+    setTimeout(() => {
+      const callback = projectileCallbacks.get(id)
+      if (callback) {
+        callback()
+        projectileCallbacks.delete(id)
+      }
+      get().removeProjectile(id)
+    }, PROJECTILE_FLIGHT_DURATION)
+
+    return id
+  },
+
+  removeProjectile: (id) => {
+    set((state) => ({
+      activeProjectiles: state.activeProjectiles.filter((p) => p.id !== id),
     }))
   },
 

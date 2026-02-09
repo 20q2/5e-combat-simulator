@@ -634,6 +634,14 @@ export interface DamagePopup {
   text?: string                // Optional custom text override
 }
 
+export interface ActiveProjectile {
+  id: string
+  from: Position       // Attacker grid position
+  to: Position         // Target grid position
+  timestamp: number
+  duration: number     // Flight duration in ms
+}
+
 // ============================================
 // Combat Trigger System Types
 // ============================================
@@ -692,6 +700,8 @@ export interface CombatState {
   aoePreview?: AoEPreview
   selectedSpell?: Spell
   damagePopups: DamagePopup[]
+  // Active projectile animations (ranged attacks flying to target)
+  activeProjectiles: ActiveProjectile[]
   // Projectile targeting for multi-projectile spells (Magic Missile, etc.)
   projectileTargeting?: {
     spell: Spell

@@ -39,7 +39,8 @@
       "Bash(del srcenginecombat.test.ts)",
       "Bash(del srcengineweaponMastery.test.ts)",
       "Bash(grep:*)",
-      "Bash(npm run dev:*)"
+      "Bash(npm run dev:*)",
+      "Bash(./node_modules/.bin/tsc:*)"
     ]
   }
 }
