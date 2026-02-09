@@ -4,6 +4,7 @@ import { useCombatStore, isCurrentTurn } from '@/stores/combatStore'
 import { useMovementAnimation } from '@/hooks/useMovementAnimation'
 import { Token } from './Token'
 import { DamagePopup } from './DamagePopup'
+import { ContextMenu } from './ContextMenu'
 import { calculateMovementDistance } from '@/lib/movement'
 import { findPath, calculatePathCost } from '@/lib/pathfinding'
 import { getAoEAffectedCells, aoeOriginatesFromCaster } from '@/lib/aoeShapes'
@@ -338,6 +339,7 @@ export function CombatGrid() {
     setRangeHighlight,
     projectileTargeting,
     assignProjectile,
+    cancelProjectileTargeting,
     breathWeaponTargeting,
     setBreathWeaponTargeting,
     performAttackReplacement,
@@ -374,6 +376,11 @@ export function CombatGrid() {
   const [dragOverCell, setDragOverCell] = useState<Position | null>(null)
   const [hoveredCell, setHoveredCell] = useState<Position | null>(null)
   const [hoveredTokenId, setHoveredTokenId] = useState<string | null>(null)
+  const [contextMenu, setContextMenu] = useState<{
+    position: { x: number; y: number }
+    targetId: string
+    targetType: 'enemy' | 'ally'
+  } | null>(null)
 
   const currentTurnId = turnOrder[currentTurnIndex]
   const selectedCombatant = combatants.find((c) => c.id === selectedCombatantId)
@@ -847,6 +854,61 @@ export function CombatGrid() {
     }
   }
 
+  // Helper to cancel all targeting modes
+  const cancelTargeting = () => {
+    setSelectedAction(undefined)
+    setSelectedSpell(undefined)
+    setAoEPreview(undefined)
+    setRangeHighlight(undefined)
+    cancelProjectileTargeting()
+    setBreathWeaponTargeting(undefined)
+  }
+
+  // Check if we're in any targeting mode
+  const isInTargetingMode = selectedAction || selectedSpell || projectileTargeting || breathWeaponTargeting
+
+  // Right-click on grid cancels targeting
+  const handleGridContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault()
+    if (isInTargetingMode) {
+      cancelTargeting()
+    }
+    // Close context menu if open
+    setContextMenu(null)
+  }
+
+  // Right-click on token shows context menu (or cancels if in targeting mode)
+  const handleTokenContextMenu = (e: React.MouseEvent, combatantId: string) => {
+    e.preventDefault()
+    e.stopPropagation()
+
+    // Block during movement animation
+    if (movementAnimation) return
+
+    // If in targeting mode, cancel instead of showing menu
+    if (isInTargetingMode) {
+      cancelTargeting()
+      return
+    }
+
+    // Only show menu during player's combat turn
+    if (phase !== 'combat' || !currentTurnId) return
+    const current = combatants.find(c => c.id === currentTurnId)
+    if (!current || current.type !== 'character') return
+
+    // Right-click on self just cancels (no menu)
+    if (combatantId === currentTurnId) return
+
+    const target = combatants.find(c => c.id === combatantId)
+    if (!target || target.currentHp <= 0) return
+
+    setContextMenu({
+      position: { x: e.clientX, y: e.clientY },
+      targetId: combatantId,
+      targetType: target.type !== current.type ? 'enemy' : 'ally'
+    })
+  }
+
   const handleCellDragOver = (e: React.DragEvent, x: number, y: number) => {
     e.preventDefault()
     e.dataTransfer.dropEffect = isValidDropPosition(x, y) ? 'move' : 'none'
@@ -884,6 +946,7 @@ export function CombatGrid() {
           width: grid.width * CELL_SIZE,
           height: grid.height * CELL_SIZE,
         }}
+        onContextMenu={handleGridContextMenu}
       >
         {/* Background image layer */}
         {backgroundImageUrl && (
@@ -1008,6 +1071,7 @@ export function CombatGrid() {
                 suppressTooltip={!!aoePreview}
                 visualScale={visualScale}
                 onClick={() => handleTokenClick(combatant.id)}
+                onContextMenu={(e) => handleTokenContextMenu(e, combatant.id)}
                 onDragStart={() => handleTokenDragStart(combatant.id)}
                 onDragEnd={handleTokenDragEnd}
                 onHoverChange={(hovered) => {
@@ -1048,6 +1112,16 @@ export function CombatGrid() {
             />
           </div>
         ))}
+
+        {/* Context menu */}
+        {contextMenu && (
+          <ContextMenu
+            position={contextMenu.position}
+            targetId={contextMenu.targetId}
+            targetType={contextMenu.targetType}
+            onClose={() => setContextMenu(null)}
+          />
+        )}
       </div>
     </div>
   )

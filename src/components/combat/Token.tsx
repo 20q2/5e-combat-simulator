@@ -14,6 +14,7 @@ interface TokenProps {
   suppressTooltip?: boolean
   visualScale?: number // 0.6-1.0 for tiny/small creatures visual scaling
   onClick: () => void
+  onContextMenu?: (e: React.MouseEvent) => void
   onDragStart: (e: React.DragEvent) => void
   onDragEnd: (e: React.DragEvent) => void
   onHoverChange?: (isHovered: boolean) => void
@@ -28,6 +29,7 @@ export function Token({
   suppressTooltip,
   visualScale,
   onClick,
+  onContextMenu,
   onDragStart,
   onDragEnd,
   onHoverChange,
@@ -133,6 +135,10 @@ export function Token({
         onDragStart={handleDragStart}
         onDragEnd={onDragEnd}
         onClick={onClick}
+        onContextMenu={(e) => {
+          e.preventDefault()
+          onContextMenu?.(e)
+        }}
         className={cn(
           'w-full h-full rounded-full p-[2px] transition-all cursor-pointer',
           isCurrentTurn && 'ring-2 ring-emerald-400 ring-offset-1 ring-offset-slate-900 scale-110 shadow-lg shadow-black/50',

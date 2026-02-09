@@ -4,7 +4,6 @@ import type { Combatant, Character, Monster } from '@/types'
 import {
   Heart,
   Shield,
-  Swords,
   Zap,
   Wind,
   Footprints,
@@ -115,11 +114,7 @@ export function TokenTooltip({ combatant, isCurrentTurn }: TokenTooltipProps) {
 
       {/* Action Economy - Only show during combat when it's their turn */}
       {isCurrentTurn && (
-        <div className="flex items-center justify-between gap-1 px-2 py-1.5 bg-amber-900/30 border border-amber-700/50 rounded mb-2">
-          <div className="flex items-center gap-1.5 text-amber-400">
-            <Swords className="w-3.5 h-3.5" />
-            <span className="text-xs font-medium">Actions</span>
-          </div>
+        <div className="flex items-center justify-center gap-3 px-2 py-1.5 bg-amber-900/30 border border-amber-700/50 rounded mb-2">
           <div className="flex gap-3 text-xs">
             <span className={cn(
               'flex items-center gap-1',

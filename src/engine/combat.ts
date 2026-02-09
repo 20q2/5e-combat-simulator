@@ -254,8 +254,14 @@ export function resolveAttack(options: MeleeAttackOptions): AttackResult {
   // Determine if this is a ranged attack for advantage calculations
   const isRangedAttack = weapon?.type === 'ranged' || (monsterAction?.range?.normal ?? 0) > 5
 
+  // Check for long range disadvantage
+  let baseAdvantage = advantage
+  if (isRangedAttack && hasRangedDisadvantage(attacker, target, allCombatants, weapon, monsterAction)) {
+    baseAdvantage = baseAdvantage === 'advantage' ? 'normal' : 'disadvantage'
+  }
+
   // Determine advantage/disadvantage
-  const finalAdvantage = getAttackAdvantage(attacker, target, advantage, isRangedAttack)
+  const finalAdvantage = getAttackAdvantage(attacker, target, baseAdvantage, isRangedAttack)
 
   // Roll the attack
   const targetAC = getCombatantAC(target)
@@ -416,9 +422,9 @@ export function isInRange(attacker: Combatant, target: Combatant, weapon?: Weapo
       const reach = weapon.properties.includes('reach') ? 10 : 5
       return distance <= reach
     } else {
-      // Ranged weapon
-      const normalRange = weapon.range?.normal ?? 30
-      return distance <= normalRange
+      // Ranged weapon - can attack at normal range or long range (with disadvantage)
+      const longRange = weapon.range?.long ?? weapon.range?.normal ?? 30
+      return distance <= longRange
     }
   }
 
@@ -427,7 +433,8 @@ export function isInRange(attacker: Combatant, target: Combatant, weapon?: Weapo
       return distance <= monsterAction.reach
     }
     if (monsterAction.range) {
-      return distance <= monsterAction.range.normal
+      // Ranged monster action - can attack at normal range or long range (with disadvantage)
+      return distance <= monsterAction.range.long
     }
   }
 
@@ -514,10 +521,10 @@ export function selectWeaponForTarget(
     }
   }
 
-  // Check if ranged weapon can reach (and has line of sight)
+  // Check if ranged weapon can reach (and has line of sight) - includes long range
   if (rangedWeapon) {
-    const normalRange = rangedWeapon.range?.normal ?? 30
-    if (distance <= normalRange && hasLineOfSight(grid, attacker.position, target.position)) {
+    const longRange = rangedWeapon.range?.long ?? rangedWeapon.range?.normal ?? 30
+    if (distance <= longRange && hasLineOfSight(grid, attacker.position, target.position)) {
       return rangedWeapon
     }
   }
@@ -538,7 +545,7 @@ export function selectWeaponForTarget(
 /**
  * Check if ranged attack is at disadvantage (within 5ft of enemy or at long range)
  */
-export function hasRangedDisadvantage(attacker: Combatant, target: Combatant, allCombatants: Combatant[], weapon?: Weapon): boolean {
+export function hasRangedDisadvantage(attacker: Combatant, target: Combatant, allCombatants: Combatant[], weapon?: Weapon, monsterAction?: MonsterAction): boolean {
   const distance = getDistance(attacker, target)
 
   // Check if any hostile combatant is within 5ft
@@ -551,9 +558,14 @@ export function hasRangedDisadvantage(attacker: Combatant, target: Combatant, al
 
   if (isHostileNearby) return true
 
-  // Check if at long range
+  // Check if at long range (weapon)
   if (weapon?.range) {
     return distance > weapon.range.normal && distance <= weapon.range.long
+  }
+
+  // Check if at long range (monster action)
+  if (monsterAction?.range) {
+    return distance > monsterAction.range.normal && distance <= monsterAction.range.long
   }
 
   return false
