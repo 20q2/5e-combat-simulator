@@ -42,7 +42,7 @@ export function Layout() {
       </header>
       <main className={cn(
         location.pathname === '/combat'
-          ? 'py-2' // Combat page uses full width
+          ? '' // Combat page uses full width, no padding
           : 'container mx-auto px-4 py-6'
       )}>
         <Outlet />

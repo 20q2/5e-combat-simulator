@@ -1,5 +1,6 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useRef, useEffect, useCallback } from 'react'
 import { cn } from '@/lib/utils'
+import { Minus, Plus, Maximize2 } from 'lucide-react'
 import { useCombatStore, isCurrentTurn } from '@/stores/combatStore'
 import { useMovementAnimation } from '@/hooks/useMovementAnimation'
 import { Token } from './Token'
@@ -394,6 +395,98 @@ export function CombatGrid() {
     targetId: string
     targetType: 'enemy' | 'ally'
   } | null>(null)
+
+  // Zoom & pan state
+  // zoomRef is the source of truth; React state is only for UI controls re-render.
+  // The wheel handler applies zoom visually via direct DOM manipulation to avoid
+  // a one-frame flicker from async React re-renders.
+  const [zoom, setZoom] = useState(1)
+  const [isPanning, setIsPanning] = useState(false)
+  const gridContainerRef = useRef<HTMLDivElement>(null)
+  const sizingWrapperRef = useRef<HTMLDivElement>(null)
+  const transformRef = useRef<HTMLDivElement>(null)
+  const panStart = useRef({ x: 0, y: 0, scrollLeft: 0, scrollTop: 0 })
+  const zoomRef = useRef(zoom)
+  zoomRef.current = zoom
+
+  // Apply zoom visually to DOM elements (no React re-render)
+  const applyZoomToDOM = useCallback((newZoom: number) => {
+    const gridW = grid.width * CELL_SIZE
+    const gridH = grid.height * CELL_SIZE
+    if (sizingWrapperRef.current) {
+      sizingWrapperRef.current.style.width = `${gridW * newZoom}px`
+      sizingWrapperRef.current.style.height = `${gridH * newZoom}px`
+    }
+    if (transformRef.current) {
+      transformRef.current.style.transform = `scale(${newZoom})`
+    }
+  }, [grid.width, grid.height])
+
+  // Wheel handler for zoom (bare scroll = zoom, like Roll20)
+  // Must be attached natively via useEffect with { passive: false } to allow preventDefault
+  const handleWheel = useCallback((e: WheelEvent) => {
+    e.preventDefault()
+    const currentZoom = zoomRef.current
+    // Multiplicative zoom: proportional to actual scroll amount for smooth feel
+    // Clamp deltaY so a single large wheel tick doesn't jump too far
+    const clampedDelta = Math.max(-100, Math.min(100, e.deltaY))
+    const factor = 1 - clampedDelta * 0.002
+    const newZoom = Math.min(2, Math.max(0.25, +(currentZoom * factor).toFixed(3)))
+    if (Math.abs(newZoom - currentZoom) < 0.001) return
+
+    // Apply zoom to DOM immediately (same frame) to avoid flicker
+    applyZoomToDOM(newZoom)
+    zoomRef.current = newZoom
+
+    // Zoom toward cursor: adjust scroll so point under cursor stays in place
+    const container = gridContainerRef.current
+    if (container) {
+      const rect = container.getBoundingClientRect()
+      const mouseX = e.clientX - rect.left + container.scrollLeft
+      const mouseY = e.clientY - rect.top + container.scrollTop
+      const scale = newZoom / currentZoom
+      container.scrollLeft = mouseX * scale - (e.clientX - rect.left)
+      container.scrollTop = mouseY * scale - (e.clientY - rect.top)
+    }
+
+    // Update React state for UI controls (percentage display, button callbacks)
+    setZoom(newZoom)
+  }, [applyZoomToDOM])
+
+  useEffect(() => {
+    const el = gridContainerRef.current
+    if (!el) return
+    el.addEventListener('wheel', handleWheel, { passive: false })
+    return () => el.removeEventListener('wheel', handleWheel)
+  }, [handleWheel])
+
+  // Middle-click drag to pan
+  const handlePanMouseDown = useCallback((e: React.MouseEvent) => {
+    if (e.button === 1) { // Middle click
+      e.preventDefault()
+      setIsPanning(true)
+      panStart.current = {
+        x: e.clientX,
+        y: e.clientY,
+        scrollLeft: gridContainerRef.current?.scrollLeft ?? 0,
+        scrollTop: gridContainerRef.current?.scrollTop ?? 0,
+      }
+    }
+  }, [])
+
+  const handlePanMouseMove = useCallback((e: React.MouseEvent) => {
+    if (!isPanning) return
+    const dx = e.clientX - panStart.current.x
+    const dy = e.clientY - panStart.current.y
+    if (gridContainerRef.current) {
+      gridContainerRef.current.scrollLeft = panStart.current.scrollLeft - dx
+      gridContainerRef.current.scrollTop = panStart.current.scrollTop - dy
+    }
+  }, [isPanning])
+
+  const handlePanMouseUp = useCallback(() => {
+    if (isPanning) setIsPanning(false)
+  }, [isPanning])
 
   const currentTurnId = turnOrder[currentTurnIndex]
   const selectedCombatant = combatants.find((c) => c.id === selectedCombatantId)
@@ -959,12 +1052,42 @@ export function CombatGrid() {
   }
 
   return (
-    <div className="overflow-auto border border-slate-700 rounded-lg bg-slate-950">
+    <div
+      ref={gridContainerRef}
+      className={cn(
+        "overflow-auto border border-slate-700 rounded-lg bg-slate-950 relative",
+        isPanning && "cursor-grabbing"
+      )}
+      style={{
+        // Lock the container to the unzoomed grid size so it doesn't
+        // shrink/grow with zoom — scroll bars appear when zoomed in,
+        // empty space appears when zoomed out
+        width: grid.width * CELL_SIZE + 2,  // +2 for border
+        height: grid.height * CELL_SIZE + 2,
+        maxWidth: '100%',
+        maxHeight: 'calc(100vh - 10rem)',
+      }}
+      onMouseDown={handlePanMouseDown}
+      onMouseMove={handlePanMouseMove}
+      onMouseUp={handlePanMouseUp}
+      onMouseLeave={handlePanMouseUp}
+    >
+      {/* Sizing wrapper — sets scrollable area to match the scaled grid */}
       <div
+        ref={sizingWrapperRef}
+        style={{
+          width: grid.width * CELL_SIZE * zoom,
+          height: grid.height * CELL_SIZE * zoom,
+        }}
+      >
+      <div
+        ref={transformRef}
         className="relative"
         style={{
           width: grid.width * CELL_SIZE,
           height: grid.height * CELL_SIZE,
+          transform: `scale(${zoom})`,
+          transformOrigin: '0 0',
         }}
         onContextMenu={handleGridContextMenu}
       >
@@ -1145,15 +1268,47 @@ export function CombatGrid() {
           </div>
         ))}
 
-        {/* Context menu */}
-        {contextMenu && (
-          <ContextMenu
-            position={contextMenu.position}
-            targetId={contextMenu.targetId}
-            targetType={contextMenu.targetType}
-            onClose={() => setContextMenu(null)}
-          />
-        )}
+      </div>
+      </div>
+
+      {/* Context menu — rendered outside the transform so `fixed` positioning works correctly */}
+      {contextMenu && (
+        <ContextMenu
+          position={contextMenu.position}
+          targetId={contextMenu.targetId}
+          targetType={contextMenu.targetType}
+          onClose={() => setContextMenu(null)}
+        />
+      )}
+
+      {/* Zoom controls — sticky in bottom-right, outside the transform */}
+      <div className="sticky bottom-2 left-0 w-full flex justify-end pointer-events-none z-[100]" style={{ marginTop: -36 }}>
+        <div className="flex items-center gap-1 bg-slate-800/90 backdrop-blur-sm rounded-lg border border-slate-600 px-2 py-1 mr-2 pointer-events-auto">
+          <button
+            onClick={() => setZoom(z => Math.max(0.25, +(z - 0.25).toFixed(2)))}
+            className="p-1 text-slate-400 hover:text-white transition-colors"
+            title="Zoom out"
+          >
+            <Minus className="w-3.5 h-3.5" />
+          </button>
+          <span className="text-xs text-slate-300 w-10 text-center font-mono">
+            {Math.round(zoom * 100)}%
+          </span>
+          <button
+            onClick={() => setZoom(z => Math.min(2, +(z + 0.25).toFixed(2)))}
+            className="p-1 text-slate-400 hover:text-white transition-colors"
+            title="Zoom in"
+          >
+            <Plus className="w-3.5 h-3.5" />
+          </button>
+          <button
+            onClick={() => setZoom(1)}
+            className="p-1 text-slate-400 hover:text-white transition-colors"
+            title="Reset zoom"
+          >
+            <Maximize2 className="w-3 h-3" />
+          </button>
+        </div>
       </div>
     </div>
   )

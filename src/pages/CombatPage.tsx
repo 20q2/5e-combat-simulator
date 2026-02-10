@@ -235,6 +235,12 @@ function UnplacedCombatantsPanel() {
 export function CombatPage() {
   const { phase, initializeGrid, combatants } = useCombatStore()
 
+  // Hide body scrollbar on combat page
+  useEffect(() => {
+    document.documentElement.style.overflow = 'hidden'
+    return () => { document.documentElement.style.overflow = '' }
+  }, [])
+
   // Initialize grid on mount only if in sandbox mode (no combatants from encounter setup)
   useEffect(() => {
     // Only initialize a fresh grid if no combatants exist
@@ -245,9 +251,9 @@ export function CombatPage() {
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <div className="flex flex-col min-h-[calc(100vh-4rem)]">
+    <div className="flex flex-col h-[calc(100vh-4rem)] overflow-hidden">
       {/* Main content area */}
-      <div className="flex-1 grid grid-cols-1 lg:grid-cols-[280px_1fr_300px] gap-3 px-2 pb-4">
+      <div className="flex-1 grid grid-cols-1 lg:grid-cols-[280px_1fr_300px] gap-3 px-2 pt-2 pb-4">
         {/* Left Column - Initiative & Setup */}
         <div className="space-y-4">
           {/* Turn Order / Initiative */}
