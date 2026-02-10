@@ -6,6 +6,10 @@ import { Map, Trees, Skull, Compass } from 'lucide-react'
 interface MapSelectorProps {
   selectedMap: MapPreset | null
   onSelectMap: (map: MapPreset | null) => void
+  customGridWidth: number
+  customGridHeight: number
+  onChangeGridWidth: (width: number) => void
+  onChangeGridHeight: (height: number) => void
 }
 
 // Icon mapping for map themes
@@ -54,7 +58,7 @@ function MapCard({
   )
 }
 
-export function MapSelector({ selectedMap, onSelectMap }: MapSelectorProps) {
+export function MapSelector({ selectedMap, onSelectMap, customGridWidth, customGridHeight, onChangeGridWidth, onChangeGridHeight }: MapSelectorProps) {
   return (
     <Card>
       <CardHeader className="pb-3">
@@ -77,6 +81,31 @@ export function MapSelector({ selectedMap, onSelectMap }: MapSelectorProps) {
                 onSelect={() => onSelectMap(map)}
               />
             ))}
+
+            {/* Custom grid size inputs when no preset selected */}
+            {selectedMap === null && (
+              <div className="flex items-center gap-2 pt-1 px-1">
+                <span className="text-xs text-muted-foreground">Grid:</span>
+                <input
+                  type="number"
+                  min={5}
+                  max={40}
+                  value={customGridWidth}
+                  onChange={(e) => onChangeGridWidth(Math.max(5, Math.min(40, parseInt(e.target.value) || 5)))}
+                  className="w-14 h-7 text-xs text-center bg-slate-800 border border-slate-700 rounded px-1 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                />
+                <span className="text-xs text-muted-foreground">x</span>
+                <input
+                  type="number"
+                  min={5}
+                  max={40}
+                  value={customGridHeight}
+                  onChange={(e) => onChangeGridHeight(Math.max(5, Math.min(40, parseInt(e.target.value) || 5)))}
+                  className="w-14 h-7 text-xs text-center bg-slate-800 border border-slate-700 rounded px-1 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                />
+                <span className="text-xs text-muted-foreground">cells</span>
+              </div>
+            )}
           </div>
 
           {/* Map preview */}

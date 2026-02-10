@@ -168,6 +168,8 @@ export function EncounterBuilder() {
   const [selectedCharacters, setSelectedCharacters] = useState<Character[]>([])
   const [selectedMonsters, setSelectedMonsters] = useState<SelectedMonster[]>([])
   const [selectedMap, setSelectedMap] = useState<MapPreset | null>(null)
+  const [customGridWidth, setCustomGridWidth] = useState(20)
+  const [customGridHeight, setCustomGridHeight] = useState(20)
   const [searchQuery, setSearchQuery] = useState('')
   const [crFilter, setCrFilter] = useState<string>('all')
 
@@ -256,9 +258,9 @@ export function EncounterBuilder() {
   }
 
   const handleStartCombat = () => {
-    // Determine grid size from map or use defaults
-    const gridWidth = selectedMap?.gridWidth ?? 15
-    const gridHeight = selectedMap?.gridHeight ?? 10
+    // Determine grid size from map or use custom dimensions
+    const gridWidth = selectedMap?.gridWidth ?? customGridWidth
+    const gridHeight = selectedMap?.gridHeight ?? customGridHeight
 
     // Convert map id to background image filename (e.g., "goblin-camp" -> "goblin_camp")
     const backgroundImage = selectedMap?.id ? selectedMap.id.replace(/-/g, '_') : undefined
@@ -332,7 +334,14 @@ export function EncounterBuilder() {
         </Card>
 
         {/* Map Selection */}
-        <MapSelector selectedMap={selectedMap} onSelectMap={setSelectedMap} />
+        <MapSelector
+          selectedMap={selectedMap}
+          onSelectMap={setSelectedMap}
+          customGridWidth={customGridWidth}
+          customGridHeight={customGridHeight}
+          onChangeGridWidth={setCustomGridWidth}
+          onChangeGridHeight={setCustomGridHeight}
+        />
       </div>
 
       {/* Sidebar - Party & Summary */}

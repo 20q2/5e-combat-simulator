@@ -246,16 +246,16 @@ export function CombatPage() {
     // Only initialize a fresh grid if no combatants exist
     // This preserves terrain from encounter setup when coming from HomePage
     if (combatants.length === 0) {
-      initializeGrid(15, 10)
+      initializeGrid(20, 20)
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="flex flex-col h-[calc(100vh-4rem)] overflow-hidden">
       {/* Main content area */}
-      <div className="flex-1 grid grid-cols-1 lg:grid-cols-[280px_1fr_300px] gap-3 px-2 pt-2 pb-4">
+      <div className="flex-1 grid grid-cols-1 lg:grid-cols-[350px_1fr_350px] gap-1 px-1 pt-2 pb-1 overflow-hidden">
         {/* Left Column - Initiative & Setup */}
-        <div className="space-y-4">
+        <div className="space-y-1 flex flex-col overflow-hidden">
           {/* Turn Order / Initiative */}
           <TurnOrder />
 
@@ -270,7 +270,7 @@ export function CombatPage() {
         </div>
 
         {/* Center Column - Combat Grid */}
-        <div className="flex flex-col items-center gap-4">
+        <div className="flex flex-col items-center">
           <CombatGrid />
         </div>
 

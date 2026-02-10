@@ -144,7 +144,7 @@ export function CombatLog() {
   }, [log.length])
 
   return (
-    <Card className="flex flex-col h-[400px]">
+    <Card className="flex flex-col flex-1 min-h-0">
       <CardHeader className="pb-2 shrink-0">
         <CardTitle className="text-sm flex items-center gap-2">
           <ScrollText className="w-4 h-4" />
