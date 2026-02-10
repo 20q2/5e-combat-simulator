@@ -260,8 +260,8 @@ export function EncounterBuilder() {
     const gridWidth = selectedMap?.gridWidth ?? 20
     const gridHeight = selectedMap?.gridHeight ?? 20
 
-    // Convert map id to background image filename (e.g., "goblin-camp" -> "goblin_camp")
-    const backgroundImage = selectedMap?.id ? selectedMap.id.replace(/-/g, '_') : undefined
+    // Use explicit backgroundImage field, or fall back to ID-based convention for built-in presets
+    const backgroundImage = selectedMap?.backgroundImage ?? (selectedMap?.id ? selectedMap.id.replace(/-/g, '_') : undefined)
 
     // Use shared utility for auto-placement and auto-start
     setupCombatWithPlacement(

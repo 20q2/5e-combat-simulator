@@ -2,7 +2,8 @@ import { Link } from 'react-router-dom'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
 import { mapPresets, type MapPreset } from '@/data/maps'
-import { Map, Trees, Skull, Compass, Plus } from 'lucide-react'
+import { useMapStore } from '@/stores/mapStore'
+import { Map, Trees, Skull, Plus, Waves, Bookmark, X } from 'lucide-react'
 
 interface MapSelectorProps {
   selectedMap: MapPreset | null
@@ -11,31 +12,46 @@ interface MapSelectorProps {
 
 // Icon mapping for map themes
 const mapIcons: Record<string, React.ComponentType<{ className?: string }>> = {
-  'open-field': Compass,
   'goblin-camp': Trees,
   'graveyard': Skull,
+  'grassy-field': Waves,
 }
 
 function MapCard({
   map,
   isSelected,
   onSelect,
+  onDelete,
 }: {
   map: MapPreset | null
   isSelected: boolean
   onSelect: () => void
+  onDelete?: () => void
 }) {
-  const Icon = map ? mapIcons[map.id] || Map : Map
+  const Icon = map ? mapIcons[map.id] || (onDelete ? Bookmark : Map) : Map
 
   return (
     <button
       onClick={onSelect}
       className={cn(
-        'w-full text-left p-2 rounded-lg border transition-all',
+        'relative w-full text-left p-2 rounded-lg border transition-all overflow-hidden',
         isSelected ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/50'
       )}
     >
-      <div className="flex items-center gap-2">
+      {/* Background map image with gradient fade */}
+      {map?.previewImage && (
+        <div
+          className="absolute inset-0 opacity-20"
+          style={{
+            backgroundImage: `linear-gradient(to right, transparent 0%, hsl(var(--background)) 70%), url(${map.previewImage})`,
+            backgroundSize: 'cover, cover',
+            backgroundPosition: 'center, center',
+            backgroundRepeat: 'no-repeat, no-repeat',
+          }}
+        />
+      )}
+
+      <div className="relative z-10 flex items-center gap-2">
         <div
           className={cn(
             'w-8 h-8 rounded flex items-center justify-center shrink-0',
@@ -50,12 +66,23 @@ function MapCard({
             {map ? `${map.gridWidth}x${map.gridHeight}` : 'Empty grid'}
           </div>
         </div>
+        {onDelete && (
+          <div
+            role="button"
+            onClick={(e) => { e.stopPropagation(); onDelete() }}
+            className="w-6 h-6 rounded flex items-center justify-center shrink-0 text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+          >
+            <X className="w-3.5 h-3.5" />
+          </div>
+        )}
       </div>
     </button>
   )
 }
 
 export function MapSelector({ selectedMap, onSelectMap }: MapSelectorProps) {
+  const { savedMaps, deleteMap } = useMapStore()
+
   return (
     <Card>
       <CardHeader className="pb-3">
@@ -76,6 +103,20 @@ export function MapSelector({ selectedMap, onSelectMap }: MapSelectorProps) {
                 map={map}
                 isSelected={selectedMap?.id === map.id}
                 onSelect={() => onSelectMap(map)}
+              />
+            ))}
+
+            {/* Saved maps */}
+            {savedMaps.map((map) => (
+              <MapCard
+                key={map.id}
+                map={map}
+                isSelected={selectedMap?.id === map.id}
+                onSelect={() => onSelectMap(map)}
+                onDelete={() => {
+                  if (selectedMap?.id === map.id) onSelectMap(null)
+                  deleteMap(map.id)
+                }}
               />
             ))}
 

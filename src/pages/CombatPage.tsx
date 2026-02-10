@@ -270,12 +270,12 @@ export function CombatPage() {
         </div>
 
         {/* Center Column - Combat Grid */}
-        <div className="flex flex-col items-center">
+        <div className="flex flex-col items-center overflow-hidden min-h-0">
           <CombatGrid />
         </div>
 
         {/* Right Column - Character Info */}
-        <div className="space-y-4">
+        <div className="space-y-4 overflow-auto min-h-0">
           {/* Combatant Details Panel */}
           <CombatantPanel />
         </div>

@@ -3,6 +3,7 @@ import type { TerrainDefinition } from '@/types'
 // Import map preview images
 import goblinCampImage from '@/assets/maps/goblin_camp.png'
 import graveyardImage from '@/assets/maps/graveyard.png'
+import grassyFieldImage from '@/assets/maps/grassy_field.jpg'
 
 export interface MapPreset {
   id: string
@@ -12,22 +13,10 @@ export interface MapPreset {
   gridHeight: number
   terrain: TerrainDefinition[]
   previewImage?: string
+  backgroundImage?: string
 }
 
 export const mapPresets: MapPreset[] = [
-  {
-    id: 'open-field',
-    name: 'Open Field',
-    description: 'A wide open battlefield with minimal cover.',
-    gridWidth: 14,
-    gridHeight: 10,
-    terrain: [
-      // A few scattered rocks for light cover
-      { x: 4, y: 4, obstacle: { type: 'boulder', blocksMovement: true, blocksLineOfSight: true } },
-      { x: 9, y: 6, obstacle: { type: 'boulder', blocksMovement: true, blocksLineOfSight: true } },
-      { x: 2, y: 7, obstacle: { type: 'tree', blocksMovement: true, blocksLineOfSight: true } },
-    ],
-  },
   {
     id: 'goblin-camp',
     name: 'Goblin Camp',
@@ -35,6 +24,7 @@ export const mapPresets: MapPreset[] = [
     gridWidth: 20,
     gridHeight: 13,
     previewImage: goblinCampImage,
+    backgroundImage: 'goblin_camp',
     terrain: [
       // Campfire area (hazard - fire)
       { x: 8, y: 4, terrain: 'hazard' },
@@ -192,6 +182,7 @@ export const mapPresets: MapPreset[] = [
     gridWidth: 20,
     gridHeight: 20,
     previewImage: graveyardImage,
+    backgroundImage: 'graveyard',
     terrain: [
       // Central crypt structure
       { x: 11, y: 7, obstacle: { type: 'wall', blocksMovement: true, blocksLineOfSight: true } },
@@ -283,6 +274,57 @@ export const mapPresets: MapPreset[] = [
       { x: 12, y: 14, terrain: 'difficult' },
       { x: 13, y: 14, terrain: 'difficult' },
       { x: 15, y: 16, terrain: 'difficult' },
+    ],
+  },
+  {
+    id: 'grassy-field',
+    name: 'Grassy Field',
+    description: 'A wide open field with a river running through it',
+    gridWidth: 30,
+    gridHeight: 20,
+    previewImage: grassyFieldImage,
+    backgroundImage: 'grassy_field',
+    terrain: [
+      // River running horizontally across the map at y=8-9
+      { x: 1, y: 8, terrain: 'water' }, { x: 1, y: 9, terrain: 'water' },
+      { x: 2, y: 8, terrain: 'water' }, { x: 2, y: 9, terrain: 'water' },
+      { x: 3, y: 8, terrain: 'water' }, { x: 3, y: 9, terrain: 'water' },
+      { x: 4, y: 8, terrain: 'water' }, { x: 4, y: 9, terrain: 'water' },
+      { x: 5, y: 8, terrain: 'water' }, { x: 5, y: 9, terrain: 'water' },
+      { x: 6, y: 8, terrain: 'water' }, { x: 6, y: 9, terrain: 'water' },
+      { x: 7, y: 8, terrain: 'water' }, { x: 7, y: 9, terrain: 'water' },
+      { x: 8, y: 8, terrain: 'water' }, { x: 8, y: 9, terrain: 'water' },
+      { x: 9, y: 8, terrain: 'water' }, { x: 9, y: 9, terrain: 'water' },
+      { x: 10, y: 8, terrain: 'water' }, { x: 10, y: 9, terrain: 'water' },
+      { x: 11, y: 8, terrain: 'water' }, { x: 11, y: 9, terrain: 'water' },
+      { x: 12, y: 8, terrain: 'water' }, { x: 12, y: 9, terrain: 'water' },
+      { x: 13, y: 8, terrain: 'water' }, { x: 13, y: 9, terrain: 'water' },
+      { x: 14, y: 8, terrain: 'water' }, { x: 14, y: 9, terrain: 'water' },
+      { x: 15, y: 8, terrain: 'water' }, { x: 15, y: 9, terrain: 'water' },
+      { x: 16, y: 8, terrain: 'water' }, { x: 16, y: 9, terrain: 'water' },
+      { x: 17, y: 8, terrain: 'water' }, { x: 17, y: 9, terrain: 'water' },
+      { x: 18, y: 8, terrain: 'water' }, { x: 18, y: 9, terrain: 'water' },
+      { x: 19, y: 8, terrain: 'water' }, { x: 19, y: 9, terrain: 'water' },
+      { x: 20, y: 8, terrain: 'water' }, { x: 20, y: 9, terrain: 'water' },
+      { x: 21, y: 8, terrain: 'water' }, { x: 21, y: 9, terrain: 'water' },
+      { x: 22, y: 8, terrain: 'water' }, { x: 22, y: 9, terrain: 'water' },
+      { x: 23, y: 8, terrain: 'water' }, { x: 23, y: 9, terrain: 'water' },
+      { x: 24, y: 8, terrain: 'water' }, { x: 24, y: 9, terrain: 'water' },
+      { x: 25, y: 8, terrain: 'water' }, { x: 25, y: 9, terrain: 'water' },
+      { x: 26, y: 8, terrain: 'water' }, { x: 26, y: 9, terrain: 'water' },
+      { x: 27, y: 8, terrain: 'water' }, { x: 27, y: 9, terrain: 'water' },
+      { x: 28, y: 8, terrain: 'water' }, { x: 28, y: 9, terrain: 'water' },
+      // River branch flowing south from x=14-15
+      { x: 14, y: 10, terrain: 'water' }, { x: 15, y: 10, terrain: 'water' },
+      { x: 14, y: 11, terrain: 'water' }, { x: 15, y: 11, terrain: 'water' },
+      { x: 14, y: 12, terrain: 'water' }, { x: 15, y: 12, terrain: 'water' },
+      { x: 14, y: 13, terrain: 'water' }, { x: 15, y: 13, terrain: 'water' },
+      { x: 14, y: 14, terrain: 'water' }, { x: 15, y: 14, terrain: 'water' },
+      { x: 14, y: 15, terrain: 'water' }, { x: 15, y: 15, terrain: 'water' },
+      { x: 14, y: 16, terrain: 'water' }, { x: 15, y: 16, terrain: 'water' },
+      { x: 14, y: 17, terrain: 'water' }, { x: 15, y: 17, terrain: 'water' },
+      { x: 14, y: 18, terrain: 'water' }, { x: 15, y: 18, terrain: 'water' },
+      { x: 14, y: 19, terrain: 'water' }, { x: 15, y: 19, terrain: 'water' },
     ],
   },
 ]

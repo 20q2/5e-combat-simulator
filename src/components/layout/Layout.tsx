@@ -41,8 +41,8 @@ export function Layout() {
         </div>
       </header>
       <main className={cn(
-        location.pathname === '/combat'
-          ? '' // Combat page uses full width, no padding
+        location.pathname === '/combat' || location.pathname === '/map-builder'
+          ? 'px-2 py-2' // Full width with minimal padding
           : 'container mx-auto px-4 py-6'
       )}>
         <Outlet />

@@ -800,6 +800,7 @@ export interface CombatState {
       targetId?: string           // Target of the attack (for attacks)
       targetName?: string         // Name of target
       weapon?: Weapon             // Weapon used (for attacks)
+      isRanged?: boolean          // Whether the attack was ranged (for projectile deferral)
       ability?: AbilityName       // Ability for save (for saves)
       sourceName?: string         // What caused the save
       damage?: number             // Pending damage on failed save

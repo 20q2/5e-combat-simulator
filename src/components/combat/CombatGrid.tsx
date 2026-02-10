@@ -22,16 +22,20 @@ const obstacleImages = import.meta.glob<{ default: string }>(
 
 // Use Vite's glob import to load map background images
 const mapBackgroundImages = import.meta.glob<{ default: string }>(
-  '@/assets/maps/*.png',
+  '@/assets/maps/*.{png,jpg,jpeg}',
   { eager: true }
 )
 
 // Get map background image by filename (e.g., "goblin_camp")
 function getMapBackgroundImage(filename: string | undefined): string | null {
   if (!filename) return null
-  const imagePath = `/src/assets/maps/${filename}.png`
-  const imageModule = mapBackgroundImages[imagePath]
-  return imageModule?.default ?? null
+  // Try common extensions since we don't know the exact one
+  for (const ext of ['png', 'jpg', 'jpeg']) {
+    const imagePath = `/src/assets/maps/${filename}.${ext}`
+    const imageModule = mapBackgroundImages[imagePath]
+    if (imageModule) return imageModule.default
+  }
+  return null
 }
 
 const CELL_SIZE = 56 // pixels
@@ -625,14 +629,26 @@ export function CombatGrid() {
     )
 
     enemies.forEach(enemy => {
-      // Standard 5ft reach (could be extended for reach weapons)
-      for (let dy = -1; dy <= 1; dy++) {
-        for (let dx = -1; dx <= 1; dx++) {
-          if (dx === 0 && dy === 0) continue
-          const x = enemy.position.x + dx
-          const y = enemy.position.y + dy
+      const size = getCombatantSize(enemy)
+      const footprint = getFootprintSize(size)
+      const occupiedKeys = new Set<string>()
+
+      // Collect all cells occupied by this enemy
+      for (let fy = 0; fy < footprint; fy++) {
+        for (let fx = 0; fx < footprint; fx++) {
+          occupiedKeys.add(`${enemy.position.x + fx},${enemy.position.y + fy}`)
+        }
+      }
+
+      // Add all adjacent cells around the full footprint
+      for (let fy = -1; fy <= footprint; fy++) {
+        for (let fx = -1; fx <= footprint; fx++) {
+          const x = enemy.position.x + fx
+          const y = enemy.position.y + fy
+          const key = `${x},${y}`
+          if (occupiedKeys.has(key)) continue
           if (x >= 0 && x < grid.width && y >= 0 && y < grid.height) {
-            threatened.add(`${x},${y}`)
+            threatened.add(key)
           }
         }
       }
@@ -1059,13 +1075,12 @@ export function CombatGrid() {
         isPanning && "cursor-grabbing"
       )}
       style={{
-        // Lock the container to the unzoomed grid size so it doesn't
-        // shrink/grow with zoom — scroll bars appear when zoomed in,
-        // empty space appears when zoomed out
-        width: grid.width * CELL_SIZE + 2,  // +2 for border
+        // Size to the grid but never exceed available space — large maps
+        // scroll/zoom instead of overflowing the page layout
+        width: grid.width * CELL_SIZE + 2,
         height: grid.height * CELL_SIZE + 2,
         maxWidth: '100%',
-        maxHeight: 'calc(100vh - 10rem)',
+        maxHeight: '100%',
       }}
       onMouseDown={handlePanMouseDown}
       onMouseMove={handlePanMouseMove}

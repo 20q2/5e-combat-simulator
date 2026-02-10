@@ -1123,6 +1123,18 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
 
     const { type, modifier, targetValue, context } = pendingHeroicInspiration
 
+    // Helper to defer effects behind a projectile for ranged attacks
+    const deferIfRangedAttack = (fn: () => void) => {
+      if (type === 'attack' && context.isRanged) {
+        const target = combatants.find(c => c.id === context.targetId)
+        if (target) {
+          get().launchProjectile({ ...combatant.position }, { ...target.position }, fn)
+          return
+        }
+      }
+      fn()
+    }
+
     if (useReroll) {
       // Use Heroic Inspiration - reroll d20 (must take new result)
       const reroll = rollD20(modifier, 'normal')
@@ -1150,10 +1162,6 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
         })
 
         if (success) {
-          get().addCombatPopup(context.targetId!, reroll.isNatural20 ? 'critical' : 'damage')
-          // Attack hit - need to roll and apply damage
-          // For now, just log the hit - a full implementation would need to roll damage here
-          // This is simplified since the attack was originally resolved
           get().addLogEntry({
             type: 'attack',
             actorId: combatant.id,
@@ -1164,31 +1172,37 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
             details: `${reroll.naturalRoll} + ${modifier} = ${reroll.total} vs AC ${targetValue}`,
           })
 
-          // Roll and apply damage if we have weapon info
-          if (context.weapon) {
-            const isCrit = reroll.isNatural20
-            const damageResult = rollDamage(context.weapon.damage, isCrit)
-            const target = combatants.find(c => c.id === context.targetId)
-            if (target) {
-              get().dealDamage(target.id, damageResult.total, combatant.name)
-              get().addDamagePopup(target.id, damageResult.total, context.weapon.damageType as DamageType, isCrit)
-              if (isCrit) {
-                get().addCombatPopup(target.id, 'critical')
+          // Defer damage behind projectile for ranged attacks
+          deferIfRangedAttack(() => {
+            get().addCombatPopup(context.targetId!, reroll.isNatural20 ? 'critical' : 'damage')
+            // Roll and apply damage if we have weapon info
+            if (context.weapon) {
+              const isCrit = reroll.isNatural20
+              const damageResult = rollDamage(context.weapon.damage, isCrit)
+              const target = get().combatants.find(c => c.id === context.targetId)
+              if (target) {
+                get().dealDamage(target.id, damageResult.total, combatant.name)
+                get().addDamagePopup(target.id, damageResult.total, context.weapon.damageType as DamageType, isCrit)
+                if (isCrit) {
+                  get().addCombatPopup(target.id, 'critical')
+                }
+                get().addLogEntry({
+                  type: 'damage',
+                  actorId: combatant.id,
+                  actorName: combatant.name,
+                  targetId: target.id,
+                  targetName: target.name,
+                  message: `${damageResult.total} ${context.weapon.damageType} damage`,
+                  details: damageResult.breakdown,
+                })
               }
-              get().addLogEntry({
-                type: 'damage',
-                actorId: combatant.id,
-                actorName: combatant.name,
-                targetId: target.id,
-                targetName: target.name,
-                message: `${damageResult.total} ${context.weapon.damageType} damage`,
-                details: damageResult.breakdown,
-              })
             }
-          }
+          })
         } else {
-          // Still missed
-          get().addCombatPopup(context.targetId!, 'miss')
+          // Still missed - defer miss popup behind projectile
+          deferIfRangedAttack(() => {
+            get().addCombatPopup(context.targetId!, 'miss')
+          })
         }
       } else {
         // Handle saving throw reroll
@@ -1229,8 +1243,12 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
           get().dealDamage(combatant.id, context.damage, context.sourceName)
           get().addDamagePopup(combatant.id, context.damage, context.damageType || 'bludgeoning', false)
         }
+      } else if (type === 'attack') {
+        // Miss was logged but popup was deferred - launch projectile now with miss popup
+        deferIfRangedAttack(() => {
+          get().addCombatPopup(context.targetId!, 'miss')
+        })
       }
-      // For attacks, the miss was already handled when the prompt was shown
     }
 
     // Clear pending state
@@ -2602,27 +2620,24 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
         }
       }
 
-      get().addLogEntry({
-        type: 'attack',
-        actorId: attackerId,
-        actorName: attacker.name,
-        targetId,
-        targetName: target.name,
-        message: `${attacker.name} misses ${target.name}`,
-        details: `${result.attackRoll.breakdown} vs AC ${result.targetAC}`,
-      })
-      // Show miss popup on target (deferred for ranged attacks until projectile arrives)
-      deferIfRanged(() => {
-        get().addCombatPopup(targetId, 'miss')
-      })
-
-      // Check for Heroic Inspiration (Musician feat) - attacker can reroll
+      // Check for Heroic Inspiration (Musician feat / Human) - attacker can reroll
+      // Must happen BEFORE projectile launch so it doesn't fly out prematurely
       if (
         attacker.type === 'character' &&
         canUseHeroicInspiration(attacker) &&
         !result.criticalMiss  // Can't reroll a nat 1 (already auto-miss)
       ) {
-        // Set pending Heroic Inspiration prompt
+        get().addLogEntry({
+          type: 'attack',
+          actorId: attackerId,
+          actorName: attacker.name,
+          targetId,
+          targetName: target.name,
+          message: `${attacker.name} misses ${target.name}`,
+          details: `${result.attackRoll.breakdown} vs AC ${result.targetAC}`,
+        })
+
+        // Set pending Heroic Inspiration prompt (no projectile yet)
         set({
           pendingHeroicInspiration: {
             combatantId: attackerId,
@@ -2635,6 +2650,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
               targetId,
               targetName: target.name,
               weapon: selectedWeapon,
+              isRanged,
             },
           },
         })
@@ -2660,6 +2676,20 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
 
         return result  // Pause for Heroic Inspiration decision
       }
+
+      get().addLogEntry({
+        type: 'attack',
+        actorId: attackerId,
+        actorName: attacker.name,
+        targetId,
+        targetName: target.name,
+        message: `${attacker.name} misses ${target.name}`,
+        details: `${result.attackRoll.breakdown} vs AC ${result.targetAC}`,
+      })
+      // Show miss popup on target (deferred for ranged attacks until projectile arrives)
+      deferIfRanged(() => {
+        get().addCombatPopup(targetId, 'miss')
+      })
 
       // Apply Graze mastery damage on miss (if applicable)
       if (selectedWeapon) {

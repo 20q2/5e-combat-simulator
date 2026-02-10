@@ -1,12 +1,14 @@
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback, useRef, useEffect } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { cn } from '@/lib/utils'
+import { useMapStore } from '@/stores/mapStore'
 import type { TerrainDefinition, ObstacleType, TerrainType, Obstacle } from '@/types'
 import {
   Download,
+  Save,
   Trash2,
   TreePine,
   Circle,
@@ -19,6 +21,9 @@ import {
   Footprints,
   X,
   Upload,
+  Minus,
+  Plus,
+  Maximize2,
 } from 'lucide-react'
 
 // Use Vite's glob import to load obstacle images
@@ -129,6 +134,84 @@ export function MapBuilderPage() {
   const [bgOffsetY, setBgOffsetY] = useState(0) // pixels
   const fileInputRef = useRef<HTMLInputElement>(null)
 
+  // Zoom & pan state (same pattern as CombatGrid)
+  const [zoom, setZoom] = useState(1)
+  const [isPanning, setIsPanning] = useState(false)
+  const gridContainerRef = useRef<HTMLDivElement>(null)
+  const sizingWrapperRef = useRef<HTMLDivElement>(null)
+  const transformRef = useRef<HTMLDivElement>(null)
+  const panStart = useRef({ x: 0, y: 0, scrollLeft: 0, scrollTop: 0 })
+  const zoomRef = useRef(zoom)
+  zoomRef.current = zoom
+
+  const applyZoomToDOM = useCallback((newZoom: number) => {
+    const gridW = gridWidth * CELL_SIZE + (gridWidth - 1)
+    const gridH = gridHeight * CELL_SIZE + (gridHeight - 1)
+    if (sizingWrapperRef.current) {
+      sizingWrapperRef.current.style.width = `${gridW * newZoom}px`
+      sizingWrapperRef.current.style.height = `${gridH * newZoom}px`
+    }
+    if (transformRef.current) {
+      transformRef.current.style.transform = `scale(${newZoom})`
+    }
+  }, [gridWidth, gridHeight])
+
+  const handleWheel = useCallback((e: WheelEvent) => {
+    e.preventDefault()
+    const currentZoom = zoomRef.current
+    const clampedDelta = Math.max(-100, Math.min(100, e.deltaY))
+    const factor = 1 - clampedDelta * 0.002
+    const newZoom = Math.min(2, Math.max(0.25, +(currentZoom * factor).toFixed(3)))
+    if (Math.abs(newZoom - currentZoom) < 0.001) return
+
+    applyZoomToDOM(newZoom)
+    zoomRef.current = newZoom
+
+    const container = gridContainerRef.current
+    if (container) {
+      const rect = container.getBoundingClientRect()
+      const mouseX = e.clientX - rect.left + container.scrollLeft
+      const mouseY = e.clientY - rect.top + container.scrollTop
+      const scale = newZoom / currentZoom
+      container.scrollLeft = mouseX * scale - (e.clientX - rect.left)
+      container.scrollTop = mouseY * scale - (e.clientY - rect.top)
+    }
+
+    setZoom(newZoom)
+  }, [applyZoomToDOM])
+
+  useEffect(() => {
+    const el = gridContainerRef.current
+    if (!el) return
+    el.addEventListener('wheel', handleWheel, { passive: false })
+    return () => el.removeEventListener('wheel', handleWheel)
+  }, [handleWheel])
+
+  const handlePanMouseDown = useCallback((e: React.MouseEvent) => {
+    if (e.button === 1) {
+      e.preventDefault()
+      setIsPanning(true)
+      panStart.current = {
+        x: e.clientX,
+        y: e.clientY,
+        scrollLeft: gridContainerRef.current?.scrollLeft ?? 0,
+        scrollTop: gridContainerRef.current?.scrollTop ?? 0,
+      }
+    }
+  }, [])
+
+  const handlePanMouseMove = useCallback((e: React.MouseEvent) => {
+    if (!isPanning) return
+    const container = gridContainerRef.current
+    if (!container) return
+    container.scrollLeft = panStart.current.scrollLeft - (e.clientX - panStart.current.x)
+    container.scrollTop = panStart.current.scrollTop - (e.clientY - panStart.current.y)
+  }, [isPanning])
+
+  const handlePanMouseUp = useCallback(() => {
+    setIsPanning(false)
+  }, [])
+
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
@@ -181,14 +264,15 @@ export function MapBuilderPage() {
     [selectedTool, brushSize, gridWidth, gridHeight]
   )
 
-  const handleMouseDown = (x: number, y: number) => {
+  const handleMouseDown = (x: number, y: number, e: React.MouseEvent) => {
+    if (e.button === 1) return // middle-click is for panning
     setIsDragging(true)
     handleCellClick(x, y)
   }
 
   const handleMouseEnter = (x: number, y: number) => {
     setHoveredCell({ x, y })
-    if (isDragging) {
+    if (isDragging && !isPanning) {
       handleCellClick(x, y)
     }
   }
@@ -213,13 +297,10 @@ export function MapBuilderPage() {
     setGridData({})
   }
 
-  const handleExport = () => {
-    // Convert grid data to terrain definitions array
+  const buildTerrainData = (): TerrainDefinition[] => {
     const terrain: TerrainDefinition[] = []
-
     Object.entries(gridData).forEach(([key, data]) => {
       const [x, y] = key.split(',').map(Number)
-
       if (data.obstacle) {
         terrain.push({ x, y, obstacle: data.obstacle })
       } else if (data.terrain) {
@@ -228,7 +309,30 @@ export function MapBuilderPage() {
         terrain.push({ x, y, elevation: data.elevation })
       }
     })
+    return terrain
+  }
 
+  const { saveMap } = useMapStore()
+  const [saveMessage, setSaveMessage] = useState<string | null>(null)
+
+  const handleSave = () => {
+    const terrain = buildTerrainData()
+    // Only persist built-in background paths (custom uploads use blob URLs that don't survive reload)
+    const bgPath = backgroundImage?.path !== 'custom-upload' ? backgroundImage?.path : undefined
+    saveMap({
+      name: mapName,
+      description: mapDescription,
+      gridWidth,
+      gridHeight,
+      terrain,
+      backgroundImage: bgPath,
+    })
+    setSaveMessage('Map saved!')
+    setTimeout(() => setSaveMessage(null), 2000)
+  }
+
+  const handleExport = () => {
+    const terrain = buildTerrainData()
     const mapData = {
       name: mapName,
       description: mapDescription,
@@ -325,13 +429,13 @@ export function MapBuilderPage() {
   }
 
   return (
-    <div className="space-y-6" onMouseUp={handleMouseUp} onMouseLeave={() => { handleMouseUp(); setHoveredCell(null) }}>
+    <div className="space-y-2" onMouseUp={handleMouseUp} onMouseLeave={() => { handleMouseUp(); setHoveredCell(null) }}>
       <div>
-        <h1 className="text-3xl font-bold">Map Builder</h1>
-        <p className="text-muted-foreground">Create custom battle maps for your encounters</p>
+        <h1 className="text-2xl font-bold">Map Builder</h1>
+        <p className="text-sm text-muted-foreground">Create custom battle maps for your encounters</p>
       </div>
 
-      <div className="grid grid-cols-[250px_1fr_280px] gap-6">
+      <div className="grid grid-cols-[220px_1fr_250px] gap-2">
         {/* Left Panel - Tools */}
         <div className="space-y-4">
           <Card>
@@ -452,74 +556,131 @@ export function MapBuilderPage() {
         </div>
 
         {/* Center - Grid Editor */}
-        <Card className="overflow-auto">
+        <Card className="overflow-hidden">
           <CardHeader className="pb-3">
             <CardTitle className="text-lg">Grid Editor</CardTitle>
             <CardDescription>
-              Click and drag to place {selectedTool.label.toLowerCase()}
+              Click and drag to place {selectedTool.label.toLowerCase()} · Scroll to zoom · Middle-click to pan
             </CardDescription>
           </CardHeader>
-          <CardContent className="overflow-auto">
+          <CardContent className="p-0">
             <div
-              className="relative border border-slate-600 rounded select-none"
-              style={{
-                width: gridWidth * CELL_SIZE + (gridWidth - 1),
-                height: gridHeight * CELL_SIZE + (gridHeight - 1),
-              }}
-            >
-              {/* Background image layer */}
-              {backgroundImage && (
-                <div className="absolute inset-0 overflow-hidden pointer-events-none">
-                  <img
-                    src={backgroundImage.src}
-                    alt={backgroundImage.name}
-                    className="opacity-60"
-                    style={{
-                      width: `${bgScale}%`,
-                      height: `${bgScale}%`,
-                      objectFit: 'cover',
-                      transform: `translate(${bgOffsetX}px, ${bgOffsetY}px)`,
-                    }}
-                  />
-                </div>
+              ref={gridContainerRef}
+              className={cn(
+                "overflow-auto relative",
+                isPanning && "cursor-grabbing"
               )}
-
-              {/* Grid layer */}
+              style={{
+                maxHeight: 'calc(100vh - 14rem)',
+              }}
+              onMouseDown={handlePanMouseDown}
+              onMouseMove={handlePanMouseMove}
+              onMouseUp={handlePanMouseUp}
+              onMouseLeave={handlePanMouseUp}
+            >
+              {/* Sizing wrapper — sets scrollable area to match the scaled grid */}
               <div
-                className="relative grid gap-px"
+                ref={sizingWrapperRef}
                 style={{
-                  gridTemplateColumns: `repeat(${gridWidth}, ${CELL_SIZE}px)`,
+                  width: (gridWidth * CELL_SIZE + (gridWidth - 1)) * zoom,
+                  height: (gridHeight * CELL_SIZE + (gridHeight - 1)) * zoom,
                 }}
               >
-                {Array.from({ length: gridHeight }).map((_, y) =>
-                  Array.from({ length: gridWidth }).map((_, x) => {
-                    const key = getCellKey(x, y)
-                    const data = gridData[key]
-                    const inBrush = isInBrushPreview(x, y)
-
-                    return (
-                      <div
-                        key={key}
-                        className={cn(
-                          'relative flex items-center justify-center cursor-crosshair',
-                          !backgroundImage && 'bg-slate-900',
-                          backgroundImage && 'bg-slate-900/30',
-                          data?.terrain === 'difficult' && 'bg-amber-900/50',
-                          data?.terrain === 'hazard' && 'bg-orange-900/50',
-                          data?.terrain === 'water' && 'bg-blue-900/50',
-                          inBrush && selectedTool.type === 'eraser' && 'bg-rose-500/30',
-                          inBrush && selectedTool.type !== 'eraser' && 'bg-primary/25',
-                          'border border-slate-700/50'
-                        )}
-                        style={{ width: CELL_SIZE, height: CELL_SIZE }}
-                        onMouseDown={() => handleMouseDown(x, y)}
-                        onMouseEnter={() => handleMouseEnter(x, y)}
-                      >
-                        {getCellContent(x, y)}
-                      </div>
-                    )
-                  })
+              <div
+                ref={transformRef}
+                className="relative border border-slate-600 select-none"
+                style={{
+                  width: gridWidth * CELL_SIZE + (gridWidth - 1),
+                  height: gridHeight * CELL_SIZE + (gridHeight - 1),
+                  transform: `scale(${zoom})`,
+                  transformOrigin: '0 0',
+                }}
+              >
+                {/* Background image layer */}
+                {backgroundImage && (
+                  <div className="absolute inset-0 overflow-hidden pointer-events-none">
+                    <img
+                      src={backgroundImage.src}
+                      alt={backgroundImage.name}
+                      className="opacity-60"
+                      style={{
+                        width: `${bgScale}%`,
+                        height: `${bgScale}%`,
+                        objectFit: 'cover',
+                        transform: `translate(${bgOffsetX}px, ${bgOffsetY}px)`,
+                      }}
+                    />
+                  </div>
                 )}
+
+                {/* Grid layer */}
+                <div
+                  className="relative grid gap-px"
+                  style={{
+                    gridTemplateColumns: `repeat(${gridWidth}, ${CELL_SIZE}px)`,
+                  }}
+                >
+                  {Array.from({ length: gridHeight }).map((_, y) =>
+                    Array.from({ length: gridWidth }).map((_, x) => {
+                      const key = getCellKey(x, y)
+                      const data = gridData[key]
+                      const inBrush = isInBrushPreview(x, y)
+
+                      return (
+                        <div
+                          key={key}
+                          className={cn(
+                            'relative flex items-center justify-center cursor-crosshair',
+                            !backgroundImage && 'bg-slate-900',
+                            backgroundImage && 'bg-slate-900/30',
+                            data?.terrain === 'difficult' && 'bg-amber-900/50',
+                            data?.terrain === 'hazard' && 'bg-orange-900/50',
+                            data?.terrain === 'water' && 'bg-blue-900/50',
+                            inBrush && selectedTool.type === 'eraser' && 'bg-rose-500/30',
+                            inBrush && selectedTool.type !== 'eraser' && 'bg-primary/25',
+                            'border border-slate-700/50'
+                          )}
+                          style={{ width: CELL_SIZE, height: CELL_SIZE }}
+                          onMouseDown={(e) => handleMouseDown(x, y, e)}
+                          onMouseEnter={() => handleMouseEnter(x, y)}
+                        >
+                          {getCellContent(x, y)}
+                        </div>
+                      )
+                    })
+                  )}
+                </div>
+              </div>
+              </div>
+
+              {/* Zoom controls */}
+              <div className="sticky bottom-2 left-0 w-full flex justify-end pointer-events-none z-[100]" style={{ marginTop: -36 }}>
+                <div className="flex items-center gap-1 bg-slate-800/90 backdrop-blur-sm rounded-lg border border-slate-600 px-2 py-1 mr-2 pointer-events-auto">
+                  <button
+                    onClick={() => { const z = Math.max(0.25, +(zoom - 0.25).toFixed(2)); setZoom(z); applyZoomToDOM(z) }}
+                    className="p-1 text-slate-400 hover:text-white transition-colors"
+                    title="Zoom out"
+                  >
+                    <Minus className="w-3.5 h-3.5" />
+                  </button>
+                  <span className="text-xs text-slate-300 w-10 text-center font-mono">
+                    {Math.round(zoom * 100)}%
+                  </span>
+                  <button
+                    onClick={() => { const z = Math.min(2, +(zoom + 0.25).toFixed(2)); setZoom(z); applyZoomToDOM(z) }}
+                    className="p-1 text-slate-400 hover:text-white transition-colors"
+                    title="Zoom in"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    onClick={() => { setZoom(1); applyZoomToDOM(1) }}
+                    className="p-1 text-slate-400 hover:text-white transition-colors"
+                    title="Reset zoom"
+                  >
+                    <Maximize2 className="w-3 h-3" />
+                  </button>
+                </div>
               </div>
             </div>
           </CardContent>
@@ -734,7 +895,11 @@ export function MapBuilderPage() {
               <CardTitle className="text-lg">Actions</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
-              <Button onClick={handleExport} className="w-full" variant="default">
+              <Button onClick={handleSave} className="w-full" variant="default">
+                <Save className="w-4 h-4 mr-2" />
+                {saveMessage ?? 'Save Map'}
+              </Button>
+              <Button onClick={handleExport} className="w-full" variant="outline">
                 <Download className="w-4 h-4 mr-2" />
                 Export JSON
               </Button>
