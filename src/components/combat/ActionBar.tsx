@@ -1,4 +1,4 @@
-import { useState, useEffect, type ReactNode } from 'react'
+import { useState, useEffect, useRef, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { cn, formatCR } from '@/lib/utils'
 import { useCombatStore, getCurrentCombatant } from '@/stores/combatStore'
@@ -48,7 +48,42 @@ import {
 } from '@/engine/attackReplacements'
 import { canUseBattleMedic, getLuckPoints } from '@/engine/originFeats'
 import type { AttackReplacement, AoEAttackReplacement } from '@/types'
-import { Flame, Stethoscope } from 'lucide-react'
+import { Flame, Stethoscope, GripHorizontal } from 'lucide-react'
+
+// Hook for making popover menus draggable by their header
+function useDraggable() {
+  const [offset, setOffset] = useState({ x: 0, y: 0 })
+  const dragging = useRef(false)
+  const startPos = useRef({ x: 0, y: 0 })
+
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      if (!dragging.current) return
+      setOffset({
+        x: e.clientX - startPos.current.x,
+        y: e.clientY - startPos.current.y,
+      })
+    }
+    const onUp = () => { dragging.current = false }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+    return () => {
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+    }
+  }, [])
+
+  const onDragStart = (e: React.MouseEvent) => {
+    dragging.current = true
+    startPos.current = { x: e.clientX - offset.x, y: e.clientY - offset.y }
+    e.preventDefault()
+  }
+
+  return {
+    onDragStart,
+    dragStyle: { transform: `translate(calc(-50% + ${offset.x}px), ${offset.y}px)` } as React.CSSProperties,
+  }
+}
 
 // Parse spell range string to number (in feet)
 // e.g., "120 feet" → 120, "Touch" → 5, "Self" → 0
@@ -242,9 +277,13 @@ function TargetSelector({
   onHover?: (targetId: string | undefined) => void
   label?: string
 }) {
+  const { onDragStart, dragStyle } = useDraggable()
   return (
-    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-64 bg-slate-900 border-2 border-slate-700 rounded-lg shadow-2xl p-3 z-50">
-      <div className="text-sm font-semibold text-slate-200 mb-2">{label}</div>
+    <div className="absolute bottom-full left-1/2 mb-2 w-64 bg-slate-900 border-2 border-slate-700 rounded-lg shadow-2xl p-3 z-50" style={dragStyle}>
+      <div className="text-sm font-semibold text-slate-200 mb-2 cursor-grab active:cursor-grabbing select-none flex items-center justify-between" onMouseDown={onDragStart}>
+        {label}
+        <GripHorizontal className="w-4 h-4 text-slate-600" />
+      </div>
       <div className="space-y-1 max-h-48 overflow-y-auto">
         {targets.map((target) => (
           <button
@@ -275,6 +314,7 @@ interface WeaponOption {
   name: string
   type: 'melee' | 'ranged' | 'unarmed' | 'breath_weapon'
   range: number
+  longRange?: number
   damage: string
   weapon?: Weapon
   mastery?: string  // Mastery property if character has mastered the weapon
@@ -288,6 +328,7 @@ interface WeaponOption {
 // Weapon and target selector (two-column layout)
 function WeaponTargetSelector({
   weapons,
+  initialWeaponId,
   targets,
   currentPosition: _currentPosition,
   onAttack,
@@ -297,6 +338,7 @@ function WeaponTargetSelector({
   onBreathWeaponSelect,
 }: {
   weapons: WeaponOption[]
+  initialWeaponId?: string
   targets: { id: string; name: string; hp: number; maxHp: number }[]
   currentPosition: { x: number; y: number }
   onAttack: (targetId: string, weapon?: Weapon) => void
@@ -306,8 +348,9 @@ function WeaponTargetSelector({
   onBreathWeaponSelect?: (replacement: AttackReplacement) => void
 }) {
   const [selectedWeapon, setSelectedWeapon] = useState<WeaponOption | undefined>(
-    weapons.length > 0 ? weapons[0] : undefined
+    weapons.find(w => w.id === initialWeaponId) ?? (weapons.length > 0 ? weapons[0] : undefined)
   )
+  const { onDragStart, dragStyle } = useDraggable()
   const { getValidTargets } = useCombatStore()
   const currentCombatant = getCurrentCombatant(useCombatStore.getState())
 
@@ -333,10 +376,11 @@ function WeaponTargetSelector({
   const isBreathWeaponSelected = selectedWeapon?.type === 'breath_weapon'
 
   return (
-    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 bg-slate-900 border-2 border-rose-800 rounded-lg shadow-2xl p-3 z-50">
-      <div className="text-sm font-semibold text-rose-300 mb-2 flex items-center gap-2">
+    <div className="absolute bottom-full left-1/2 mb-2 bg-slate-900 border-2 border-rose-800 rounded-lg shadow-2xl p-3 z-50" style={dragStyle}>
+      <div className="text-sm font-semibold text-rose-300 mb-2 flex items-center gap-2 cursor-grab active:cursor-grabbing select-none" onMouseDown={onDragStart}>
         <Sword className="w-4 h-4" />
         Attack
+        <GripHorizontal className="w-4 h-4 text-slate-600 ml-auto" />
       </div>
       <div className="flex gap-3">
         {/* Left column: Weapons */}
@@ -521,10 +565,13 @@ function SpellSelector({
     onSelect(spell, selectedSlotLevel)
   }
 
+  const { onDragStart, dragStyle } = useDraggable()
+
   return (
-    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-80 bg-slate-900 border-2 border-violet-800 rounded-lg shadow-2xl p-3 z-50">
-      <div className="text-sm font-semibold text-violet-300 mb-2">
+    <div className="absolute bottom-full left-1/2 mb-2 w-80 bg-slate-900 border-2 border-violet-800 rounded-lg shadow-2xl p-3 z-50" style={dragStyle}>
+      <div className="text-sm font-semibold text-violet-300 mb-2 cursor-grab active:cursor-grabbing select-none flex items-center justify-between" onMouseDown={onDragStart}>
         {selectedSlotLevel ? `Cast with Level ${selectedSlotLevel} Slot` : 'Select Spell'}
+        <GripHorizontal className="w-4 h-4 text-slate-600" />
       </div>
 
       {cantrips.length > 0 && (
@@ -650,6 +697,7 @@ function ProjectileTargetSelector({
     confirmProjectileTargeting,
     cancelProjectileTargeting,
   } = useCombatStore()
+  const { onDragStart, dragStyle } = useDraggable()
 
   if (!projectileTargeting) return null
 
@@ -658,10 +706,11 @@ function ProjectileTargetSelector({
   const remaining = totalProjectiles - totalAssigned
 
   return (
-    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-80 bg-slate-900 border-2 border-violet-800 rounded-lg shadow-2xl p-3 z-50">
-      <div className="text-sm font-semibold text-violet-300 mb-1 flex items-center gap-2">
+    <div className="absolute bottom-full left-1/2 mb-2 w-80 bg-slate-900 border-2 border-violet-800 rounded-lg shadow-2xl p-3 z-50" style={dragStyle}>
+      <div className="text-sm font-semibold text-violet-300 mb-1 flex items-center gap-2 cursor-grab active:cursor-grabbing select-none" onMouseDown={onDragStart}>
         <Sparkles className="w-4 h-4" />
         {spell.name}
+        <GripHorizontal className="w-4 h-4 text-slate-600 ml-auto" />
       </div>
       <div className="text-xs text-slate-400 mb-3">
         Assign {totalProjectiles} projectiles to targets ({remaining} remaining)
@@ -1016,6 +1065,7 @@ export function ActionBar() {
   const [selectedSlotLevel, setSelectedSlotLevel] = useState<number | undefined>(undefined)
   const [showDebugMenu, setShowDebugMenu] = useState(false)
   const [isSelectingBattleMedicTarget, setIsSelectingBattleMedicTarget] = useState(false)
+  const lastSelectedWeaponIdRef = useRef<string | undefined>(undefined)
 
   const currentCombatant = getCurrentCombatant(state)
 
@@ -1261,6 +1311,7 @@ export function ActionBar() {
         name: rangedWeapon.name,
         type: 'ranged',
         range: rangedWeapon.range?.normal ?? 30,
+        longRange: rangedWeapon.range?.long,
         damage: rangedWeapon.damage,
         weapon: rangedWeapon,
         mastery: isMastered && rangedWeapon.mastery ? rangedWeapon.mastery : undefined,
@@ -1310,13 +1361,14 @@ export function ActionBar() {
       setSelectedAction('attack')
       if (isCharacter) {
         setIsSelectingWeapon(true)
-        // Set initial range highlight for first weapon
+        // Set initial range highlight for remembered or first weapon
         if (availableWeapons.length > 0) {
-          const firstWeapon = availableWeapons[0]
+          const initialWeapon = availableWeapons.find(w => w.id === lastSelectedWeaponIdRef.current) ?? availableWeapons[0]
           setRangeHighlight({
             origin: currentCombatant.position,
-            range: firstWeapon.range,
-            type: firstWeapon.type === 'ranged' ? 'ranged' : 'melee',
+            range: initialWeapon.range,
+            longRange: initialWeapon.longRange,
+            type: initialWeapon.type === 'ranged' ? 'ranged' : 'melee',
           })
         }
       } else {
@@ -1327,9 +1379,11 @@ export function ActionBar() {
 
   const handleWeaponSelect = (weapon: WeaponOption | undefined) => {
     if (weapon && currentCombatant) {
+      lastSelectedWeaponIdRef.current = weapon.id
       setRangeHighlight({
         origin: currentCombatant.position,
         range: weapon.range,
+        longRange: weapon.longRange,
         type: weapon.type === 'ranged' ? 'ranged' : 'melee',
       })
     } else {
@@ -1631,6 +1685,7 @@ export function ActionBar() {
               {isSelectingWeapon && selectedAction === 'attack' && isCharacter && (
                 <WeaponTargetSelector
                   weapons={availableWeapons}
+                  initialWeaponId={lastSelectedWeaponIdRef.current}
                   targets={validTargets.map((t) => ({
                     id: t.id,
                     name: t.name,

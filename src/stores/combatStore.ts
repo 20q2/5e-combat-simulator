@@ -2185,22 +2185,13 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
     return reachable
   },
 
-  dealDamage: (targetId, amount, source) => {
+  dealDamage: (targetId, amount, _source) => {
     set((state) => {
       const target = state.combatants.find((c) => c.id === targetId)
       if (!target) return state
 
       let newHp = Math.max(0, target.currentHp - amount)
       let updatedRacialAbilityUses = target.racialAbilityUses
-
-      get().addLogEntry({
-        type: 'damage',
-        actorName: source ?? 'Unknown',
-        targetId,
-        targetName: target.name,
-        message: `deals ${amount} damage to ${target.name}`,
-        details: `${target.currentHp} → ${newHp} HP`,
-      })
 
       // Check for Relentless Endurance when dropping to 0 HP (characters only)
       const wasConscious = target.currentHp > 0
@@ -2502,6 +2493,8 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
         message: `${attacker.name} rolls a critical miss against ${target.name}!`,
         details: result.attackRoll.breakdown,
       })
+      // Show critical miss popup on the attacker (no projectile spawns on nat 1)
+      get().addCombatPopup(attackerId, 'critical_miss')
     } else if (result.critical) {
       get().addLogEntry({
         type: 'attack',

@@ -225,44 +225,14 @@ export function CharacterCreator() {
       />
 
       {isReviewStep ? (
-        <div className="max-w-5xl mx-auto">
-          <div className="mb-8">
-            <CurrentStepComponent />
-          </div>
-          <div className="flex justify-between">
-            <Button
-              variant="outline"
-              onClick={handlePrev}
-              disabled={isFirstStep}
-            >
-              <ChevronLeft className="w-4 h-4 mr-1" />
-              Previous
-            </Button>
-          </div>
+        <div className="max-w-5xl mx-auto pb-20">
+          <CurrentStepComponent />
         </div>
       ) : (
-        <div className="flex gap-6">
+        <div className="flex gap-6 pb-20">
           {/* Main Content - Left Side */}
           <div className="flex-1 min-w-0">
-            <div className="mb-8">
-              <CurrentStepComponent />
-            </div>
-
-            <div className="flex justify-between">
-              <Button
-                variant="outline"
-                onClick={handlePrev}
-                disabled={isFirstStep}
-              >
-                <ChevronLeft className="w-4 h-4 mr-1" />
-                Previous
-              </Button>
-
-              <Button onClick={handleNext} disabled={!canProceed()}>
-                Next
-                <ChevronRight className="w-4 h-4 ml-1" />
-              </Button>
-            </div>
+            <CurrentStepComponent />
           </div>
 
           {/* Character Preview - Right Side */}
@@ -271,6 +241,27 @@ export function CharacterCreator() {
           </div>
         </div>
       )}
+
+      {/* Sticky navigation bar */}
+      <div className="fixed bottom-0 left-0 right-0 z-50 border-t border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+        <div className="max-w-7xl mx-auto flex justify-between items-center px-6 py-3">
+          <Button
+            variant="outline"
+            onClick={handlePrev}
+            disabled={isFirstStep}
+          >
+            <ChevronLeft className="w-4 h-4 mr-1" />
+            Previous
+          </Button>
+
+          {!isReviewStep && (
+            <Button onClick={handleNext} disabled={!canProceed()}>
+              Next
+              <ChevronRight className="w-4 h-4 ml-1" />
+            </Button>
+          )}
+        </div>
+      </div>
     </div>
   )
 }

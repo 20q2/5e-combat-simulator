@@ -103,6 +103,7 @@ interface GridCellProps {
   isTargetable: boolean
   isThreatened: boolean
   isInWeaponRange?: 'melee' | 'ranged' | 'spell'
+  isInLongRange: boolean
   isBlockedByLOS: boolean
   isInAoEPreview: boolean
   distance?: number
@@ -145,6 +146,7 @@ function GridCell({
   isTargetable,
   isThreatened,
   isInWeaponRange,
+  isInLongRange,
   isBlockedByLOS,
   isInAoEPreview,
   distance,
@@ -178,6 +180,8 @@ function GridCell({
         isInWeaponRange === 'melee' && 'bg-rose-900/30 border-rose-700/50',
         isInWeaponRange === 'ranged' && 'bg-orange-900/30 border-orange-700/50',
         isInWeaponRange === 'spell' && 'bg-violet-900/30 border-violet-700/50',
+        // Long range highlighting (disadvantage) - subtle amber tint
+        isInLongRange && 'bg-amber-900/15 border-amber-800/30',
         // LOS blocked cells - dimmed with strikethrough pattern
         isBlockedByLOS && 'bg-slate-800/50 border-slate-600/50',
         // AoE preview highlighting (overrides weapon range)
@@ -298,6 +302,13 @@ function GridCell({
             </span>
           )}
         </div>
+      )}
+
+      {/* Long range (disadvantage) indicator */}
+      {isInLongRange && !hasObstacle && (
+        <span className="absolute bottom-0 right-0.5 text-[8px] font-bold text-amber-400/60 pointer-events-none">
+          DIS
+        </span>
       )}
 
       {/* LOS blocked indicator */}
@@ -539,27 +550,34 @@ export function CombatGrid() {
 
   // Calculate cells in weapon range for highlighting
   const weaponRangeData = useMemo(() => {
-    if (!rangeHighlight) return { cells: new Set<string>(), type: undefined as 'melee' | 'ranged' | 'spell' | undefined, blockedCells: new Set<string>() }
+    if (!rangeHighlight) return { cells: new Set<string>(), type: undefined as 'melee' | 'ranged' | 'spell' | undefined, blockedCells: new Set<string>(), longRangeCells: new Set<string>() }
 
-    const { origin, range, type } = rangeHighlight
+    const { origin, range, longRange, type } = rangeHighlight
     const cellsInRange = new Set<string>()
+    const longRangeCells = new Set<string>() // Cells beyond normal range but within long range (disadvantage)
     const blockedCells = new Set<string>() // Cells in range but blocked by LOS
-    const rangeInSquares = Math.ceil(range / 5)
+    const maxRange = longRange ?? range
+    const maxRangeInSquares = Math.ceil(maxRange / 5)
 
-    for (let dy = -rangeInSquares; dy <= rangeInSquares; dy++) {
-      for (let dx = -rangeInSquares; dx <= rangeInSquares; dx++) {
+    for (let dy = -maxRangeInSquares; dy <= maxRangeInSquares; dy++) {
+      for (let dx = -maxRangeInSquares; dx <= maxRangeInSquares; dx++) {
         const x = origin.x + dx
         const y = origin.y + dy
         if (x < 0 || x >= grid.width || y < 0 || y >= grid.height) continue
 
         // Calculate distance using Chebyshev (D&D 5e diagonal = 5ft)
         const distance = Math.max(Math.abs(dx), Math.abs(dy)) * 5
-        if (distance <= range && distance > 0) {
+        if (distance <= maxRange && distance > 0) {
+          const isLongRange = distance > range
           // For ranged/spell attacks, check line of sight
           if (type === 'ranged' || type === 'spell') {
             const hasLOS = hasLineOfSight(grid, origin, { x, y })
             if (hasLOS) {
-              cellsInRange.add(`${x},${y}`)
+              if (isLongRange) {
+                longRangeCells.add(`${x},${y}`)
+              } else {
+                cellsInRange.add(`${x},${y}`)
+              }
             } else {
               blockedCells.add(`${x},${y}`)
             }
@@ -571,7 +589,7 @@ export function CombatGrid() {
       }
     }
 
-    return { cells: cellsInRange, type, blockedCells }
+    return { cells: cellsInRange, type, blockedCells, longRangeCells }
   }, [rangeHighlight, grid])
 
   // Calculate AoE preview cells based on hovered position
@@ -980,6 +998,7 @@ export function CombatGrid() {
             const isTargetable = targetablePositions.has(cellKey)
             const isThreatened = threatenedPositions.has(cellKey) && selectedAction === 'move'
             const isInWeaponRange = weaponRangeData.cells.has(cellKey) ? weaponRangeData.type : undefined
+            const isInLongRange = weaponRangeData.longRangeCells.has(cellKey)
             const isBlockedByLOS = weaponRangeData.blockedCells.has(cellKey)
             const isInAoEPreview = aoeAffectedCells.has(cellKey)
             const distance = getDistanceToCell(x, y)
@@ -1000,6 +1019,7 @@ export function CombatGrid() {
                 isTargetable={isTargetable}
                 isThreatened={isThreatened}
                 isInWeaponRange={isInWeaponRange}
+                isInLongRange={isInLongRange}
                 isBlockedByLOS={isBlockedByLOS}
                 isInAoEPreview={isInAoEPreview}
                 distance={distance}

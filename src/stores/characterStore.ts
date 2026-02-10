@@ -646,11 +646,19 @@ export const useCharacterStore = create<CharacterState>()(
             gnomeLineage: null,
             tieflingLegacy: null,
             goliathGiantAncestry: null,
-            humanOriginFeat: null,
-            humanMagicInitiate: null,
+            humanOriginFeat: character.race.id === 'human' && character.originFeats.length > 1
+              ? character.originFeats[0] ?? null
+              : null,
+            humanMagicInitiate: character.race.id === 'human' && character.originFeats.length > 1
+              ? character.magicInitiateChoices?.[0] ?? null
+              : null,
             backgroundId: character.background?.id ?? null,
-            backgroundOriginFeat: null,
-            backgroundMagicInitiate: null,
+            backgroundOriginFeat: character.race.id === 'human' && character.originFeats.length > 1
+              ? character.originFeats[1] ?? null
+              : character.originFeats[0] ?? null,
+            backgroundMagicInitiate: character.race.id === 'human' && character.originFeats.length > 1
+              ? character.magicInitiateChoices?.[1] ?? null
+              : character.magicInitiateChoices?.[0] ?? null,
             classId: character.class.id,
             subclassId: character.subclass?.id ?? null,
             level: character.level,

@@ -692,7 +692,7 @@ export function CharacterSheet() {
         </Button>
         <Button onClick={handleSave} disabled={!isValid} size="lg">
           <Save className="w-4 h-4 mr-2" />
-          Save Character
+          {draft.editingCharacterId ? 'Update Character' : 'Save Character'}
         </Button>
       </div>
 

@@ -599,6 +599,7 @@ export type CombatPhase = 'setup' | 'initiative' | 'combat' | 'victory' | 'defea
 export interface RangeHighlight {
   origin: Position
   range: number
+  longRange?: number // Long range in feet (attacks at disadvantage)
   type: 'melee' | 'ranged' | 'spell'
   shape?: 'circle' | 'cone' | 'line' // For future use
 }
@@ -614,6 +615,7 @@ export type CombatPopupType =
   | 'damage'      // Shows damage number
   | 'miss'        // "MISS"
   | 'critical'    // "CRITICAL!" - shown separately from damage on crits
+  | 'critical_miss' // "CRITICAL MISS!" - natural 1
   | 'heal'        // Shows heal number in green
   | 'saved'       // "SAVED" - passed saving throw
   | 'save_failed' // "FAILED" - failed saving throw
