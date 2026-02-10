@@ -41,7 +41,8 @@ import {
   canUseCunningAction,
   getMaxAttacksPerAction,
 } from '@/engine/classAbilities'
-import { hasCombatSuperiority } from '@/engine/maneuvers'
+import { hasCombatSuperiority, getSuperiorityDieSize } from '@/engine/maneuvers'
+import { getManeuversByIds } from '@/data/maneuvers'
 import {
   getAvailableAttackReplacements,
   canUseAttackReplacement,
@@ -897,7 +898,7 @@ const ALL_CONDITIONS: Condition[] = [
   'blinded', 'charmed', 'deafened', 'frightened', 'grappled',
   'incapacitated', 'invisible', 'paralyzed', 'petrified', 'poisoned',
   'prone', 'restrained', 'stunned', 'unconscious', 'exhaustion',
-  'sapped', 'goaded'
+  'sapped', 'goaded', 'distracted', 'evasive'
 ]
 
 function DebugMenu({
@@ -1054,6 +1055,7 @@ export function ActionBar() {
     setBreathWeaponTargeting,
     useBattleMedic,
     getBattleMedicTargets,
+    useBonusActionManeuver,
   } = state
 
   const navigate = useNavigate()
@@ -1065,6 +1067,8 @@ export function ActionBar() {
   const [selectedSlotLevel, setSelectedSlotLevel] = useState<number | undefined>(undefined)
   const [showDebugMenu, setShowDebugMenu] = useState(false)
   const [isSelectingBattleMedicTarget, setIsSelectingBattleMedicTarget] = useState(false)
+  const [showBonusManeuvers, setShowBonusManeuvers] = useState(false)
+  const [isSelectingFeintTarget, setIsSelectingFeintTarget] = useState(false)
   const lastSelectedWeaponIdRef = useRef<string | undefined>(undefined)
 
   const currentCombatant = getCurrentCombatant(state)
@@ -1264,6 +1268,15 @@ export function ActionBar() {
   const hasActionSurge = !!actionSurgeFeature
   const canUseActionSurgeNow = hasActionSurge && currentCombatant.hasActed && canUseActionSurge(currentCombatant, currentCombatant.classFeatureUses)
   const actionSurgeUses = hasActionSurge ? getActionSurgeUses(currentCombatant, currentCombatant.classFeatureUses) : 0
+
+  // Check for bonus action maneuvers (Battle Master)
+  const hasBonusManeuvers = isCharacter && hasCombatSuperiority(currentCombatant) &&
+    (currentCombatant.superiorityDiceRemaining ?? 0) > 0
+  const bonusActionManeuvers = hasBonusManeuvers && character?.knownManeuverIds
+    ? getManeuversByIds(character.knownManeuverIds).filter(m => m.trigger === 'bonus_action')
+    : []
+  const canUseBonusManeuver = bonusActionManeuvers.length > 0 && !currentCombatant.hasBonusActed
+  const supDieSize = hasBonusManeuvers ? getSuperiorityDieSize(currentCombatant) : 0
 
   // Note: Superiority dice display moved to ResourceTracker component
 
@@ -1784,17 +1797,19 @@ export function ActionBar() {
                     actionType="action"
                   />
 
-                  <ActionButton
-                    icon={<Sparkles className="w-5 h-5" />}
-                    label="Spell"
-                    onClick={handleSpellClick}
-                    active={selectedAction === 'spell'}
-                    disabled={currentCombatant.hasActed || !hasSpells}
-                    variant="spell"
-                    tooltip={!hasSpells ? 'No spells available' : `Cast a spell`}
-                    badge={hasSpells ? availableSpells.length : undefined}
-                    actionType="action"
-                  />
+                  {hasSpells && (
+                    <ActionButton
+                      icon={<Sparkles className="w-5 h-5" />}
+                      label="Spell"
+                      onClick={handleSpellClick}
+                      active={selectedAction === 'spell'}
+                      disabled={currentCombatant.hasActed}
+                      variant="spell"
+                      tooltip="Cast a spell"
+                      badge={availableSpells.length}
+                      actionType="action"
+                    />
+                  )}
 
                   <div className="w-px h-10 bg-slate-700" />
 
@@ -1928,6 +1943,99 @@ export function ActionBar() {
                       />
                     </>
                   )}
+
+                  {/* Bonus Action Maneuvers (Battle Master) */}
+                  {bonusActionManeuvers.length > 0 && (
+                    <div className="relative">
+                      <ActionButton
+                        icon={<Sword className="w-5 h-5" />}
+                        label="Maneuver"
+                        onClick={() => { setShowBonusManeuvers(!showBonusManeuvers); setIsSelectingFeintTarget(false) }}
+                        disabled={!canUseBonusManeuver}
+                        active={showBonusManeuvers}
+                        variant="attack"
+                        tooltip={`Bonus Action Maneuver (${currentCombatant.superiorityDiceRemaining ?? 0} dice)`}
+                        badge={(currentCombatant.superiorityDiceRemaining ?? 0) > 0 ? currentCombatant.superiorityDiceRemaining : undefined}
+                        actionType="bonus"
+                      />
+                      {showBonusManeuvers && canUseBonusManeuver && (
+                        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-72 bg-slate-900 border-2 border-amber-600 rounded-lg shadow-2xl p-3 z-50">
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-sm font-semibold text-amber-300">Bonus Action Maneuver</span>
+                            <button onClick={() => { setShowBonusManeuvers(false); setIsSelectingFeintTarget(false) }} className="p-0.5 hover:bg-slate-700 rounded">
+                              <X className="w-3.5 h-3.5 text-slate-400" />
+                            </button>
+                          </div>
+                          <div className="text-xs text-slate-400 mb-2">
+                            Superiority Dice: <span className="text-amber-400 font-mono">{currentCombatant.superiorityDiceRemaining ?? 0}</span> (d{supDieSize})
+                          </div>
+                          <div className="space-y-1.5">
+                            {bonusActionManeuvers.map(m => {
+                              const isFeint = m.id === 'feinting-attack'
+                              return (
+                                <div key={m.id}>
+                                  <button
+                                    onClick={() => {
+                                      if (isFeint) {
+                                        setIsSelectingFeintTarget(!isSelectingFeintTarget)
+                                      } else {
+                                        useBonusActionManeuver(m.id)
+                                        setShowBonusManeuvers(false)
+                                      }
+                                    }}
+                                    className={cn(
+                                      'w-full text-left px-3 py-2 rounded-lg border transition-all text-sm',
+                                      'bg-gradient-to-r from-amber-900/50 to-amber-800/50 border-amber-700',
+                                      'hover:from-amber-800/50 hover:to-amber-700/50 hover:border-amber-500'
+                                    )}
+                                  >
+                                    <div className="font-medium text-amber-200">{m.name}</div>
+                                    <div className="text-xs text-slate-400 mt-0.5">
+                                      {m.id === 'evasive-footwork' && `Disengage + Dash + add d${supDieSize} to AC`}
+                                      {m.id === 'feinting-attack' && `Choose target within 5ft → advantage + d${supDieSize} damage on hit`}
+                                      {m.id === 'lunging-attack' && `Dash + d${supDieSize} bonus damage on melee hit (if moved 5ft+)`}
+                                    </div>
+                                  </button>
+                                  {/* Feinting Attack target selection */}
+                                  {isFeint && isSelectingFeintTarget && (() => {
+                                    const nearbyEnemies = combatants.filter(c => {
+                                      if (c.id === currentCombatant.id) return false
+                                      if (c.currentHp <= 0) return false
+                                      if (c.type === currentCombatant.type) return false
+                                      const dx = Math.abs(c.position.x - currentCombatant.position.x)
+                                      const dy = Math.abs(c.position.y - currentCombatant.position.y)
+                                      return dx <= 1 && dy <= 1
+                                    })
+                                    if (nearbyEnemies.length === 0) {
+                                      return <div className="text-xs text-rose-400 px-3 py-1">No enemies within 5ft</div>
+                                    }
+                                    return (
+                                      <div className="ml-3 mt-1 space-y-1">
+                                        {nearbyEnemies.map(e => (
+                                          <button
+                                            key={e.id}
+                                            onClick={() => {
+                                              useBonusActionManeuver('feinting-attack', e.id)
+                                              setShowBonusManeuvers(false)
+                                              setIsSelectingFeintTarget(false)
+                                            }}
+                                            className="w-full text-left px-2 py-1 rounded text-xs bg-slate-800 hover:bg-slate-700 border border-slate-600 hover:border-amber-500 transition-colors"
+                                          >
+                                            <span className="text-amber-300">{e.name}</span>
+                                            <span className="text-slate-500 ml-2">{e.currentHp}/{e.maxHp} HP</span>
+                                          </button>
+                                        ))}
+                                      </div>
+                                    )
+                                  })()}
+                                </div>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -1941,7 +2049,8 @@ export function ActionBar() {
                   canUseSecondWindNow ||
                   canCunningDash ||
                   canCunningDisengage ||
-                  canCunningHide
+                  canCunningHide ||
+                  canUseBonusManeuver
                 )
                 const hasActionsRemaining = hasUnusedAction || hasUnusedBonusAction
 

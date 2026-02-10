@@ -93,6 +93,56 @@ export const MANEUVERS: Maneuver[] = [
     conditionDuration: 1, // Until end of next turn
   },
 
+  {
+    id: 'distracting-strike',
+    name: 'Distracting Strike',
+    description: 'When you hit a creature with an attack roll, you can expend one Superiority Die to distract the target. Add the Superiority Die roll to the attack\'s damage roll. The next attack roll against the target by an attacker other than you has Advantage if the attack is made before the start of your next turn.',
+    trigger: 'on_hit',
+    addsDamageDie: true,
+    requiresWeaponAttack: true,
+    condition: 'distracted',
+    conditionDuration: 1,
+  },
+  {
+    id: 'sweeping-attack',
+    name: 'Sweeping Attack',
+    description: 'When you hit a creature with a melee attack roll using a weapon or an Unarmed Strike, you can expend one Superiority Die to attempt to damage another creature. Choose another creature within 5 feet of the original target and within your reach. If the original attack roll would hit the second creature, it takes damage equal to the number you roll on your Superiority Die.',
+    trigger: 'on_hit',
+    addsDamageDie: false,
+    requiresWeaponAttack: true,
+    requiresMeleeWeapon: true,
+    sweepDamage: true,
+  },
+
+  // ============================================
+  // Bonus Action Maneuvers
+  // ============================================
+  {
+    id: 'evasive-footwork',
+    name: 'Evasive Footwork',
+    description: 'As a Bonus Action, you can expend one Superiority Die and take the Disengage action. You also roll the die and add the number rolled to your AC until the start of your next turn.',
+    trigger: 'bonus_action',
+    addsDamageDie: false,
+    requiresWeaponAttack: false,
+  },
+  {
+    id: 'feinting-attack',
+    name: 'Feinting Attack',
+    description: 'As a Bonus Action, you can expend one Superiority Die to feint, choosing one creature within 5 feet of yourself as your target. You have Advantage on your next attack roll against that target this turn. If that attack hits, add the Superiority Die to the attack\'s damage roll.',
+    trigger: 'bonus_action',
+    addsDamageDie: false,
+    requiresWeaponAttack: false,
+    requiresMeleeWeapon: true,
+  },
+  {
+    id: 'lunging-attack',
+    name: 'Lunging Attack',
+    description: 'As a Bonus Action, you can expend one Superiority Die and take the Dash action. If you move at least 5 feet in a straight line immediately before hitting with a melee attack as part of the Attack action on this turn, you can add the Superiority Die to the attack\'s damage roll.',
+    trigger: 'bonus_action',
+    addsDamageDie: false,
+    requiresWeaponAttack: false,
+  },
+
   // ============================================
   // Reaction Maneuvers
   // ============================================

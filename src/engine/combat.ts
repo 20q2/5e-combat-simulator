@@ -108,7 +108,10 @@ export function getCombatantAC(combatant: Combatant): number {
   // Add Defense fighting style bonus (+1 AC when wearing armor)
   const defenseBonus = getDefenseBonus(combatant)
 
-  return baseAC + defenseBonus
+  // Add Evasive Footwork AC bonus
+  const evasiveBonus = combatant.evasiveFootworkBonus ?? 0
+
+  return baseAC + defenseBonus + evasiveBonus
 }
 
 /**
@@ -146,6 +149,14 @@ export function getAttackAdvantage(
   if (attacker.conditions.some((c) => c.condition === 'sapped')) {
     hasDisadvantage = true
   }
+  // Frightened creatures have disadvantage on all attack rolls
+  if (attacker.conditions.some((c) => c.condition === 'frightened')) {
+    hasDisadvantage = true
+  }
+  // Goaded creatures have disadvantage on attacks against targets other than the goader
+  if (attacker.conditions.some((c) => c.condition === 'goaded') && attacker.goadedBy && target.id !== attacker.goadedBy) {
+    hasDisadvantage = true
+  }
 
   // Check target conditions
   if (target.conditions.some((c) =>
@@ -175,6 +186,17 @@ export function getAttackAdvantage(
   // Check if target is dodging - gives disadvantage to attacks against them
   if (target.conditions.some((c) => c.condition === 'dodging')) {
     hasDisadvantage = true
+  }
+
+  // Distracted target: next attack by a DIFFERENT attacker has advantage (Distracting Strike)
+  const distractedCondition = target.conditions.find((c) => c.condition === 'distracted')
+  if (distractedCondition && distractedCondition.source && distractedCondition.source !== attacker.id) {
+    hasAdvantage = true
+  }
+
+  // Feinting Attack: attacker has advantage against the feint target this turn
+  if (attacker.feintTarget && attacker.feintTarget === target.id) {
+    hasAdvantage = true
   }
 
   // Check for Vex mastery advantage (attacker previously hit this target with Vex)

@@ -5,8 +5,9 @@ import { getAllManeuvers } from '@/data/maneuvers'
 import { useCharacterStore } from '@/stores/characterStore'
 import { isCombatSuperiorityFeature } from '@/types/classFeature'
 import type { Maneuver } from '@/types/maneuver'
-import { Swords, Target, Shield, Crosshair, Zap, ArrowRight, Users } from 'lucide-react'
+import { Swords, Target, Shield, Crosshair, Zap, ArrowRight, Users, Eye, Footprints, MoveRight } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 
 function getManeuverIcon(maneuver: Maneuver): React.ReactNode {
   switch (maneuver.id) {
@@ -26,23 +27,18 @@ function getManeuverIcon(maneuver: Maneuver): React.ReactNode {
       return <Swords className="w-4 h-4" />
     case 'parry':
       return <Shield className="w-4 h-4" />
+    case 'distracting-strike':
+      return <Eye className="w-4 h-4" />
+    case 'sweeping-attack':
+      return <Swords className="w-4 h-4" />
+    case 'evasive-footwork':
+      return <Footprints className="w-4 h-4" />
+    case 'feinting-attack':
+      return <Crosshair className="w-4 h-4" />
+    case 'lunging-attack':
+      return <MoveRight className="w-4 h-4" />
     default:
       return <Swords className="w-4 h-4" />
-  }
-}
-
-function getTriggerLabel(trigger: Maneuver['trigger']): string {
-  switch (trigger) {
-    case 'on_hit':
-      return 'On Hit'
-    case 'pre_attack':
-      return 'Pre-Attack'
-    case 'bonus_action':
-      return 'Bonus Action'
-    case 'reaction':
-      return 'Reaction'
-    default:
-      return trigger
   }
 }
 
@@ -72,35 +68,38 @@ interface ManeuverCardProps {
 
 function ManeuverCard({ maneuver, isSelected, isDisabled, onToggle }: ManeuverCardProps) {
   return (
-    <button
-      onClick={onToggle}
-      disabled={isDisabled}
-      className={cn(
-        'w-full text-left p-3 rounded-lg border-2 transition-all',
-        !isDisabled && 'cursor-pointer',
-        getTriggerColorClass(maneuver.trigger, isSelected),
-        isDisabled && !isSelected && 'opacity-50 cursor-not-allowed'
-      )}
-    >
-      <div className="flex items-center gap-2 mb-1">
-        {getManeuverIcon(maneuver)}
-        <span className="font-medium text-sm">{maneuver.name}</span>
-        <span className="ml-auto text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
-          {getTriggerLabel(maneuver.trigger)}
-        </span>
-      </div>
-      <p className="text-xs text-muted-foreground leading-relaxed line-clamp-2">
-        {maneuver.description}
-      </p>
-      {maneuver.savingThrow && (
-        <div className="mt-1 text-xs text-muted-foreground">
-          <span className="font-medium text-foreground/80">
-            {maneuver.savingThrow.ability.toUpperCase()} save:
-          </span>{' '}
-          {maneuver.savingThrow.effect}
-        </div>
-      )}
-    </button>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          onClick={onToggle}
+          disabled={isDisabled}
+          className={cn(
+            'w-full text-left px-3 py-2 rounded-lg border-2 transition-all',
+            isSelected ? getTriggerColorClass(maneuver.trigger, true) : 'border-border bg-slate-800/40',
+            isDisabled && !isSelected ? 'opacity-50 cursor-not-allowed' : 'hover:border-primary/50 hover:bg-slate-800/60 cursor-pointer'
+          )}
+        >
+          <div className="flex items-center gap-2">
+            {getManeuverIcon(maneuver)}
+            <span className="font-medium text-sm flex-1">{maneuver.name}</span>
+            <div className={cn(
+              'w-5 h-5 rounded border-2 shrink-0 flex items-center justify-center text-xs',
+              isSelected ? 'border-primary bg-primary text-primary-foreground' : 'border-muted-foreground'
+            )}>
+              {isSelected && '✓'}
+            </div>
+          </div>
+        </button>
+      </TooltipTrigger>
+      <TooltipContent side="top" className="max-w-xs">
+        <p className="leading-relaxed">{maneuver.description}</p>
+        {maneuver.savingThrow && (
+          <p className="mt-1.5 text-amber-300 font-medium">
+            {maneuver.savingThrow.ability.toUpperCase()} save: {maneuver.savingThrow.effect}
+          </p>
+        )}
+      </TooltipContent>
+    </Tooltip>
   )
 }
 
@@ -169,114 +168,116 @@ export function ManeuverSelector() {
   const canSelectMore = selectedCount < maneuversKnownCount
 
   return (
-    <Card>
-      <CardHeader className="pb-3">
-        <CardTitle className="flex items-center gap-2 text-base">
-          <Swords className="w-4 h-4 text-primary" />
-          Combat Superiority Maneuvers
-          <span className="ml-auto text-sm font-normal text-muted-foreground">
-            {selectedCount} / {maneuversKnownCount} selected
-          </span>
-        </CardTitle>
-        <CardDescription>
-          Choose {maneuversKnownCount} maneuvers to learn. You can use them by spending superiority dice.
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <div className="space-y-8">
-          {/* On-Hit Maneuvers */}
-          {maneuversByTrigger.on_hit.length > 0 && (
-            <div>
-              <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
-                On Hit (add to damage)
-              </h4>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                {maneuversByTrigger.on_hit.map((maneuver) => {
-                  const isSelected = draft.selectedManeuverIds.includes(maneuver.id)
-                  return (
-                    <ManeuverCard
-                      key={maneuver.id}
-                      maneuver={maneuver}
-                      isSelected={isSelected}
-                      isDisabled={!canSelectMore && !isSelected}
-                      onToggle={() => toggleManeuver(maneuver.id)}
-                    />
-                  )
-                })}
+    <TooltipProvider delayDuration={300}>
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Swords className="w-4 h-4 text-primary" />
+            Combat Superiority Maneuvers
+            <span className="ml-auto text-sm font-normal text-muted-foreground">
+              {selectedCount} / {maneuversKnownCount} selected
+            </span>
+          </CardTitle>
+          <CardDescription>
+            Choose {maneuversKnownCount} maneuvers to learn. You can use them by spending superiority dice.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-8">
+            {/* On-Hit Maneuvers */}
+            {maneuversByTrigger.on_hit.length > 0 && (
+              <div>
+                <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+                  On Hit (add to damage)
+                </h4>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                  {maneuversByTrigger.on_hit.map((maneuver) => {
+                    const isSelected = draft.selectedManeuverIds.includes(maneuver.id)
+                    return (
+                      <ManeuverCard
+                        key={maneuver.id}
+                        maneuver={maneuver}
+                        isSelected={isSelected}
+                        isDisabled={!canSelectMore && !isSelected}
+                        onToggle={() => toggleManeuver(maneuver.id)}
+                      />
+                    )
+                  })}
+                </div>
               </div>
-            </div>
-          )}
+            )}
 
-          {/* Pre-Attack Maneuvers */}
-          {maneuversByTrigger.pre_attack.length > 0 && (
-            <div>
-              <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
-                Pre-Attack (add to attack roll)
-              </h4>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                {maneuversByTrigger.pre_attack.map((maneuver) => {
-                  const isSelected = draft.selectedManeuverIds.includes(maneuver.id)
-                  return (
-                    <ManeuverCard
-                      key={maneuver.id}
-                      maneuver={maneuver}
-                      isSelected={isSelected}
-                      isDisabled={!canSelectMore && !isSelected}
-                      onToggle={() => toggleManeuver(maneuver.id)}
-                    />
-                  )
-                })}
+            {/* Pre-Attack Maneuvers */}
+            {maneuversByTrigger.pre_attack.length > 0 && (
+              <div>
+                <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+                  Pre-Attack (add to attack roll)
+                </h4>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                  {maneuversByTrigger.pre_attack.map((maneuver) => {
+                    const isSelected = draft.selectedManeuverIds.includes(maneuver.id)
+                    return (
+                      <ManeuverCard
+                        key={maneuver.id}
+                        maneuver={maneuver}
+                        isSelected={isSelected}
+                        isDisabled={!canSelectMore && !isSelected}
+                        onToggle={() => toggleManeuver(maneuver.id)}
+                      />
+                    )
+                  })}
+                </div>
               </div>
-            </div>
-          )}
+            )}
 
-          {/* Reaction Maneuvers */}
-          {maneuversByTrigger.reaction.length > 0 && (
-            <div>
-              <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
-                Reactions
-              </h4>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                {maneuversByTrigger.reaction.map((maneuver) => {
-                  const isSelected = draft.selectedManeuverIds.includes(maneuver.id)
-                  return (
-                    <ManeuverCard
-                      key={maneuver.id}
-                      maneuver={maneuver}
-                      isSelected={isSelected}
-                      isDisabled={!canSelectMore && !isSelected}
-                      onToggle={() => toggleManeuver(maneuver.id)}
-                    />
-                  )
-                })}
+            {/* Reaction Maneuvers */}
+            {maneuversByTrigger.reaction.length > 0 && (
+              <div>
+                <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+                  Reactions
+                </h4>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                  {maneuversByTrigger.reaction.map((maneuver) => {
+                    const isSelected = draft.selectedManeuverIds.includes(maneuver.id)
+                    return (
+                      <ManeuverCard
+                        key={maneuver.id}
+                        maneuver={maneuver}
+                        isSelected={isSelected}
+                        isDisabled={!canSelectMore && !isSelected}
+                        onToggle={() => toggleManeuver(maneuver.id)}
+                      />
+                    )
+                  })}
+                </div>
               </div>
-            </div>
-          )}
+            )}
 
-          {/* Bonus Action Maneuvers (none in MVP, but support for future) */}
-          {maneuversByTrigger.bonus_action.length > 0 && (
-            <div>
-              <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
-                Bonus Actions
-              </h4>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                {maneuversByTrigger.bonus_action.map((maneuver) => {
-                  const isSelected = draft.selectedManeuverIds.includes(maneuver.id)
-                  return (
-                    <ManeuverCard
-                      key={maneuver.id}
-                      maneuver={maneuver}
-                      isSelected={isSelected}
-                      isDisabled={!canSelectMore && !isSelected}
-                      onToggle={() => toggleManeuver(maneuver.id)}
-                    />
-                  )
-                })}
+            {/* Bonus Action Maneuvers */}
+            {maneuversByTrigger.bonus_action.length > 0 && (
+              <div>
+                <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+                  Bonus Actions
+                </h4>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                  {maneuversByTrigger.bonus_action.map((maneuver) => {
+                    const isSelected = draft.selectedManeuverIds.includes(maneuver.id)
+                    return (
+                      <ManeuverCard
+                        key={maneuver.id}
+                        maneuver={maneuver}
+                        isSelected={isSelected}
+                        isDisabled={!canSelectMore && !isSelected}
+                        onToggle={() => toggleManeuver(maneuver.id)}
+                      />
+                    )
+                  })}
+                </div>
               </div>
-            </div>
-          )}
-        </div>
-      </CardContent>
-    </Card>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+    </TooltipProvider>
   )
 }

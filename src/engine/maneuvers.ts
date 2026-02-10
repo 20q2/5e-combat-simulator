@@ -2,7 +2,7 @@
 // Battle Master Maneuver Engine
 // ============================================
 
-import type { Combatant, Character, Grid, AbilityName } from '@/types'
+import type { Combatant, Character, Grid, AbilityName, DamageType } from '@/types'
 import type { CombatSuperiorityFeature, RelentlessFeature } from '@/types/classFeature'
 import { isCombatSuperiorityFeature, isRelentlessFeature } from '@/types/classFeature'
 import type { Maneuver, ManeuverResult } from '@/types/maneuver'
@@ -436,5 +436,152 @@ export function prepareRiposte(attacker: Combatant): ManeuverResult {
     superiorityDieSize: dieRoll.dieSize,
     bonusDamage: dieRoll.total,
     message: `${attacker.name} uses Riposte! +${dieRoll.total} damage if the attack hits.`,
+  }
+}
+
+// ============================================
+// Sweeping Attack
+// ============================================
+
+/**
+ * Find a valid sweep target for Sweeping Attack
+ * Must be within 5ft of original target, a different enemy, alive, and within attacker's reach
+ */
+export function findSweepTarget(
+  attacker: Combatant,
+  originalTarget: Combatant,
+  allCombatants: Combatant[]
+): Combatant | undefined {
+  return allCombatants.find((c) => {
+    if (c.id === originalTarget.id || c.id === attacker.id) return false
+    if (c.currentHp <= 0) return false
+    if (c.type === attacker.type) return false // Must be enemy
+
+    // Must be within 5ft of original target
+    const dx = Math.abs(c.position.x - originalTarget.position.x)
+    const dy = Math.abs(c.position.y - originalTarget.position.y)
+    if (dx > 1 || dy > 1) return false
+
+    // Must be within attacker's reach (adjacent)
+    const adx = Math.abs(c.position.x - attacker.position.x)
+    const ady = Math.abs(c.position.y - attacker.position.y)
+    if (adx > 1 || ady > 1) return false
+
+    return true
+  })
+}
+
+/**
+ * Apply Sweeping Attack - deals superiority die damage to an adjacent enemy
+ * if the original attack roll would hit them
+ */
+export function applySweepingAttack(
+  attacker: Combatant,
+  originalTarget: Combatant,
+  originalAttackTotal: number,
+  allCombatants: Combatant[],
+  getDamageType: () => DamageType
+): ManeuverResult & { sweepTargetId?: string; sweepDamage?: number; sweepDamageType?: DamageType } {
+  const dieRoll = rollSuperiorityDie(attacker)
+  const sweepTarget = findSweepTarget(attacker, originalTarget, allCombatants)
+
+  if (!sweepTarget) {
+    return {
+      success: false,
+      maneuverId: 'sweeping-attack',
+      maneuverName: 'Sweeping Attack',
+      superiorityDieRoll: dieRoll.total,
+      superiorityDieSize: dieRoll.dieSize,
+      message: `${attacker.name} uses Sweeping Attack but there are no valid targets nearby!`,
+    }
+  }
+
+  // Check if original attack roll would hit sweep target
+  const sweepTargetAC = getCombatantACForSweep(sweepTarget)
+  if (originalAttackTotal >= sweepTargetAC) {
+    const damageType = getDamageType()
+    return {
+      success: true,
+      maneuverId: 'sweeping-attack',
+      maneuverName: 'Sweeping Attack',
+      superiorityDieRoll: dieRoll.total,
+      superiorityDieSize: dieRoll.dieSize,
+      sweepTargetId: sweepTarget.id,
+      sweepDamage: dieRoll.total,
+      sweepDamageType: damageType,
+      message: `${attacker.name} uses Sweeping Attack! ${sweepTarget.name} takes ${dieRoll.total} damage!`,
+    }
+  }
+
+  return {
+    success: false,
+    maneuverId: 'sweeping-attack',
+    maneuverName: 'Sweeping Attack',
+    superiorityDieRoll: dieRoll.total,
+    superiorityDieSize: dieRoll.dieSize,
+    message: `${attacker.name} uses Sweeping Attack but the attack would miss ${sweepTarget.name} (AC ${sweepTargetAC})!`,
+  }
+}
+
+/** Get AC for sweep target check (reuse getCombatantAC logic) */
+function getCombatantACForSweep(combatant: Combatant): number {
+  if (combatant.type === 'character') {
+    return (combatant.data as Character).ac + (combatant.evasiveFootworkBonus ?? 0)
+  }
+  return (combatant.data as { ac: number }).ac + (combatant.evasiveFootworkBonus ?? 0)
+}
+
+// ============================================
+// Bonus Action Maneuvers
+// ============================================
+
+/**
+ * Apply Evasive Footwork - rolls superiority die for AC bonus
+ */
+export function applyEvasiveFootwork(combatant: Combatant): ManeuverResult & { acBonus: number } {
+  const dieRoll = rollSuperiorityDie(combatant)
+
+  return {
+    success: true,
+    maneuverId: 'evasive-footwork',
+    maneuverName: 'Evasive Footwork',
+    superiorityDieRoll: dieRoll.total,
+    superiorityDieSize: dieRoll.dieSize,
+    acBonus: dieRoll.total,
+    message: `${combatant.name} uses Evasive Footwork! +${dieRoll.total} AC and Disengage.`,
+  }
+}
+
+/**
+ * Apply Feinting Attack - rolls superiority die for bonus damage
+ */
+export function applyFeintingAttack(combatant: Combatant, targetName: string): ManeuverResult {
+  const dieRoll = rollSuperiorityDie(combatant)
+
+  return {
+    success: true,
+    maneuverId: 'feinting-attack',
+    maneuverName: 'Feinting Attack',
+    superiorityDieRoll: dieRoll.total,
+    superiorityDieSize: dieRoll.dieSize,
+    bonusDamage: dieRoll.total,
+    message: `${combatant.name} feints against ${targetName}! Advantage on next attack with +${dieRoll.total} damage on hit.`,
+  }
+}
+
+/**
+ * Apply Lunging Attack - rolls superiority die for bonus damage
+ */
+export function applyLungingAttack(combatant: Combatant): ManeuverResult {
+  const dieRoll = rollSuperiorityDie(combatant)
+
+  return {
+    success: true,
+    maneuverId: 'lunging-attack',
+    maneuverName: 'Lunging Attack',
+    superiorityDieRoll: dieRoll.total,
+    superiorityDieSize: dieRoll.dieSize,
+    bonusDamage: dieRoll.total,
+    message: `${combatant.name} uses Lunging Attack! Dash and +${dieRoll.total} damage if moved 5ft before melee hit.`,
   }
 }

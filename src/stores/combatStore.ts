@@ -71,6 +71,11 @@ import {
   prepareRiposte,
   applyParry,
   applyPrecisionAttack,
+  applySweepingAttack,
+  applyEvasiveFootwork,
+  applyFeintingAttack,
+  applyLungingAttack,
+  hasCombatSuperiority,
 } from '@/engine/maneuvers'
 import { getManeuverById } from '@/data/maneuvers'
 import type { TriggerOption, PendingTrigger } from '@/types'
@@ -226,6 +231,7 @@ interface CombatStore extends CombatState {
   // Battle Master maneuvers
   useSuperiority: (combatantId: string) => void
   getSuperiorityDiceRemaining: (combatantId: string) => number
+  useBonusActionManeuver: (maneuverId: string, targetId?: string) => void
 
   // Turn management
   useAction: () => void
@@ -443,6 +449,10 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
       superiorityDiceRemaining: 0,
       usedManeuverThisAttack: false,
       goadedBy: undefined,
+      evasiveFootworkBonus: undefined,
+      feintTarget: undefined,
+      feintBonusDamage: undefined,
+      lungingAttackBonus: undefined,
       // Fighter Studied Attacks tracking (level 13)
       studiedTargetId: undefined,
       // Origin Feat tracking
@@ -678,6 +688,10 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
             usedNickThisTurn: false,
             // Reset maneuver tracking (in case turn ended mid-attack)
             usedManeuverThisAttack: false,
+            // Reset bonus action maneuver tracking
+            feintTarget: undefined,
+            feintBonusDamage: undefined,
+            lungingAttackBonus: undefined,
             // Reset origin feat per-turn flags
             usedSavageAttackerThisTurn: false,
             usedTavernBrawlerPushThisTurn: false,
@@ -732,7 +746,14 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
         })
       }
 
-      return { ...c, conditions: newConditions }
+      // Clear evasive footwork bonus when evasive condition expires
+      const evasiveExpired = expiredConditions.includes('evasive')
+
+      return {
+        ...c,
+        conditions: newConditions,
+        ...(evasiveExpired ? { evasiveFootworkBonus: undefined } : {}),
+      }
     })
 
     set({
@@ -1536,17 +1557,25 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
           }
         }
 
-        // Apply condition if save failed
+        // Apply condition if save failed (or unconditional like Distracting Strike)
         if (maneuverResult.conditionApplied) {
+          const conditionEntry: { condition: typeof maneuverResult.conditionApplied; duration: number; source?: string } = {
+            condition: maneuverResult.conditionApplied,
+            duration: maneuver.conditionDuration || -1,
+          }
+          // Distracting Strike: store source so only OTHER attackers get advantage
+          if (maneuver.id === 'distracting-strike') {
+            conditionEntry.source = reactor.id
+          }
+
           set((state) => ({
             combatants: state.combatants.map(c =>
               c.id === target.id
                 ? {
                     ...c,
-                    conditions: [
-                      ...c.conditions,
-                      { condition: maneuverResult.conditionApplied!, duration: maneuver.conditionDuration || -1 }
-                    ]
+                    conditions: [...c.conditions, conditionEntry],
+                    // Goading Attack: track who goaded the target
+                    ...(maneuver.id === 'goading-attack' ? { goadedBy: reactor.id } : {}),
                   }
                 : c
             ),
@@ -1554,6 +1583,25 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
           // Show condition popup on target
           const conditionName = maneuverResult.conditionApplied.charAt(0).toUpperCase() + maneuverResult.conditionApplied.slice(1)
           get().addCombatPopup(target.id, 'condition', conditionName)
+        }
+
+        // Handle Sweeping Attack: deal die damage to adjacent enemy
+        if (maneuver.sweepDamage) {
+          const attackRoll = pendingTrigger.context.attackRoll || 0
+          const sweepResult = applySweepingAttack(
+            reactor, target, attackRoll, combatants,
+            () => damageType
+          )
+          get().addLogEntry({
+            type: 'other',
+            actorId: reactor.id,
+            actorName: reactor.name,
+            message: sweepResult.message,
+          })
+          if (sweepResult.sweepTargetId && sweepResult.sweepDamage) {
+            get().dealDamage(sweepResult.sweepTargetId, sweepResult.sweepDamage, reactor.name)
+            get().addDamagePopup(sweepResult.sweepTargetId, sweepResult.sweepDamage, sweepResult.sweepDamageType || damageType)
+          }
         }
 
         // Decrement superiority dice and mark maneuver as used this attack
@@ -2482,6 +2530,18 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
       attackBonus,
     })
 
+    // Consume distracted condition if it granted advantage to this attacker
+    const distractedCond = target.conditions.find(c => c.condition === 'distracted' && c.source && c.source !== attackerId)
+    if (distractedCond) {
+      set((state) => ({
+        combatants: state.combatants.map(c =>
+          c.id === targetId
+            ? { ...c, conditions: c.conditions.filter(cond => cond !== distractedCond) }
+            : c
+        ),
+      }))
+    }
+
     // Log the attack
     if (result.criticalMiss) {
       get().addLogEntry({
@@ -2687,6 +2747,31 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
         bonusDamageDetails.push(`Sneak Attack [${result.sneakAttackDamage.rolls.join(', ')}]`)
       }
 
+      // Feinting Attack bonus damage: if attacker feinted this target and hit
+      if (attacker.feintTarget === targetId && attacker.feintBonusDamage) {
+        totalDamage += attacker.feintBonusDamage
+        bonusDamageDetails.push(`Feinting Attack +${attacker.feintBonusDamage}`)
+        // Clear feint after use (one-time)
+        set((state) => ({
+          combatants: state.combatants.map(c =>
+            c.id === attackerId ? { ...c, feintTarget: undefined, feintBonusDamage: undefined } : c
+          ),
+        }))
+      }
+
+      // Lunging Attack bonus damage: if attacker used Lunging Attack and moved ≥5ft before this melee hit
+      const isMeleeAttack = selectedWeapon?.type === 'melee' || !selectedWeapon
+      if (attacker.lungingAttackBonus && isMeleeAttack && attacker.movementUsed > 0) {
+        totalDamage += attacker.lungingAttackBonus
+        bonusDamageDetails.push(`Lunging Attack +${attacker.lungingAttackBonus}`)
+        // Clear after use (one-time)
+        set((state) => ({
+          combatants: state.combatants.map(c =>
+            c.id === attackerId ? { ...c, lungingAttackBonus: undefined } : c
+          ),
+        }))
+      }
+
       // Check for on-hit maneuvers (Battle Master maneuvers like Trip Attack, Menacing Attack)
       const onHitManeuvers = getAvailableManeuvers(attacker, 'on_hit')
       if (
@@ -2705,7 +2790,11 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
           name: m.name,
           description: m.description,
           cost: `1 Superiority Die (d${dieSize})`,
-          effect: m.savingThrow
+          effect: m.sweepDamage
+            ? `Roll 1d${dieSize}, damage adjacent enemy if attack would hit`
+            : m.condition === 'distracted'
+            ? `+1d${dieSize} damage, next other attacker has advantage`
+            : m.savingThrow
             ? `+1d${dieSize} damage, ${m.savingThrow.ability.toUpperCase()} save (DC ${saveDC}) or ${m.savingThrow.effect}`
             : `+1d${dieSize} damage`,
         }))
@@ -4352,6 +4441,111 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
     const { combatants } = get()
     const combatant = combatants.find((c) => c.id === combatantId)
     return combatant?.superiorityDiceRemaining ?? 0
+  },
+
+  useBonusActionManeuver: (maneuverId, targetId) => {
+    const { turnOrder, currentTurnIndex, combatants } = get()
+    const currentId = turnOrder[currentTurnIndex]
+    const combatant = combatants.find((c) => c.id === currentId)
+
+    if (!combatant || combatant.hasBonusActed) return
+    if (!hasCombatSuperiority(combatant)) return
+    if (combatant.superiorityDiceRemaining <= 0) return
+
+    if (maneuverId === 'evasive-footwork') {
+      const result = applyEvasiveFootwork(combatant)
+
+      // Get speed for Dash effect
+      const speed = combatant.type === 'character'
+        ? (combatant.data as Character).speed
+        : (combatant.data as Monster).speed.walk
+
+      get().addLogEntry({
+        type: 'other',
+        actorId: currentId,
+        actorName: combatant.name,
+        message: result.message,
+      })
+
+      set((state) => ({
+        combatants: state.combatants.map((c) =>
+          c.id === currentId
+            ? {
+                ...c,
+                hasBonusActed: true,
+                superiorityDiceRemaining: c.superiorityDiceRemaining - 1,
+                movementUsed: c.movementUsed - speed, // Dash effect
+                evasiveFootworkBonus: result.acBonus,
+                conditions: [
+                  ...c.conditions,
+                  { condition: 'disengaging' as const, duration: 1 },
+                  { condition: 'evasive' as const, duration: 1 },
+                ],
+              }
+            : c
+        ),
+      }))
+    } else if (maneuverId === 'feinting-attack') {
+      if (!targetId) return
+      const target = combatants.find((c) => c.id === targetId)
+      if (!target) return
+
+      // Validate within 5ft
+      const dx = Math.abs(combatant.position.x - target.position.x)
+      const dy = Math.abs(combatant.position.y - target.position.y)
+      if (dx > 1 || dy > 1) return
+
+      const result = applyFeintingAttack(combatant, target.name)
+
+      get().addLogEntry({
+        type: 'other',
+        actorId: currentId,
+        actorName: combatant.name,
+        message: result.message,
+      })
+
+      set((state) => ({
+        combatants: state.combatants.map((c) =>
+          c.id === currentId
+            ? {
+                ...c,
+                hasBonusActed: true,
+                superiorityDiceRemaining: c.superiorityDiceRemaining - 1,
+                feintTarget: targetId,
+                feintBonusDamage: result.bonusDamage,
+              }
+            : c
+        ),
+      }))
+    } else if (maneuverId === 'lunging-attack') {
+      const result = applyLungingAttack(combatant)
+
+      // Get speed for Dash effect
+      const speed = combatant.type === 'character'
+        ? (combatant.data as Character).speed
+        : (combatant.data as Monster).speed.walk
+
+      get().addLogEntry({
+        type: 'other',
+        actorId: currentId,
+        actorName: combatant.name,
+        message: result.message,
+      })
+
+      set((state) => ({
+        combatants: state.combatants.map((c) =>
+          c.id === currentId
+            ? {
+                ...c,
+                hasBonusActed: true,
+                superiorityDiceRemaining: c.superiorityDiceRemaining - 1,
+                movementUsed: c.movementUsed - speed, // Dash effect
+                lungingAttackBonus: result.bonusDamage,
+              }
+            : c
+        ),
+      }))
+    }
   },
 
   useAction: () => {

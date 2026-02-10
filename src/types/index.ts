@@ -57,6 +57,8 @@ export type Condition =
   | 'sapped'  // Disadvantage on next attack (from Sap mastery)
   // Battle Master maneuver conditions
   | 'goaded'  // Disadvantage on attacks vs targets other than goader (from Goading Attack)
+  | 'distracted'  // Next attack by a different attacker has advantage (from Distracting Strike)
+  | 'evasive'  // AC bonus from Evasive Footwork (bonus stored on combatant)
 
 // ============================================
 // Character Types
@@ -556,6 +558,11 @@ export interface Combatant {
   superiorityDiceRemaining: number  // Current number of superiority dice available
   usedManeuverThisAttack: boolean  // Track if a maneuver was used on the current attack (for on-hit maneuvers)
   goadedBy?: string  // ID of combatant who goaded this target (for Goading Attack disadvantage)
+  // Bonus action maneuver tracking
+  evasiveFootworkBonus?: number  // AC bonus from Evasive Footwork (cleared when 'evasive' condition expires)
+  feintTarget?: string  // Target ID for Feinting Attack advantage (cleared at turn end)
+  feintBonusDamage?: number  // Superiority die roll for Feinting Attack bonus damage
+  lungingAttackBonus?: number  // Superiority die roll for Lunging Attack bonus damage
   // Fighter Studied Attacks tracking (level 13)
   studiedTargetId?: string  // ID of combatant this fighter has advantage against (after missing them)
   // Origin Feat tracking

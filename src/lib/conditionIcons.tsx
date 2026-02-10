@@ -172,6 +172,18 @@ export const conditionIcons: Record<ExtendedCondition, ConditionIconInfo> = {
     bgColor: 'bg-red-900',
     label: 'Goaded',
   },
+  distracted: {
+    icon: Eye,
+    color: 'text-amber-300',
+    bgColor: 'bg-amber-900',
+    label: 'Distracted',
+  },
+  evasive: {
+    icon: Footprints,
+    color: 'text-emerald-300',
+    bgColor: 'bg-emerald-900',
+    label: 'Evasive',
+  },
 }
 
 export function getConditionIcon(condition: string): ConditionIconInfo | undefined {

@@ -1,6 +1,6 @@
 import { useCombatStore } from '@/stores/combatStore'
 import { cn } from '@/lib/utils'
-import { Swords, X, Target, ArrowBigDown, Skull, Shield, CircleSlash, GripHorizontal } from 'lucide-react'
+import { Swords, X, Target, ArrowBigDown, Skull, Shield, CircleSlash, GripHorizontal, Eye, Footprints, Crosshair, MoveRight } from 'lucide-react'
 import { getManeuverById } from '@/data/maneuvers'
 import { getSuperiorityDieSize, getManeuverSaveDC } from '@/engine/maneuvers'
 import { useDraggable } from './useDraggable'
@@ -25,6 +25,16 @@ function getManeuverIcon(maneuverId: string) {
       return Swords
     case 'precision-attack':
       return Target
+    case 'distracting-strike':
+      return Eye
+    case 'sweeping-attack':
+      return Swords
+    case 'evasive-footwork':
+      return Footprints
+    case 'feinting-attack':
+      return Crosshair
+    case 'lunging-attack':
+      return MoveRight
     default:
       return Swords
   }
@@ -52,6 +62,14 @@ function buildManeuverEffect(maneuverId: string, saveDC: number, dieSize: number
 
   if (maneuver.pushDistance) {
     parts.push(`push ${maneuver.pushDistance}ft`)
+  }
+
+  if (maneuver.sweepDamage) {
+    parts.push(`roll 1d${dieSize}, damage adjacent enemy if attack would hit`)
+  }
+
+  if (maneuver.condition === 'distracted' && !maneuver.savingThrow) {
+    parts.push('next other attacker has advantage')
   }
 
   return parts.join(', ')

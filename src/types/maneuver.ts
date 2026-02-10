@@ -29,6 +29,7 @@ export interface Maneuver {
   conditionDuration?: number  // Duration in rounds (-1 = until removed manually like prone)
   pushDistance?: number  // For Pushing Attack (15 feet)
   damageReduction?: boolean  // For Parry - reduces damage instead of adding
+  sweepDamage?: boolean  // For Sweeping Attack - deals die damage to adjacent enemy
 }
 
 // Result of using a maneuver
