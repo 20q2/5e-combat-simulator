@@ -40,16 +40,33 @@ export function parseDiceExpression(expression: string): {
   sides: number
   modifier: number
 } | null {
-  const regex = /^(\d+)?d(\d+)([+-]\d+)?$/i
-  const match = expression.trim().match(regex)
+  const trimmed = expression.trim()
 
-  if (!match) return null
-
-  return {
-    count: match[1] ? parseInt(match[1], 10) : 1,
-    sides: parseInt(match[2], 10),
-    modifier: match[3] ? parseInt(match[3], 10) : 0,
+  // Standard dice expression: "2d6+3", "1d8", "d20-1"
+  const diceRegex = /^(\d+)?d(\d+)([+-]\d+)?$/i
+  const diceMatch = trimmed.match(diceRegex)
+  if (diceMatch) {
+    return {
+      count: diceMatch[1] ? parseInt(diceMatch[1], 10) : 1,
+      sides: parseInt(diceMatch[2], 10),
+      modifier: diceMatch[3] ? parseInt(diceMatch[3], 10) : 0,
+    }
   }
+
+  // Flat damage expression: "1+3", "5", "1-2" (no dice, e.g. blowgun or unarmed)
+  const flatRegex = /^(\d+)([+-]\d+)?$/
+  const flatMatch = trimmed.match(flatRegex)
+  if (flatMatch) {
+    const base = parseInt(flatMatch[1], 10)
+    const mod = flatMatch[2] ? parseInt(flatMatch[2], 10) : 0
+    return {
+      count: 0,
+      sides: 0,
+      modifier: base + mod,
+    }
+  }
+
+  return null
 }
 
 /**
@@ -168,13 +185,15 @@ export function rollDamage(damageExpression: string, critical: boolean = false):
       : ''
 
   const critPrefix = critical ? 'CRIT! ' : ''
-  const breakdown = `${critPrefix}[${rolls.join(', ')}]${modifierStr} = ${total}`
+  const breakdown = diceCount > 0
+    ? `${critPrefix}[${rolls.join(', ')}]${modifierStr} = ${total}`
+    : `${critPrefix}${total}`
 
   return {
     total,
     rolls,
     modifier: parsed.modifier,
-    expression: critical ? `${diceCount}d${parsed.sides}${modifierStr}` : damageExpression,
+    expression: critical ? (diceCount > 0 ? `${diceCount}d${parsed.sides}${modifierStr}` : `${total}`) : damageExpression,
     breakdown,
   }
 }

@@ -9,10 +9,10 @@ import { getMaxAttacksPerAction, getSecondWindMaxUses, getIndomitableMaxUses, ge
 import { canAttackTarget } from '@/engine/combat'
 import { hasCombatSuperiority, getMaxSuperiorityDice, getSuperiorityDieSize, getManeuverSaveDC } from '@/engine/maneuvers'
 import { getManeuverById } from '@/data/maneuvers'
-import type { Character, Monster, Combatant, FightingStyle } from '@/types'
+import type { Character, Monster, Combatant, FightingStyle, Spell, Weapon } from '@/types'
 import type { Maneuver } from '@/types/maneuver'
 import { getAbilityModifier } from '@/types'
-import { Sword, Crosshair, Shield, Footprints, Zap, Swords, Target, X, type LucideIcon } from 'lucide-react'
+import { Sword, Crosshair, Sparkles, Shield, Footprints, Zap, Swords, Target, X, type LucideIcon } from 'lucide-react'
 
 // ============================================
 // Selected Feature Types
@@ -449,106 +449,186 @@ function ActionEconomyIndicator({ combatant }: { combatant: Combatant }) {
   )
 }
 
-function TargetActionsPanel({ target, currentCombatant }: { target: Combatant; currentCombatant: Combatant }) {
-  const { getValidTargets, performAttack, selectCombatant, grid } = useCombatStore()
+function getWeaponRange(weapon: Weapon): { normal: number; long?: number } {
+  if (weapon.type === 'ranged' && weapon.range) {
+    return { normal: weapon.range.normal, long: weapon.range.long }
+  }
+  const hasReach = weapon.properties.includes('reach')
+  return { normal: hasReach ? 10 : 5 }
+}
 
-  // Get weapons for the current combatant
+function parseSpellRange(range: string): number {
+  const lowerRange = range.toLowerCase()
+  if (lowerRange === 'self' || lowerRange.startsWith('self')) return 0
+  if (lowerRange === 'touch') return 5
+  const match = range.match(/(\d+)\s*(feet|ft|foot)?/i)
+  if (match) return parseInt(match[1], 10)
+  return 0
+}
+
+function TargetActionsPanel({ target, currentCombatant }: { target: Combatant; currentCombatant: Combatant }) {
+  const { performAttack, castSpell, selectCombatant, grid } = useCombatStore()
+
   const isCharacter = currentCombatant.type === 'character'
   const character = isCharacter ? currentCombatant.data as Character : null
   const monster = !isCharacter ? currentCombatant.data as Monster : null
 
-  const meleeWeapon = character?.equipment?.meleeWeapon
-  const rangedWeapon = character?.equipment?.rangedWeapon
-  const monsterAction = monster?.actions.find(a => a.attackBonus !== undefined)
-
-  // Check if target is in range
-  const validTargets = getValidTargets(currentCombatant.id, meleeWeapon, monsterAction, rangedWeapon)
-  const isValidTarget = validTargets.some(t => t.id === target.id)
-
-  // Determine WHY the target can't be attacked (for better error messages)
-  const getTargetingIssue = (): 'none' | 'out_of_range' | 'no_line_of_sight' => {
-    if (isValidTarget) return 'none'
-
-    // Check melee weapon first
-    if (meleeWeapon || monsterAction) {
-      const meleeCheck = canAttackTarget(currentCombatant, target, grid, meleeWeapon, monsterAction)
-      if (meleeCheck.reason === 'no_line_of_sight') return 'no_line_of_sight'
-    }
-
-    // Check ranged weapon
-    if (rangedWeapon) {
-      const rangedCheck = canAttackTarget(currentCombatant, target, grid, rangedWeapon, undefined)
-      if (rangedCheck.reason === 'no_line_of_sight') return 'no_line_of_sight'
-    }
-
-    return 'out_of_range'
-  }
-
-  const targetingIssue = getTargetingIssue()
+  const dx = Math.abs(target.position.x - currentCombatant.position.x)
+  const dy = Math.abs(target.position.y - currentCombatant.position.y)
+  const distance = Math.max(dx, dy) * 5
 
   // Check if we can attack (have attacks remaining)
   const maxAttacks = getMaxAttacksPerAction(currentCombatant)
   const attacksRemaining = maxAttacks - currentCombatant.attacksMadeThisTurn
-  // Can attack if: valid target AND have attacks remaining AND (haven't used action OR mid-Attack action)
-  // attacksMadeThisTurn > 0 means we're in the middle of an Attack action with Extra Attack
-  const canAttack = isValidTarget && attacksRemaining > 0 && (!currentCombatant.hasActed || currentCombatant.attacksMadeThisTurn > 0)
+  const canAttack = attacksRemaining > 0 && (!currentCombatant.hasActed || currentCombatant.attacksMadeThisTurn > 0)
 
-  // Determine which weapon would be used based on range
-  const getWeaponInfo = () => {
-    if (!isCharacter) {
-      return { name: monsterAction?.name ?? 'Attack', icon: Sword }
-    }
+  // Check line of sight
+  const meleeWeapon = character?.equipment?.meleeWeapon
+  const rangedWeapon = character?.equipment?.rangedWeapon
+  const monsterAction = monster?.actions.find(a => a.attackBonus !== undefined)
 
-    // Check if target is in melee range (5ft for most weapons)
-    const dx = Math.abs(target.position.x - currentCombatant.position.x)
-    const dy = Math.abs(target.position.y - currentCombatant.position.y)
-    const distance = Math.max(dx, dy) * 5
+  const losCheck = canAttackTarget(currentCombatant, target, grid, meleeWeapon || rangedWeapon, monsterAction)
+  const hasLineOfSight = losCheck.reason !== 'no_line_of_sight'
 
-    if (meleeWeapon && distance <= 5) {
-      return { name: meleeWeapon.name, icon: Sword }
-    }
-    if (rangedWeapon) {
-      return { name: rangedWeapon.name, icon: Crosshair }
-    }
+  // Build action list matching the context menu
+  const actions: { id: string; label: string; icon: LucideIcon; disabled: boolean; disabledReason?: string; onClick: () => void }[] = []
+
+  if (isCharacter && character) {
+    // Melee weapon
     if (meleeWeapon) {
-      return { name: meleeWeapon.name, icon: Sword }
+      const meleeRange = getWeaponRange(meleeWeapon)
+      const inMeleeRange = distance <= meleeRange.normal
+
+      actions.push({
+        id: 'attack-melee',
+        label: `Attack with ${meleeWeapon.name}`,
+        icon: Sword,
+        disabled: !canAttack || !inMeleeRange || !hasLineOfSight,
+        disabledReason: !hasLineOfSight ? 'no_los' : !inMeleeRange ? 'out_of_range' : undefined,
+        onClick: () => {
+          performAttack(currentCombatant.id, target.id, meleeWeapon, undefined, undefined)
+          selectCombatant(undefined)
+        }
+      })
     }
-    return { name: 'Unarmed Strike', icon: Sword }
+
+    // Ranged weapon
+    if (rangedWeapon) {
+      const rangedRange = getWeaponRange(rangedWeapon)
+      const inNormalRange = distance <= rangedRange.normal
+      const inLongRange = rangedRange.long ? distance <= rangedRange.long : false
+      const atDisadvantage = !inNormalRange && inLongRange
+      const inRange = inNormalRange || inLongRange
+
+      actions.push({
+        id: 'attack-ranged',
+        label: atDisadvantage
+          ? `Attack with ${rangedWeapon.name} (disadvantage)`
+          : `Attack with ${rangedWeapon.name}`,
+        icon: Crosshair,
+        disabled: !canAttack || !inRange || !hasLineOfSight,
+        disabledReason: !hasLineOfSight ? 'no_los' : !inRange ? 'out_of_range' : undefined,
+        onClick: () => {
+          performAttack(currentCombatant.id, target.id, undefined, undefined, rangedWeapon)
+          selectCombatant(undefined)
+        }
+      })
+    }
+
+    // Unarmed strike fallback (only if no weapons at all)
+    if (!meleeWeapon && !rangedWeapon) {
+      const inMeleeRange = distance <= 5
+
+      actions.push({
+        id: 'attack-unarmed',
+        label: 'Unarmed Strike',
+        icon: Sword,
+        disabled: !canAttack || !inMeleeRange || !hasLineOfSight,
+        disabledReason: !hasLineOfSight ? 'no_los' : !inMeleeRange ? 'out_of_range' : undefined,
+        onClick: () => {
+          performAttack(currentCombatant.id, target.id, undefined, undefined, undefined)
+          selectCombatant(undefined)
+        }
+      })
+    }
+
+    // Offensive spells
+    const offensiveSpells = (character.preparedSpells || character.knownSpells || [])
+      .filter((spell: Spell) =>
+        (spell.damage || spell.attackType || spell.savingThrow) &&
+        !spell.areaOfEffect &&
+        !spell.projectiles
+      )
+      .slice(0, 3)
+
+    offensiveSpells.forEach((spell: Spell) => {
+      const spellRange = parseSpellRange(spell.range)
+      const inSpellRange = distance <= spellRange
+
+      actions.push({
+        id: `spell-${spell.id}`,
+        label: `Cast ${spell.name}`,
+        icon: Sparkles,
+        disabled: !inSpellRange || !hasLineOfSight,
+        disabledReason: !hasLineOfSight ? 'no_los' : !inSpellRange ? 'out_of_range' : undefined,
+        onClick: () => {
+          castSpell(currentCombatant.id, spell, target.id)
+          selectCombatant(undefined)
+        }
+      })
+    })
+  } else if (monster && monsterAction) {
+    // Monster attack
+    const inRange = distance <= 5
+
+    actions.push({
+      id: 'attack-monster',
+      label: `Attack with ${monsterAction.name}`,
+      icon: Sword,
+      disabled: !canAttack || !inRange || !hasLineOfSight,
+      disabledReason: !hasLineOfSight ? 'no_los' : !inRange ? 'out_of_range' : undefined,
+      onClick: () => {
+        performAttack(currentCombatant.id, target.id, undefined, monsterAction, undefined)
+        selectCombatant(undefined)
+      }
+    })
   }
 
-  const weaponInfo = getWeaponInfo()
-  const WeaponIcon = weaponInfo.icon
-
-  const handleAttack = () => {
-    performAttack(currentCombatant.id, target.id, meleeWeapon, monsterAction, rangedWeapon)
-    // Deselect after attack so the panel updates
-    selectCombatant(undefined)
-  }
+  // Determine overall status message
+  const allOutOfRange = actions.length > 0 && actions.every(a => a.disabledReason === 'out_of_range')
+  const allNoLos = actions.length > 0 && actions.every(a => a.disabledReason === 'no_los')
+  const noAttacksLeft = canAttack === false && hasLineOfSight
 
   return (
     <div className="pt-3 border-t border-slate-700">
       <div className="text-xs text-muted-foreground mb-2">Target Actions</div>
-      <div className="flex flex-col gap-2">
-        <Button
-          variant="destructive"
-          size="sm"
-          className="w-full justify-start gap-2"
-          disabled={!canAttack}
-          onClick={handleAttack}
-        >
-          <WeaponIcon className="w-4 h-4" />
-          <span>Attack with {weaponInfo.name}</span>
-          {attacksRemaining > 1 && (
-            <span className="ml-auto text-xs opacity-75">({attacksRemaining} left)</span>
-          )}
-        </Button>
-        {targetingIssue === 'out_of_range' && (
-          <p className="text-xs text-muted-foreground italic">Target is out of range</p>
-        )}
-        {targetingIssue === 'no_line_of_sight' && (
+      <div className="flex flex-col gap-1.5">
+        {actions.map(action => {
+          const Icon = action.icon
+          return (
+            <Button
+              key={action.id}
+              variant="destructive"
+              size="sm"
+              className="w-full justify-start gap-2"
+              disabled={action.disabled}
+              onClick={action.onClick}
+            >
+              <Icon className="w-4 h-4" />
+              <span>{action.label}</span>
+              {!action.disabled && attacksRemaining > 1 && action.id.startsWith('attack') && (
+                <span className="ml-auto text-xs opacity-75">({attacksRemaining} left)</span>
+              )}
+            </Button>
+          )
+        })}
+        {allNoLos && (
           <p className="text-xs text-rose-400 italic">No line of sight (blocked by obstacle)</p>
         )}
-        {isValidTarget && currentCombatant.hasActed && attacksRemaining === 0 && (
+        {allOutOfRange && !allNoLos && (
+          <p className="text-xs text-muted-foreground italic">Target is out of range</p>
+        )}
+        {noAttacksLeft && !allOutOfRange && !allNoLos && (
           <p className="text-xs text-muted-foreground italic">No attacks remaining this turn</p>
         )}
       </div>

@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -18,6 +18,7 @@ import {
   Droplets,
   Footprints,
   X,
+  Upload,
 } from 'lucide-react'
 
 // Use Vite's glob import to load obstacle images
@@ -28,7 +29,7 @@ const obstacleImages = import.meta.glob<{ default: string }>(
 
 // Use Vite's glob import to load map background images
 const mapBackgroundImages = import.meta.glob<{ default: string }>(
-  '@/assets/maps/*.png',
+  '@/assets/maps/*.{png,jpg,jpeg}',
   { eager: true }
 )
 
@@ -42,7 +43,7 @@ interface BackgroundOption {
 const backgroundOptions: BackgroundOption[] = Object.entries(mapBackgroundImages).map(
   ([path, module]) => {
     // Extract filename without extension from path like "/src/assets/maps/goblin_camp.png"
-    const filename = path.split('/').pop()?.replace('.png', '') || 'unknown'
+    const filename = path.split('/').pop()?.replace(/\.(png|jpe?g)$/, '') || 'unknown'
     const displayName = filename
       .split('_')
       .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
@@ -122,6 +123,17 @@ export function MapBuilderPage() {
   const [bgScale, setBgScale] = useState(100) // percentage
   const [bgOffsetX, setBgOffsetX] = useState(0) // pixels
   const [bgOffsetY, setBgOffsetY] = useState(0) // pixels
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const url = URL.createObjectURL(file)
+    const name = file.name.replace(/\.[^.]+$/, '').replace(/[_-]/g, ' ')
+    setBackgroundImage({ name, path: 'custom-upload', src: url })
+    // Reset the input so re-uploading the same file triggers onChange
+    e.target.value = ''
+  }
 
   const getCellKey = (x: number, y: number) => `${x},${y}`
 
@@ -561,6 +573,29 @@ export function MapBuilderPage() {
                     </div>
                   </button>
                 ))}
+
+                {/* Upload custom image */}
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className={cn(
+                    'relative rounded-lg border overflow-hidden transition-all h-16 flex items-center justify-center',
+                    backgroundImage?.path === 'custom-upload'
+                      ? 'border-primary ring-1 ring-primary bg-primary/10'
+                      : 'border-dashed border-slate-600 hover:border-slate-400 bg-slate-800/50'
+                  )}
+                >
+                  <div className="text-center">
+                    <Upload className="w-4 h-4 mx-auto mb-1 opacity-50" />
+                    <span className="text-[10px] text-muted-foreground">Upload</span>
+                  </div>
+                </button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleFileUpload}
+                  className="hidden"
+                />
               </div>
 
               {/* Position and scale controls - only show when image selected */}

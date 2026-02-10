@@ -156,7 +156,7 @@ export function Token({
           onContextMenu?.(e)
         }}
         className={cn(
-          'w-full h-full rounded-full p-[2px] transition-all cursor-pointer',
+          'w-full h-full rounded-full p-[2px] transition-all cursor-pointer shadow-md shadow-black/40',
           isCurrentTurn && 'ring-2 ring-emerald-400 ring-offset-1 ring-offset-slate-900 scale-110 shadow-lg shadow-black/50',
           isHoveredTarget && 'ring-4 ring-rose-500 ring-offset-2 ring-offset-slate-900 scale-[1.15] animate-pulse',
           // Concentration glow effect

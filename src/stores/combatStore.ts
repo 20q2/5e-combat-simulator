@@ -2242,6 +2242,11 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
   },
 
   dealDamage: (targetId, amount, _source) => {
+    // Collect log entries that should appear AFTER the caller's damage log.
+    // We use queueMicrotask so these logs are deferred until after the current
+    // synchronous code (where callers log the damage amount) finishes.
+    const deferredLogs: Omit<CombatLogEntry, 'id' | 'timestamp' | 'round'>[] = []
+
     set((state) => {
       const target = state.combatants.find((c) => c.id === targetId)
       if (!target) return state
@@ -2263,7 +2268,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
           )
           updatedRacialAbilityUses = result.newUses
 
-          get().addLogEntry({
+          deferredLogs.push({
             type: 'other',
             actorId: targetId,
             actorName: target.name,
@@ -2278,8 +2283,8 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
       // Check for falling unconscious (characters) or dying (monsters)
       if (newHp === 0 && wasConscious) {
         if (target.type === 'monster') {
-          // Monsters die immediately at 0 HP - they become corpses (prone, space is passable)
-          get().addLogEntry({
+          // Monsters die immediately at 0 HP
+          deferredLogs.push({
             type: 'death',
             actorId: targetId,
             actorName: target.name,
@@ -2288,7 +2293,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
           creatureDied = true
         } else {
           // Characters fall unconscious
-          get().addLogEntry({
+          deferredLogs.push({
             type: 'death',
             actorId: targetId,
             actorName: target.name,
@@ -2302,14 +2307,14 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
         const newFailures = target.deathSaves.failures + 1
         const characterDied = newFailures >= 3
         if (characterDied) {
-          get().addLogEntry({
+          deferredLogs.push({
             type: 'death',
             actorId: targetId,
             actorName: target.name,
             message: `${target.name} has died from damage while unconscious!`,
           })
         } else {
-          get().addLogEntry({
+          deferredLogs.push({
             type: 'other',
             actorId: targetId,
             actorName: target.name,
@@ -2355,7 +2360,6 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
               }
             : c
         ),
-        // Note: Dead creatures remain on the grid as corpses (their space becomes passable via isDead check)
       }
     })
 
@@ -2363,10 +2367,20 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
     const combatResult = checkCombatEnd(get().combatants)
     if (combatResult) {
       set({ phase: combatResult })
-      get().addLogEntry({
+      deferredLogs.push({
         type: combatResult === 'victory' ? 'initiative' : 'death',
         actorName: 'System',
         message: combatResult === 'victory' ? 'Victory! All enemies defeated!' : 'Defeat... All heroes have fallen.',
+      })
+    }
+
+    // Defer death/unconscious/victory logs to after the caller's synchronous code
+    // finishes, so damage log entries appear first in the combat log
+    if (deferredLogs.length > 0) {
+      queueMicrotask(() => {
+        for (const log of deferredLogs) {
+          get().addLogEntry(log)
+        }
       })
     }
   },
