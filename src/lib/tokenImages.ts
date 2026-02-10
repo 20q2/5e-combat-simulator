@@ -43,6 +43,11 @@ const availableClassTokens = new Set([
 ])
 
 export function getCharacterTokenImage(character: Character): string | null {
+  // Prioritize user-uploaded custom token image
+  if (character.customTokenImage) {
+    return character.customTokenImage
+  }
+
   const classId = character.class.id
   const raceId = character.race.id
 

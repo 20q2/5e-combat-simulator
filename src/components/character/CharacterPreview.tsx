@@ -18,6 +18,7 @@ import {
 } from '@/stores/characterStore'
 import { getAbilityModifier, getProficiencyBonus } from '@/types'
 import { getCharacterTokenImage } from '@/lib/tokenImages'
+import { TokenImageUpload } from './TokenImageUpload'
 import type { Character } from '@/types'
 import {
   Heart,
@@ -25,7 +26,6 @@ import {
   Footprints,
   Swords,
   Sparkles,
-  User,
 } from 'lucide-react'
 
 const ABILITY_LABELS: Record<string, string> = {
@@ -42,7 +42,7 @@ function formatModifier(mod: number): string {
 }
 
 export function CharacterPreview() {
-  const { draft, setName } = useCharacterStore()
+  const { draft, setName, setCustomTokenImage } = useCharacterStore()
 
   const race = draft.raceId ? getRaceById(draft.raceId) ?? null : null
   const characterClass = draft.classId ? getClassById(draft.classId) ?? null : null
@@ -84,12 +84,13 @@ export function CharacterPreview() {
     ? getSubclassFeaturesByLevel(characterClass, draft.subclassId, draft.level)
     : []
 
-  // Get token preview image
-  const tokenImage = useMemo(() => {
+  // Get token preview image (custom upload takes priority)
+  const autoTokenImage = useMemo(() => {
     if (!race || !characterClass) return null
     const mockCharacter = { race, class: characterClass } as Character
     return getCharacterTokenImage(mockCharacter)
   }, [race, characterClass])
+  const tokenImage = draft.customTokenImage ?? autoTokenImage
 
   // Calculate if we have enough to show certain sections
   const hasRaceOrClass = race || characterClass
@@ -100,27 +101,34 @@ export function CharacterPreview() {
       <CardContent className="pt-6">
         {/* Character Portrait & Name */}
         <div className="text-center mb-6">
-          {/* Token */}
+          {/* Token with upload */}
           <div className="relative inline-block mb-4">
-            {tokenImage ? (
-              <img
-                src={tokenImage}
-                alt="Character token"
-                className="w-32 h-32 rounded-full object-cover border-4 border-violet-500 shadow-xl shadow-violet-500/20 mx-auto"
+            {draft.customTokenImage ? (
+              <TokenImageUpload
+                currentImage={draft.customTokenImage}
+                onImageChange={setCustomTokenImage}
               />
-            ) : (
-              <div className="w-32 h-32 rounded-full bg-gradient-to-br from-slate-700 to-slate-800 flex items-center justify-center border-4 border-slate-600 shadow-xl mx-auto">
-                {race && characterClass ? (
-                  <span className="text-4xl font-bold text-slate-400">
-                    {draft.name ? draft.name.charAt(0).toUpperCase() : '?'}
-                  </span>
-                ) : (
-                  <User className="w-12 h-12 text-slate-500" />
-                )}
+            ) : tokenImage ? (
+              <div className="relative group">
+                <img
+                  src={tokenImage}
+                  alt="Character token"
+                  className="w-32 h-32 rounded-full object-cover border-4 border-violet-500 shadow-xl shadow-violet-500/20 mx-auto"
+                />
+                <TokenImageUpload
+                  currentImage={null}
+                  onImageChange={setCustomTokenImage}
+                  className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity mx-auto"
+                />
               </div>
+            ) : (
+              <TokenImageUpload
+                currentImage={null}
+                onImageChange={setCustomTokenImage}
+              />
             )}
             {/* Level badge */}
-            <div className="absolute -bottom-1 -right-1 w-10 h-10 rounded-full bg-primary flex items-center justify-center text-primary-foreground font-bold text-lg border-2 border-background shadow-lg">
+            <div className="absolute -bottom-1 -right-1 w-10 h-10 rounded-full bg-primary flex items-center justify-center text-primary-foreground font-bold text-lg border-2 border-background shadow-lg z-10">
               {draft.level}
             </div>
           </div>

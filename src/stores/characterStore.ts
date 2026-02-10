@@ -79,6 +79,7 @@ export interface CharacterDraft {
     plus2Ability?: AbilityName  // If mode is 'plus2-plus1'
     plus1Abilities: AbilityName[]  // 1 ability if 'plus2-plus1', 2 if 'plus1-plus1'
   }>
+  customTokenImage: string | null // User-uploaded token image as base64 data URL
   editingCharacterId: string | null // Set when editing an existing character
 }
 
@@ -133,6 +134,7 @@ interface CharacterState {
   setAbilityBonusMode: (mode: AbilityBonusMode) => void
   toggleAbilityBonusPlus1Trio: (ability: AbilityName) => void
   setAbilityBonusPlus1Trio: (abilities: AbilityName[]) => void
+  setCustomTokenImage: (image: string | null) => void
   setCurrentStep: (step: number) => void
   nextStep: () => void
   prevStep: () => void
@@ -187,6 +189,7 @@ const initialDraft: CharacterDraft = {
   additionalFightingStyle: null,
   selectedManeuverIds: [],
   classAsiSelections: [],
+  customTokenImage: null,
   editingCharacterId: null,
 }
 
@@ -579,6 +582,11 @@ export const useCharacterStore = create<CharacterState>()(
           },
         })),
 
+      setCustomTokenImage: (image) =>
+        set((state) => ({
+          draft: { ...state.draft, customTokenImage: image },
+        })),
+
       setCurrentStep: (step) => set({ currentStep: step }),
 
       nextStep: () =>
@@ -674,6 +682,7 @@ export const useCharacterStore = create<CharacterState>()(
             additionalFightingStyle: character.fightingStyles?.[1] ?? null,
             selectedManeuverIds: character.knownManeuverIds ?? [],
             classAsiSelections: character.classAsiSelections ?? [],
+            customTokenImage: character.customTokenImage ?? null,
             editingCharacterId: character.id,
           },
           currentStep: 0,

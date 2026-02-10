@@ -415,6 +415,7 @@ export interface Character {
   masteredWeaponIds?: string[]  // D&D 2024: IDs of weapons this character has mastered
   fightingStyles?: FightingStyle[]  // Selected fighting styles (primary + additional for Champion)
   knownManeuverIds?: string[]  // Battle Master: IDs of known maneuvers
+  customTokenImage?: string  // User-uploaded token image as base64 data URL
 }
 
 export interface ActiveCondition {
@@ -699,6 +700,7 @@ export interface CombatState {
   mapBackgroundImage?: string // Background image path for the map
   selectedCombatantId?: string
   selectedAction?: 'move' | 'attack' | 'spell' | 'dash' | 'disengage' | 'dodge' | 'help' | 'hide' | 'ready'
+  preselectedWeaponId?: string // Set from CombatantPanel to open attack mode with a specific weapon
   targetingMode?: {
     type: 'single' | 'area'
     spell?: Spell

@@ -1056,6 +1056,7 @@ export function ActionBar() {
     useBattleMedic,
     getBattleMedicTargets,
     useBonusActionManeuver,
+    preselectedWeaponId,
   } = state
 
   const navigate = useNavigate()
@@ -1103,6 +1104,41 @@ export function ActionBar() {
 
     return () => clearTimeout(timeoutId)
   }, [phase, currentTurnIndex, isAITurn, executeAITurn, isExecutingAI])
+
+  // Handle weapon preselection from CombatantPanel
+  // (must be before early returns to maintain consistent hook order)
+  useEffect(() => {
+    if (!preselectedWeaponId || !currentCombatant) return
+    if (currentCombatant.type !== 'character') return
+
+    // Clear the preselection from store
+    useCombatStore.setState({ preselectedWeaponId: undefined })
+
+    // Build a minimal weapon lookup to find the preselected weapon
+    const character = currentCombatant.data as Character
+    const weapons = character.equipment
+    const weaponList: { id: string; range: number; longRange?: number; type: string }[] = []
+    if (weapons.meleeWeapon) weaponList.push({ id: weapons.meleeWeapon.id, range: 5, type: 'melee' })
+    if (weapons.rangedWeapon) weaponList.push({
+      id: weapons.rangedWeapon.id,
+      range: weapons.rangedWeapon.range?.normal ?? 5,
+      longRange: weapons.rangedWeapon.range?.long,
+      type: 'ranged',
+    })
+    if (weapons.offhandWeapon) weaponList.push({ id: weapons.offhandWeapon.id, range: 5, type: 'melee' })
+
+    const weapon = weaponList.find(w => w.id === preselectedWeaponId)
+    if (!weapon) return
+
+    lastSelectedWeaponIdRef.current = preselectedWeaponId
+    setIsSelectingWeapon(true)
+    setRangeHighlight({
+      origin: currentCombatant.position,
+      range: weapon.range,
+      longRange: weapon.longRange,
+      type: weapon.type === 'ranged' ? 'ranged' : 'melee',
+    })
+  }, [preselectedWeaponId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Setup phase UI
   if (phase === 'setup') {
@@ -1362,6 +1398,8 @@ export function ActionBar() {
       }
     }
   }
+
+  // (weapon preselection useEffect moved before early returns)
 
   // Action handlers
   const handleAttackClick = () => {

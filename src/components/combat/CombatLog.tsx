@@ -95,6 +95,11 @@ function LogEntry({ entry, combatants }: { entry: CombatLogEntry; combatants: Co
   // Don't show "System" as actor name for general messages
   const showActorName = entry.actorName && entry.actorName !== 'System'
 
+  // Strip leading actor name from message to avoid showing it twice
+  const displayMessage = showActorName && entry.message.startsWith(entry.actorName)
+    ? entry.message.slice(entry.actorName.length).trimStart()
+    : entry.message
+
   return (
     <div className={cn('flex items-start gap-2 text-sm py-1 pl-1 animate-slide-in-left', color)}>
       <ActorToken combatant={actor} />
@@ -103,7 +108,7 @@ function LogEntry({ entry, combatants }: { entry: CombatLogEntry; combatants: Co
           {showActorName && (
             <span className="font-semibold text-slate-200">{entry.actorName} </span>
           )}
-          {entry.message}
+          {displayMessage}
         </div>
         {entry.details && (
           <div className="text-xs text-muted-foreground mt-0.5 font-mono">

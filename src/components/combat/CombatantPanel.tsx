@@ -638,7 +638,7 @@ function TargetActionsPanel({ target, currentCombatant }: { target: Combatant; c
 
 export function CombatantPanel() {
   const state = useCombatStore()
-  const { selectedCombatantId, combatants, phase } = state
+  const { selectedCombatantId, combatants, phase, preselectWeapon } = state
   const currentCombatant = getCurrentCombatant(state)
   const [selectedFeature, setSelectedFeature] = useState<SelectedFeature | null>(null)
 
@@ -674,6 +674,11 @@ export function CombatantPanel() {
   const hpPercent = Math.round((displayCombatant.currentHp / displayCombatant.maxHp) * 100)
 
   const isCurrentTurn = currentCombatant?.id === displayCombatant.id
+
+  // Check if this combatant can still attack (for weapon button interactivity)
+  const maxAttacks = getMaxAttacksPerAction(displayCombatant)
+  const attacksRemaining = maxAttacks - displayCombatant.attacksMadeThisTurn
+  const canAttack = isCurrentTurn && phase === 'combat' && attacksRemaining > 0 && (!displayCombatant.hasActed || displayCombatant.attacksMadeThisTurn > 0)
 
   const tokenImage = getCombatantTokenImage(displayCombatant.type, displayCombatant.data)
 
@@ -797,8 +802,17 @@ export function CombatantPanel() {
                 <div className="text-xs text-muted-foreground mb-1">Weapons</div>
                 <div className="space-y-1">
                   {character.equipment.meleeWeapon && (
-                    <div className="text-sm">
-                      {character.equipment.meleeWeapon.name}
+                    <button
+                      disabled={!canAttack}
+                      className={cn(
+                        "w-full text-left text-sm rounded px-1.5 py-0.5 -mx-1.5 transition-colors",
+                        canAttack
+                          ? "hover:bg-slate-700/60 cursor-pointer"
+                          : "cursor-default opacity-80"
+                      )}
+                      onClick={() => canAttack && preselectWeapon('melee')}
+                    >
+                      <span className="font-medium">{character.equipment.meleeWeapon.name}</span>
                       <span className="text-xs text-sky-400 ml-1">
                         {character.equipment.meleeWeapon.range
                           ? `${character.equipment.meleeWeapon.range.normal}/${character.equipment.meleeWeapon.range.long} ft,`
@@ -807,11 +821,20 @@ export function CombatantPanel() {
                       <span className="text-xs text-muted-foreground ml-1">
                         {character.equipment.meleeWeapon.damage} {character.equipment.meleeWeapon.damageType}
                       </span>
-                    </div>
+                    </button>
                   )}
                   {character.equipment.rangedWeapon && (
-                    <div className="text-sm">
-                      {character.equipment.rangedWeapon.name}
+                    <button
+                      disabled={!canAttack}
+                      className={cn(
+                        "w-full text-left text-sm rounded px-1.5 py-0.5 -mx-1.5 transition-colors",
+                        canAttack
+                          ? "hover:bg-slate-700/60 cursor-pointer"
+                          : "cursor-default opacity-80"
+                      )}
+                      onClick={() => canAttack && preselectWeapon('ranged')}
+                    >
+                      <span className="font-medium">{character.equipment.rangedWeapon.name}</span>
                       {character.equipment.rangedWeapon.range && (
                         <span className="text-xs text-sky-400 ml-1">
                           {character.equipment.rangedWeapon.range.normal}/{character.equipment.rangedWeapon.range.long} ft,
@@ -820,7 +843,7 @@ export function CombatantPanel() {
                       <span className="text-xs text-muted-foreground ml-1">
                         {character.equipment.rangedWeapon.damage} {character.equipment.rangedWeapon.damageType}
                       </span>
-                    </div>
+                    </button>
                   )}
                 </div>
               </div>

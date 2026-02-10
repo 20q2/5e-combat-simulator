@@ -240,13 +240,13 @@ export function CharacterSheet() {
     }
   }, [characterClass, draft.level])
 
-  // Get token preview image
-  const tokenImage = useMemo(() => {
+  // Get token preview image (custom upload takes priority)
+  const autoTokenImage = useMemo(() => {
     if (!race || !characterClass) return null
-    // Create a minimal character object just for token lookup
     const mockCharacter = { race, class: characterClass } as Character
     return getCharacterTokenImage(mockCharacter)
   }, [race, characterClass])
+  const tokenImage = draft.customTokenImage ?? autoTokenImage
 
   // Calculate attack bonus for a weapon
   const calculateAttackBonus = (weapon: typeof meleeWeapon) => {
@@ -347,6 +347,7 @@ export function CharacterSheet() {
         draft.additionalFightingStyle,
       ].filter((s): s is FightingStyle => s !== null),
       knownManeuverIds: draft.selectedManeuverIds.length > 0 ? draft.selectedManeuverIds : undefined,
+      customTokenImage: draft.customTokenImage ?? undefined,
     }
 
     saveCharacter(character)

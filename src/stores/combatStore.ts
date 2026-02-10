@@ -161,6 +161,7 @@ interface CombatStore extends CombatState {
   // Selection
   selectCombatant: (id: string | undefined) => void
   setSelectedAction: (action: CombatState['selectedAction']) => void
+  preselectWeapon: (weaponId: string) => void
   setHoveredTarget: (id: string | undefined) => void
   setRangeHighlight: (highlight: CombatState['rangeHighlight']) => void
   setAoEPreview: (preview: CombatState['aoePreview']) => void
@@ -373,6 +374,7 @@ const initialState: CombatState = {
   log: [],
   selectedCombatantId: undefined,
   selectedAction: undefined,
+  preselectedWeaponId: undefined,
   targetingMode: undefined,
   hoveredTargetId: undefined,
   damagePopups: [],
@@ -707,11 +709,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
       nextIndex = 0
       newRound += 1
 
-      get().addLogEntry({
-        type: 'other',
-        actorName: 'System',
-        message: `Round ${newRound} begins`,
-      })
+      // Round divider is shown automatically in CombatLog via round grouping
     }
 
     // Get the next combatant and expire their conditions
@@ -795,6 +793,10 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
 
   setSelectedAction: (action) => {
     set({ selectedAction: action })
+  },
+
+  preselectWeapon: (weaponId) => {
+    set({ selectedAction: 'attack', preselectedWeaponId: weaponId })
   },
 
   setHoveredTarget: (id) => {
