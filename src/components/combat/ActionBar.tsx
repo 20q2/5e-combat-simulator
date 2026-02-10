@@ -1715,6 +1715,20 @@ export function ActionBar() {
               </div>
             </div>
 
+            {/* Resources Section - Spell Slots & Class Resources */}
+            {isCharacter && (character?.spellSlots || hasCombatSuperiority(currentCombatant) || getLuckPoints(currentCombatant) > 0) && (
+              <div className="flex flex-col gap-1 px-3 border-r border-slate-700">
+                {character?.spellSlots && (
+                  <SpellSlotDisplay
+                    spellSlots={character.spellSlots}
+                    onSlotClick={!currentCombatant.hasActed ? handleSlotLevelClick : undefined}
+                    compact
+                  />
+                )}
+                <ResourceTracker combatant={currentCombatant} compact />
+              </div>
+            )}
+
             {/* Main Action Buttons - 2 Row Grid */}
             <div className="relative flex-1">
               {/* Popups - positioned above the grid */}
@@ -1786,20 +1800,6 @@ export function ActionBar() {
                 <div className="absolute -top-8 left-1/2 -translate-x-1/2 px-3 py-1 bg-amber-900/80 border border-amber-600 rounded text-xs text-amber-200 whitespace-nowrap flex items-center gap-1.5 z-40">
                   <AlertTriangle className="w-3.5 h-3.5" />
                   Threatened by {threateningEnemies.length} {threateningEnemies.length === 1 ? 'enemy' : 'enemies'}
-                </div>
-              )}
-
-              {/* Spell Slots & Resources Row - above action buttons */}
-              {isCharacter && (character?.spellSlots || hasCombatSuperiority(currentCombatant) || getLuckPoints(currentCombatant) > 0) && (
-                <div className="flex items-center justify-center gap-2 mb-1">
-                  {character?.spellSlots && (
-                    <SpellSlotDisplay
-                      spellSlots={character.spellSlots}
-                      onSlotClick={!currentCombatant.hasActed ? handleSlotLevelClick : undefined}
-                      compact
-                    />
-                  )}
-                  <ResourceTracker combatant={currentCombatant} compact />
                 </div>
               )}
 

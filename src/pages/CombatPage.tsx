@@ -281,10 +281,8 @@ export function CombatPage() {
         </div>
       </div>
 
-      {/* Bottom Action Bar - BG3 style, fixed at bottom */}
-      <div className="sticky bottom-0 z-40">
-        <ActionBar />
-      </div>
+      {/* Bottom Action Bar */}
+      <ActionBar />
 
       {/* Reaction Prompt Overlay */}
       <ReactionPrompt />

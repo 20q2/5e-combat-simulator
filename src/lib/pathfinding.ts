@@ -6,6 +6,15 @@ import { getPathfindingHeuristic } from './distance'
 // (Supports multi-cell creatures and squeezing)
 // ============================================
 
+/**
+ * Movement context for terrain cost calculations.
+ * Carries speed info needed to calculate water terrain costs.
+ */
+export interface MovementContext {
+  walkSpeed: number
+  swimSpeed?: number
+}
+
 interface PathNode {
   x: number
   y: number
@@ -212,7 +221,8 @@ export function getMovementCost(
   grid: Grid,
   from: Position,
   to: Position,
-  diagonalCount: number
+  diagonalCount: number,
+  movementContext?: MovementContext
 ): { cost: number; newDiagonalCount: number } {
   const toCell = grid.cells[to.y]?.[to.x]
   const fromCell = grid.cells[from.y]?.[from.x]
@@ -250,6 +260,15 @@ export function getMovementCost(
 
   // Calculate base movement cost
   const { cost: baseCost, newDiagonalCount } = calculateAdjacentCost(from, to, diagonalCount)
+
+  // Water terrain - difficult unless creature has swim speed
+  if (toCell.terrain === 'water') {
+    if (movementContext?.swimSpeed) {
+      const ratio = movementContext.walkSpeed / movementContext.swimSpeed
+      return { cost: baseCost * ratio, newDiagonalCount }
+    }
+    return { cost: baseCost * 2, newDiagonalCount }
+  }
 
   // Double cost for difficult terrain
   if (toCell.terrain === 'difficult') {
@@ -298,7 +317,8 @@ export function findPath(
   end: Position,
   occupiedPositions: Set<string>,
   maxCost?: number,
-  footprintSize: number = 1
+  footprintSize: number = 1,
+  movementContext?: MovementContext
 ): Position[] | null {
   // Quick check: if end footprint can't fit, no path possible
   const endPassability = checkFootprintPassability(grid, end, footprintSize, occupiedPositions)
@@ -382,7 +402,8 @@ export function findPath(
         grid,
         { x: current.x, y: current.y },
         neighbor,
-        currentDiagonalCount
+        currentDiagonalCount,
+        movementContext
       )
 
       // Skip if impassable
@@ -438,14 +459,14 @@ function reconstructPath(endNode: PathNode): Position[] {
 /**
  * Calculate the total movement cost of a path
  */
-export function calculatePathCost(grid: Grid, path: Position[]): number {
+export function calculatePathCost(grid: Grid, path: Position[], movementContext?: MovementContext): number {
   if (path.length < 2) return 0
 
   let totalCost = 0
   let diagonalCount = 0
 
   for (let i = 0; i < path.length - 1; i++) {
-    const { cost, newDiagonalCount } = getMovementCost(grid, path[i], path[i + 1], diagonalCount)
+    const { cost, newDiagonalCount } = getMovementCost(grid, path[i], path[i + 1], diagonalCount, movementContext)
     if (cost === Infinity) return Infinity
     totalCost += cost
     diagonalCount = newDiagonalCount
@@ -464,7 +485,8 @@ export function getReachablePositions(
   start: Position,
   movementBudget: number,
   occupiedPositions: Set<string>,
-  footprintSize: number = 1
+  footprintSize: number = 1,
+  movementContext?: MovementContext
 ): Map<string, number> {
   const reachable = new Map<string, number>()
 
@@ -497,7 +519,8 @@ export function getReachablePositions(
         grid,
         current,
         neighbor,
-        diagonalCount
+        diagonalCount,
+        movementContext
       )
 
       if (baseCost === Infinity) continue

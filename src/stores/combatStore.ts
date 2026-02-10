@@ -25,7 +25,7 @@ import { resolveAttack, canAttackTarget, getSpellSaveDC, getSpellAttackBonus, ro
 import { rollAttack, rollDamage } from '@/engine/dice'
 import { getNextAIAction } from '@/engine/ai'
 // Movement calculations now handled by pathfinding module
-import { findPath, getReachablePositions as getReachableFromPathfinding, blocksMovement, calculatePathCost } from '@/lib/pathfinding'
+import { findPath, getReachablePositions as getReachableFromPathfinding, blocksMovement, calculatePathCost, type MovementContext } from '@/lib/pathfinding'
 import {
   initializeRacialAbilityUses,
   checkRelentlessEndurance,
@@ -1910,21 +1910,24 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
         }
       })
 
+    // Build movement context for water terrain cost calculation
+    const walkSpeed = combatant.type === 'character'
+      ? (combatant.data as Character).speed
+      : (combatant.data as Monster).speed.walk
+    const swimSpeed = combatant.type === 'character'
+      ? (combatant.data as Character).swimSpeed
+      : (combatant.data as Monster).speed.swim
+    const movementContext: MovementContext = { walkSpeed, swimSpeed }
+
     // Find path using A* pathfinding with footprint awareness
     const footprint = getFootprintSize(size)
-    const path = findPath(grid, combatant.position, to, pathablePositions, undefined, footprint)
+    const path = findPath(grid, combatant.position, to, pathablePositions, undefined, footprint, movementContext)
     if (!path) return
 
     // Calculate actual path cost (accounts for terrain)
-    const pathCost = calculatePathCost(grid, path)
+    const pathCost = calculatePathCost(grid, path, movementContext)
 
-    // Get speed based on combatant type
-    const speed =
-      combatant.type === 'character'
-        ? (combatant.data as Character).speed
-        : (combatant.data as Monster).speed.walk
-
-    const remainingMovement = speed - combatant.movementUsed
+    const remainingMovement = walkSpeed - combatant.movementUsed
 
     if (pathCost > remainingMovement) return
 
@@ -2179,19 +2182,23 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
         }
       })
 
+    // Build movement context for water terrain cost calculation
+    const walkSpeed = combatant.type === 'character'
+      ? (combatant.data as Character).speed
+      : (combatant.data as Monster).speed.walk
+    const swimSpeed = combatant.type === 'character'
+      ? (combatant.data as Character).swimSpeed
+      : (combatant.data as Monster).speed.swim
+    const movementContext: MovementContext = { walkSpeed, swimSpeed }
+
     // Find path using A* pathfinding with footprint awareness
-    const path = findPath(grid, combatant.position, to, pathablePositions, undefined, footprint)
+    const path = findPath(grid, combatant.position, to, pathablePositions, undefined, footprint, movementContext)
     if (!path) return false
 
     // Calculate actual path cost
-    const pathCost = calculatePathCost(grid, path)
+    const pathCost = calculatePathCost(grid, path, movementContext)
 
-    const speed =
-      combatant.type === 'character'
-        ? (combatant.data as Character).speed
-        : (combatant.data as Monster).speed.walk
-
-    const remainingMovement = speed - combatant.movementUsed
+    const remainingMovement = walkSpeed - combatant.movementUsed
 
     return pathCost <= remainingMovement
   },
@@ -2206,12 +2213,16 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
     const size = getCombatantSize(combatant)
     const footprint = getFootprintSize(size)
 
-    const speed =
-      combatant.type === 'character'
-        ? (combatant.data as Character).speed
-        : (combatant.data as Monster).speed.walk
+    // Build movement context for water terrain cost calculation
+    const walkSpeed = combatant.type === 'character'
+      ? (combatant.data as Character).speed
+      : (combatant.data as Monster).speed.walk
+    const swimSpeed = combatant.type === 'character'
+      ? (combatant.data as Character).swimSpeed
+      : (combatant.data as Monster).speed.swim
+    const movementContext: MovementContext = { walkSpeed, swimSpeed }
 
-    const remainingMovement = speed - combatant.movementUsed
+    const remainingMovement = walkSpeed - combatant.movementUsed
 
     // Check if this combatant has Nimbleness (Halfling/Gnome ability)
     const moverHasNimbleness = hasNimbleness(combatant)
@@ -2245,7 +2256,8 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
       combatant.position,
       remainingMovement,
       pathablePositions,
-      footprint
+      footprint,
+      movementContext
     )
 
     // Convert map to array of positions, filtering out cells we can't end in

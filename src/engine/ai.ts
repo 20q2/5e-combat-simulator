@@ -1,6 +1,6 @@
 import type { Combatant, Monster, Position, MonsterAction, Grid, Character } from '@/types'
 import { getDistance, canAttackTarget } from './combat'
-import { findPath, getReachablePositions, calculatePathCost } from '@/lib/pathfinding'
+import { findPath, getReachablePositions, calculatePathCost, type MovementContext } from '@/lib/pathfinding'
 import { hasLineOfSight } from '@/lib/lineOfSight'
 import {
   canUseSecondWind,
@@ -175,12 +175,13 @@ function getPositionTowardTarget(
   target: Position,
   maxMovement: number,
   grid: Grid,
-  occupiedPositions: Set<string>
+  occupiedPositions: Set<string>,
+  movementContext?: MovementContext
 ): Position | null {
   if (maxMovement <= 0) return null
 
   // Use A* to find path to target (or adjacent to target)
-  const path = findPath(grid, current, target, occupiedPositions, undefined)
+  const path = findPath(grid, current, target, occupiedPositions, undefined, 1, movementContext)
 
   if (path && path.length > 1) {
     // Find how far along the path we can go with our movement budget
@@ -188,7 +189,7 @@ function getPositionTowardTarget(
     let lastValidIndex = 0
 
     for (let i = 1; i < path.length; i++) {
-      const segmentCost = calculatePathCost(grid, [path[i - 1], path[i]])
+      const segmentCost = calculatePathCost(grid, [path[i - 1], path[i]], movementContext)
       if (movementUsed + segmentCost <= maxMovement) {
         movementUsed += segmentCost
         lastValidIndex = i
@@ -212,7 +213,7 @@ function getPositionTowardTarget(
   }
 
   // If no path found, try to find reachable positions that get us closer
-  const reachable = getReachablePositions(grid, current, maxMovement, occupiedPositions)
+  const reachable = getReachablePositions(grid, current, maxMovement, occupiedPositions, 1, movementContext)
 
   let bestPosition: Position | null = null
   let bestDistance = Infinity
@@ -325,6 +326,8 @@ export function decideMonsterAction(
 
   // Calculate remaining movement
   const speed = monsterData?.speed.walk ?? characterData?.speed ?? 30
+  const swimSpeed = monsterData?.speed.swim ?? characterData?.swimSpeed
+  const movementContext: MovementContext = { walkSpeed: speed, swimSpeed }
   const remainingMovement = speed - monster.movementUsed
 
   // Get max attacks per action (for Extra Attack)
@@ -362,7 +365,8 @@ export function decideMonsterAction(
         bestTarget.position,
         remainingMovement,
         grid,
-        occupiedPositions
+        occupiedPositions,
+        movementContext
       )
 
       if (moveTarget) {

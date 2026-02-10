@@ -398,6 +398,7 @@ export interface Character {
   temporaryHp: number
   ac: number
   speed: number
+  swimSpeed?: number
   proficiencyBonus: number
   skillProficiencies: string[]
   savingThrowProficiencies: AbilityName[]
