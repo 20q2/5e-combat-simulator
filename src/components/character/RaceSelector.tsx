@@ -18,6 +18,17 @@ import {
   type KeenSensesSkill,
 } from '@/stores/characterStore'
 import type { Race, RacialAbility, DarkvisionAbility, DragonAncestry } from '@/types'
+
+// Use Vite's glob import to load species background images
+const speciesBackgrounds = import.meta.glob<{ default: string }>(
+  '@/assets/species_backgrounds/*.webp',
+  { eager: true }
+)
+
+function getSpeciesBackground(raceName: string): string | null {
+  const path = `/src/assets/species_backgrounds/${raceName}.webp`
+  return speciesBackgrounds[path]?.default ?? null
+}
 import { isDarkvisionAbility, DRAGON_ANCESTRIES } from '@/types'
 import { OriginFeatSelector } from './OriginFeatSelector'
 import { MagicInitiateSpellSelector } from './MagicInitiateSpellSelector'
@@ -279,10 +290,21 @@ function RaceDetails({ race }: { race: Race }) {
     a => ['action', 'bonus_action', 'reaction'].includes(a.trigger)
   )
   const traitAbilities = race.abilities.filter(a => a.type === 'trait')
+  const bgImage = getSpeciesBackground(race.name)
 
   return (
-    <Card>
-      <CardHeader className="pb-3">
+    <Card className="relative overflow-hidden">
+      {bgImage && (
+        <div className="absolute inset-0 pointer-events-none">
+          <img
+            src={bgImage}
+            alt=""
+            className="w-full h-full object-cover opacity-15"
+          />
+          <div className="absolute inset-0 bg-gradient-to-t from-card via-card/80 to-transparent" />
+        </div>
+      )}
+      <CardHeader className="pb-3 relative">
         <CardTitle className="text-lg flex items-center gap-2">
           <Info className="w-5 h-5 text-blue-400" />
           {race.name}
@@ -291,7 +313,7 @@ function RaceDetails({ race }: { race: Race }) {
           {race.size.charAt(0).toUpperCase() + race.size.slice(1)} creature · Speed {race.speed} ft
         </CardDescription>
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="space-y-4 relative">
         {passiveAbilities.length > 0 && (
           <div>
             <h4 className="font-medium text-sm mb-2 text-blue-400 flex items-center gap-1.5">

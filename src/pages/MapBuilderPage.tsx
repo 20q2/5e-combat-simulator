@@ -119,8 +119,10 @@ export function MapBuilderPage() {
   const [widthInput, setWidthInput] = useState('14')
   const [heightInput, setHeightInput] = useState('10')
   const [selectedTool, setSelectedTool] = useState<Tool>(obstacleTools[0])
+  const [brushSize, setBrushSize] = useState(1)
   const [gridData, setGridData] = useState<Record<string, GridCellData>>({})
   const [isDragging, setIsDragging] = useState(false)
+  const [hoveredCell, setHoveredCell] = useState<{ x: number; y: number } | null>(null)
   const [backgroundImage, setBackgroundImage] = useState<BackgroundOption | null>(null)
   const [bgScale, setBgScale] = useState(100) // percentage
   const [bgOffsetX, setBgOffsetX] = useState(0) // pixels
@@ -141,38 +143,42 @@ export function MapBuilderPage() {
 
   const handleCellClick = useCallback(
     (x: number, y: number) => {
-      const key = getCellKey(x, y)
-
       setGridData((prev) => {
         const newData = { ...prev }
 
-        if (selectedTool.type === 'eraser') {
-          // Remove all data from cell
-          delete newData[key]
-        } else if (selectedTool.type === 'obstacle') {
-          // Set obstacle
-          newData[key] = {
-            ...newData[key],
-            obstacle: {
-              type: selectedTool.obstacleType,
-              blocksMovement: selectedTool.blocksMovement,
-              blocksLineOfSight: selectedTool.blocksLineOfSight,
-            },
-            terrain: undefined, // Clear terrain when placing obstacle
-          }
-        } else if (selectedTool.type === 'terrain') {
-          // Set terrain
-          newData[key] = {
-            ...newData[key],
-            terrain: selectedTool.terrainType,
-            obstacle: undefined, // Clear obstacle when placing terrain
+        for (let dy = 0; dy < brushSize; dy++) {
+          for (let dx = 0; dx < brushSize; dx++) {
+            const cx = x + dx
+            const cy = y + dy
+            if (cx >= gridWidth || cy >= gridHeight) continue
+            const key = getCellKey(cx, cy)
+
+            if (selectedTool.type === 'eraser') {
+              delete newData[key]
+            } else if (selectedTool.type === 'obstacle') {
+              newData[key] = {
+                ...newData[key],
+                obstacle: {
+                  type: selectedTool.obstacleType,
+                  blocksMovement: selectedTool.blocksMovement,
+                  blocksLineOfSight: selectedTool.blocksLineOfSight,
+                },
+                terrain: undefined,
+              }
+            } else if (selectedTool.type === 'terrain') {
+              newData[key] = {
+                ...newData[key],
+                terrain: selectedTool.terrainType,
+                obstacle: undefined,
+              }
+            }
           }
         }
 
         return newData
       })
     },
-    [selectedTool]
+    [selectedTool, brushSize, gridWidth, gridHeight]
   )
 
   const handleMouseDown = (x: number, y: number) => {
@@ -181,6 +187,7 @@ export function MapBuilderPage() {
   }
 
   const handleMouseEnter = (x: number, y: number) => {
+    setHoveredCell({ x, y })
     if (isDragging) {
       handleCellClick(x, y)
     }
@@ -188,6 +195,18 @@ export function MapBuilderPage() {
 
   const handleMouseUp = () => {
     setIsDragging(false)
+  }
+
+  const isInBrushPreview = (cx: number, cy: number) => {
+    if (!hoveredCell) return false
+    return (
+      cx >= hoveredCell.x &&
+      cx < hoveredCell.x + brushSize &&
+      cx < gridWidth &&
+      cy >= hoveredCell.y &&
+      cy < hoveredCell.y + brushSize &&
+      cy < gridHeight
+    )
   }
 
   const handleClear = () => {
@@ -306,7 +325,7 @@ export function MapBuilderPage() {
   }
 
   return (
-    <div className="space-y-6" onMouseUp={handleMouseUp} onMouseLeave={handleMouseUp}>
+    <div className="space-y-6" onMouseUp={handleMouseUp} onMouseLeave={() => { handleMouseUp(); setHoveredCell(null) }}>
       <div>
         <h1 className="text-3xl font-bold">Map Builder</h1>
         <p className="text-muted-foreground">Create custom battle maps for your encounters</p>
@@ -380,7 +399,7 @@ export function MapBuilderPage() {
             <CardHeader className="pb-3">
               <CardTitle className="text-lg">Tools</CardTitle>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-3">
               <button
                 onClick={() => setSelectedTool(eraserTool)}
                 className={cn(
@@ -393,6 +412,41 @@ export function MapBuilderPage() {
                 <Eraser className="w-5 h-5" />
                 <span className="text-sm">Eraser</span>
               </button>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground">Brush Size</Label>
+                <div className="grid grid-cols-3 gap-1.5">
+                  {[1, 2, 3].map((size) => (
+                    <button
+                      key={size}
+                      onClick={() => setBrushSize(size)}
+                      className={cn(
+                        'flex flex-col items-center gap-0.5 p-1.5 rounded-lg border transition-colors',
+                        brushSize === size
+                          ? 'border-primary bg-primary/10 text-primary'
+                          : 'border-border hover:border-primary/50'
+                      )}
+                    >
+                      <div
+                        className="grid gap-px"
+                        style={{ gridTemplateColumns: `repeat(${size}, 1fr)` }}
+                      >
+                        {Array.from({ length: size * size }).map((_, i) => (
+                          <div
+                            key={i}
+                            className={cn(
+                              'rounded-sm',
+                              brushSize === size ? 'bg-primary' : 'bg-muted-foreground'
+                            )}
+                            style={{ width: 6, height: 6 }}
+                          />
+                        ))}
+                      </div>
+                      <span className="text-[10px]">{size}x{size}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
             </CardContent>
           </Card>
         </div>
@@ -441,18 +495,20 @@ export function MapBuilderPage() {
                   Array.from({ length: gridWidth }).map((_, x) => {
                     const key = getCellKey(x, y)
                     const data = gridData[key]
+                    const inBrush = isInBrushPreview(x, y)
 
                     return (
                       <div
                         key={key}
                         className={cn(
-                          'relative flex items-center justify-center cursor-crosshair transition-colors',
+                          'relative flex items-center justify-center cursor-crosshair',
                           !backgroundImage && 'bg-slate-900',
                           backgroundImage && 'bg-slate-900/30',
-                          'hover:bg-slate-800/50',
                           data?.terrain === 'difficult' && 'bg-amber-900/50',
                           data?.terrain === 'hazard' && 'bg-orange-900/50',
                           data?.terrain === 'water' && 'bg-blue-900/50',
+                          inBrush && selectedTool.type === 'eraser' && 'bg-rose-500/30',
+                          inBrush && selectedTool.type !== 'eraser' && 'bg-primary/25',
                           'border border-slate-700/50'
                         )}
                         style={{ width: CELL_SIZE, height: CELL_SIZE }}

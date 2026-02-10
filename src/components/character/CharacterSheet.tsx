@@ -19,7 +19,6 @@ import {
   getSpellById,
   getClassFeaturesByLevel,
   getSubclassFeaturesByLevel,
-  getBackgroundById,
 } from '@/data'
 import {
   useCharacterStore,
@@ -29,9 +28,7 @@ import {
 } from '@/stores/characterStore'
 import { getAbilityModifier, getProficiencyBonus } from '@/types'
 import { getCharacterTokenImage } from '@/lib/tokenImages'
-import { buildCharacterFromDraft } from '@/lib/characterBuilder'
 import { getClassIcon } from '@/lib/classIcons'
-import { CharacterSaveSuccess } from './CharacterSaveSuccess'
 import type { Character, AbilityName } from '@/types'
 import type { ClassFeature, FightingStyleFeature, SneakAttackFeature, ImprovedCriticalFeature, ExtraAttackFeature, CunningActionFeature } from '@/types/classFeature'
 import type { RacialAbility } from '@/types/race'
@@ -48,7 +45,6 @@ import {
   Sparkles,
   Dna,
   Wand2,
-  Save,
   HardHat,
 } from 'lucide-react'
 
@@ -166,10 +162,8 @@ function getRacialAbilityDetail(ability: RacialAbility): string | null {
 }
 
 export function CharacterSheet() {
-  const { draft, setName, saveCharacter, resetDraft } = useCharacterStore()
-  const [showSuccessModal, setShowSuccessModal] = useState(false)
+  const { draft, setName, resetDraft } = useCharacterStore()
   const [showResetConfirm, setShowResetConfirm] = useState(false)
-  const [savedCharacter, setSavedCharacter] = useState<Character | null>(null)
 
   const race = draft.raceId ? getRaceById(draft.raceId) ?? null : null
   const characterClass = draft.classId ? getClassById(draft.classId) ?? null : null
@@ -177,7 +171,6 @@ export function CharacterSheet() {
   const rangedWeapon = draft.rangedWeaponId ? getWeaponById(draft.rangedWeaponId) ?? null : null
   const armor = draft.armorId ? getArmorById(draft.armorId) ?? null : null
   const subclass = characterClass?.subclasses.find((s) => s.id === draft.subclassId)
-  const background = draft.backgroundId ? getBackgroundById(draft.backgroundId) ?? null : null
 
   // Calculate final stats
   const finalAbilityScores = calculateFinalAbilityScores(
@@ -269,18 +262,6 @@ export function CharacterSheet() {
 
   const meleeAttackBonus = useMemo(() => calculateAttackBonus(meleeWeapon), [meleeWeapon, finalAbilityScores, proficiencyBonus])
   const rangedAttackBonus = useMemo(() => calculateAttackBonus(rangedWeapon), [rangedWeapon, finalAbilityScores, proficiencyBonus])
-
-  // Check if character is valid
-  const isValid = draft.name.trim() && race && characterClass && background && draft.backgroundOriginFeat
-
-  const handleSave = () => {
-    const character = buildCharacterFromDraft(draft)
-    if (!character) return
-
-    saveCharacter(character)
-    setSavedCharacter(character)
-    setShowSuccessModal(true)
-  }
 
   return (
     <div className="space-y-4">
@@ -608,7 +589,7 @@ export function CharacterSheet() {
       </div>
 
       {/* Actions */}
-      <div className="flex justify-between items-center">
+      <div className="flex items-center">
         <Button
           variant="ghost"
           size="sm"
@@ -617,10 +598,6 @@ export function CharacterSheet() {
         >
           <TriangleAlert className="w-4 h-4 mr-1" />
           Start Over
-        </Button>
-        <Button onClick={handleSave} disabled={!isValid} size="lg">
-          <Save className="w-4 h-4 mr-2" />
-          {draft.editingCharacterId ? 'Update Character' : 'Save Character'}
         </Button>
       </div>
 
@@ -647,13 +624,6 @@ export function CharacterSheet() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      {/* Success Modal */}
-      <CharacterSaveSuccess
-        character={savedCharacter}
-        open={showSuccessModal}
-        onOpenChange={setShowSuccessModal}
-      />
     </div>
   )
 }

@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { useCharacterStore } from '@/stores/characterStore'
@@ -12,6 +13,8 @@ import { SpellSelector } from './SpellSelector'
 import { EquipmentSelector } from './EquipmentSelector'
 import { CharacterSheet } from './CharacterSheet'
 import { CharacterPreview } from './CharacterPreview'
+import { CharacterSaveSuccess } from './CharacterSaveSuccess'
+import type { Character } from '@/types'
 import { getClassById } from '@/data'
 import {
   Brain,
@@ -104,6 +107,16 @@ export function CharacterCreator() {
   const { currentStep, setCurrentStep, draft, saveCharacter, resetDraft } = useCharacterStore()
   const navigate = useNavigate()
   const isEditing = !!draft.editingCharacterId
+  const [savedCharacter, setSavedCharacter] = useState<Character | null>(null)
+  const [showSuccessModal, setShowSuccessModal] = useState(false)
+
+  const handleSave = () => {
+    const character = buildCharacterFromDraft(draft)
+    if (!character) return
+    saveCharacter(character)
+    setSavedCharacter(character)
+    setShowSuccessModal(true)
+  }
 
   const selectedClass = draft.classId ? getClassById(draft.classId) : null
   const hasSpellcasting = selectedClass?.spellcasting !== undefined
@@ -275,7 +288,12 @@ export function CharacterCreator() {
                 Update & Close
               </Button>
             )}
-            {!isReviewStep && (
+            {isReviewStep ? (
+              <Button onClick={handleSave} disabled={!buildCharacterFromDraft(draft)} size="lg">
+                <Save className="w-4 h-4 mr-2" />
+                {isEditing ? 'Update Character' : 'Save Character'}
+              </Button>
+            ) : (
               <Button onClick={handleNext} disabled={!canProceed()}>
                 Next
                 <ChevronRight className="w-4 h-4 ml-1" />
@@ -284,6 +302,13 @@ export function CharacterCreator() {
           </div>
         </div>
       </div>
+
+      {/* Save Success Modal */}
+      <CharacterSaveSuccess
+        character={savedCharacter}
+        open={showSuccessModal}
+        onOpenChange={setShowSuccessModal}
+      />
     </div>
   )
 }

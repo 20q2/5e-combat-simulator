@@ -429,7 +429,13 @@ export function hasMusician(combatant: Combatant): boolean {
  * (Musician feat grants this)
  */
 export function startsWithHeroicInspiration(combatant: Combatant): boolean {
-  return hasMusician(combatant)
+  // Musician feat or being a human grants Heroic Inspiration at combat start
+  if (hasMusician(combatant)) return true
+  if (combatant.type === 'character') {
+    const character = combatant.data as Character
+    if (character.race.id === 'human') return true
+  }
+  return false
 }
 
 /**

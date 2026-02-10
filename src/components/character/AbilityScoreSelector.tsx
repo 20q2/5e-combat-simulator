@@ -64,6 +64,24 @@ const ABILITY_ICONS: Record<keyof AbilityScores, LucideIcon> = {
   charisma: Sparkles,
 }
 
+const ABILITY_COLORS: Record<keyof AbilityScores, string> = {
+  strength: 'text-red-300/80',
+  dexterity: 'text-emerald-300/80',
+  constitution: 'text-amber-300/80',
+  intelligence: 'text-blue-300/80',
+  wisdom: 'text-violet-300/80',
+  charisma: 'text-pink-300/80',
+}
+
+const ABILITY_BORDER_COLORS: Record<keyof AbilityScores, string> = {
+  strength: 'border-red-500/20',
+  dexterity: 'border-emerald-500/20',
+  constitution: 'border-amber-500/20',
+  intelligence: 'border-blue-500/20',
+  wisdom: 'border-violet-500/20',
+  charisma: 'border-pink-500/20',
+}
+
 
 function formatModifier(mod: number): string {
   return mod >= 0 ? `+${mod}` : `${mod}`
@@ -219,11 +237,11 @@ export function AbilityScoreSelector() {
 
                 const Icon = ABILITY_ICONS[ability]
                 return (
-                  <div key={ability} className="flex flex-col items-center p-3 border rounded-lg">
-                    <Label className="text-xs text-muted-foreground mb-1 flex items-center gap-1">
-                      <Icon className="w-3 h-3" />
+                  <div key={ability} className={cn('flex flex-col items-center p-3 rounded-lg bg-white/[0.03] backdrop-blur-sm border', ABILITY_BORDER_COLORS[ability])}>
+                    <div className={cn('flex items-center gap-1.5 mb-1 font-semibold text-sm tracking-wide uppercase', ABILITY_COLORS[ability])}>
+                      <Icon className="w-4 h-4" />
                       {ABILITY_LABELS[ability]}
-                    </Label>
+                    </div>
                     <div className="flex items-center gap-2">
                       <Button
                         variant="outline"
@@ -273,11 +291,11 @@ export function AbilityScoreSelector() {
                 const Icon = ABILITY_ICONS[ability]
 
                 return (
-                  <div key={ability} className="flex flex-col items-center p-3 border rounded-lg">
-                    <Label className="text-xs text-muted-foreground mb-2 flex items-center gap-1">
-                      <Icon className="w-3 h-3" />
+                  <div key={ability} className={cn('flex flex-col items-center p-3 rounded-lg bg-white/[0.03] backdrop-blur-sm border', ABILITY_BORDER_COLORS[ability])}>
+                    <div className={cn('flex items-center gap-1.5 mb-2 font-semibold text-sm tracking-wide uppercase', ABILITY_COLORS[ability])}>
+                      <Icon className="w-4 h-4" />
                       {ABILITY_LABELS[ability]}
-                    </Label>
+                    </div>
                     <Select
                       value={assigned?.toString() ?? ''}
                       onValueChange={(v) => handleStandardArrayAssign(ability, v)}
@@ -316,11 +334,11 @@ export function AbilityScoreSelector() {
                 const Icon = ABILITY_ICONS[ability]
 
                 return (
-                  <div key={ability} className="flex flex-col items-center p-3 border rounded-lg">
-                    <Label className="text-xs text-muted-foreground mb-2 flex items-center gap-1">
-                      <Icon className="w-3 h-3" />
+                  <div key={ability} className={cn('flex flex-col items-center p-3 rounded-lg bg-white/[0.03] backdrop-blur-sm border', ABILITY_BORDER_COLORS[ability])}>
+                    <div className={cn('flex items-center gap-1.5 mb-2 font-semibold text-sm tracking-wide uppercase', ABILITY_COLORS[ability])}>
+                      <Icon className="w-4 h-4" />
                       {ABILITY_LABELS[ability]}
-                    </Label>
+                    </div>
                     <Input
                       type="number"
                       min={1}
