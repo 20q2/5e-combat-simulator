@@ -15,7 +15,7 @@ export const MANEUVERS: Maneuver[] = [
   {
     id: 'precision-attack',
     name: 'Precision Attack',
-    description: 'When you make a weapon attack roll against a creature, you can expend one superiority die to add it to the roll. You can use this maneuver before or after making the attack roll, but before any effects of the attack are applied.',
+    description: 'When you miss with a weapon attack roll, you can expend one superiority die to add it to the roll, potentially turning the miss into a hit.',
     trigger: 'pre_attack',
     addsDamageDie: false,
     addsToAttackRoll: true,

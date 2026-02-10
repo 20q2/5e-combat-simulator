@@ -161,7 +161,7 @@ function ClassFeaturesSection({ character, selectedFeature, onSelectFeature }: C
 function getTriggerLabel(trigger: Maneuver['trigger']): string {
   switch (trigger) {
     case 'on_hit': return 'On Hit'
-    case 'pre_attack': return 'Before Attack Roll'
+    case 'pre_attack': return 'On Miss'
     case 'bonus_action': return 'Bonus Action'
     case 'reaction': return 'Reaction'
     default: return trigger

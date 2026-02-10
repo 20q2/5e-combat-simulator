@@ -659,7 +659,7 @@ export type CombatTriggerType =
   | 'on_hit'           // After successful weapon attack (Battle Master on-hit maneuvers)
   | 'on_miss'          // After attack miss (Riposte opportunity)
   | 'on_damage_taken'  // After taking damage (Parry, Absorb Elements)
-  | 'pre_attack'       // Before attack roll (Precision Attack)
+  | 'pre_attack'       // On miss - add to attack roll (Precision Attack)
 
 export interface TriggerOption {
   id: string
@@ -677,6 +677,7 @@ export interface PendingTrigger {
   options: TriggerOption[]
   context: {
     attackRoll?: number
+    naturalRoll?: number     // The natural d20 roll (for Precision Attack re-resolution)
     targetAC?: number
     damage?: number
     damageType?: DamageType
@@ -804,7 +805,7 @@ export interface CombatState {
       damageType?: DamageType
     }
   }
-  // Pending attack (for pre-attack maneuvers like Precision Attack)
+  // Pending attack (for Precision Attack on-miss re-resolution)
   pendingAttack?: {
     attackerId: string
     targetId: string
@@ -812,6 +813,7 @@ export interface CombatState {
     monsterAction?: MonsterAction
     rangedWeapon?: Weapon
     masteryOverride?: WeaponMastery
+    overrideNaturalRoll?: number
   }
 }
 

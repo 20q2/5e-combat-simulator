@@ -51,6 +51,7 @@ export interface MeleeAttackOptions {
   usedSneakAttackThisTurn?: boolean                          // Track if sneak attack already used
   masteryOverride?: WeaponMastery                            // Tactical Master mastery override
   attackBonus?: number                                       // Additional attack bonus (e.g., Precision Attack)
+  overrideNaturalRoll?: number                               // Override the d20 roll (for Precision Attack re-resolution)
 }
 
 /**
@@ -224,7 +225,7 @@ export function getAttackAdvantage(
  * Resolve a melee or ranged attack
  */
 export function resolveAttack(options: MeleeAttackOptions): AttackResult {
-  const { attacker, target, weapon, monsterAction, advantage = 'normal', allCombatants = [], usedSneakAttackThisTurn = false, attackBonus: additionalAttackBonus = 0 } = options
+  const { attacker, target, weapon, monsterAction, advantage = 'normal', allCombatants = [], usedSneakAttackThisTurn = false, attackBonus: additionalAttackBonus = 0, overrideNaturalRoll } = options
 
   // Calculate attack bonus
   let attackBonus: number
@@ -285,9 +286,27 @@ export function resolveAttack(options: MeleeAttackOptions): AttackResult {
   // Determine advantage/disadvantage
   const finalAdvantage = getAttackAdvantage(attacker, target, baseAdvantage, isRangedAttack)
 
-  // Roll the attack
+  // Roll the attack (or use override if re-resolving after Precision Attack)
   const targetAC = getCombatantAC(target)
-  let attackRoll = rollAttack(attackBonus, finalAdvantage)
+  let attackRoll: D20RollResult
+  if (overrideNaturalRoll !== undefined) {
+    // Re-resolving with a known d20 value (e.g., after Precision Attack decision)
+    const total = overrideNaturalRoll + attackBonus
+    const modifierStr = attackBonus > 0 ? `+${attackBonus}` : attackBonus < 0 ? `${attackBonus}` : ''
+    attackRoll = {
+      total,
+      rolls: [overrideNaturalRoll],
+      modifier: attackBonus,
+      expression: `1d20${modifierStr}`,
+      breakdown: `[${overrideNaturalRoll}]${modifierStr} = ${total}`,
+      isNatural20: overrideNaturalRoll === 20,
+      isNatural1: overrideNaturalRoll === 1,
+      naturalRoll: overrideNaturalRoll,
+      advantage: finalAdvantage,
+    }
+  } else {
+    attackRoll = rollAttack(attackBonus, finalAdvantage)
+  }
 
   // Check for Halfling Lucky - reroll 1s on attack rolls
   if (attackRoll.naturalRoll === 1) {

@@ -225,7 +225,7 @@ export function ContextMenu({ position, targetId, targetType, onClose }: Context
   return (
     <div
       ref={menuRef}
-      className="fixed z-[200] min-w-[200px] bg-slate-900 border border-slate-600 rounded-lg shadow-2xl py-1 animate-in fade-in zoom-in-95 duration-100"
+      className="fixed z-[200] min-w-[200px] bg-slate-900/85 backdrop-blur-md border border-slate-600 rounded-lg shadow-2xl py-1 animate-in fade-in zoom-in-95 duration-100"
       style={adjustedPosition}
     >
       {/* Target name header */}

@@ -7,7 +7,7 @@ import type { AbilityName, Condition } from './index'
 // When a maneuver can be used
 export type ManeuverTrigger =
   | 'on_hit'       // After a successful weapon attack hit (Trip Attack, Menacing Attack)
-  | 'pre_attack'   // Before making an attack roll (Precision Attack)
+  | 'pre_attack'   // On miss - add to attack roll (Precision Attack)
   | 'bonus_action' // Uses bonus action (Rally, Quick Toss)
   | 'reaction'     // Uses reaction (Riposte, Parry, Brace)
 

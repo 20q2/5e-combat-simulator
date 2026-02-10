@@ -132,13 +132,17 @@ export function ManeuverPrompt() {
   // For Riposte (on_miss), the triggerer is who missed, and we're counter-attacking them
   const attacker = combatants.find(c => c.id === pendingTrigger.triggererId)
 
+  // Precision Attack miss context
+  const missedBy = (context.targetAC && context.attackRoll) ? context.targetAC - context.attackRoll : 0
+  const couldHit = missedBy > 0 && missedBy <= dieSize
+
   const headerText = pendingTrigger.type === 'on_hit'
     ? 'Maneuver Available!'
     : pendingTrigger.type === 'on_miss'
     ? 'Riposte Opportunity!'
     : pendingTrigger.type === 'on_damage_taken'
     ? 'Reaction Available!'
-    : 'Pre-Attack Maneuver!'
+    : 'Attack Missed!'
 
   const contextText = pendingTrigger.type === 'on_hit'
     ? <>You hit <span className="text-rose-400 font-semibold">{target?.name || 'the target'}</span> for <span className="text-amber-400 font-semibold">{context.damage}</span> damage!</>
@@ -146,13 +150,13 @@ export function ManeuverPrompt() {
     ? <><span className="text-rose-400 font-semibold">{attacker?.name || 'The attacker'}</span> missed you! Use your reaction to counter-attack.</>
     : pendingTrigger.type === 'on_damage_taken'
     ? <><span className="text-rose-400 font-semibold">{attacker?.name || 'An enemy'}</span> hit you for <span className="text-amber-400 font-semibold">{context.damage}</span> damage!</>
-    : <>You are about to attack <span className="text-rose-400 font-semibold">{target?.name || 'the target'}</span></>
+    : <>Rolled <span className="text-amber-400 font-semibold">{context.attackRoll}</span> vs AC <span className="text-rose-400 font-semibold">{context.targetAC}</span> — missed by <span className={cn("font-semibold", couldHit ? "text-green-400" : "text-rose-400")}>{missedBy}</span>{couldHit ? '. Your die could turn this into a hit!' : ''}</>
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none">
       <div
         className={cn(
-          "bg-slate-900 border-2 border-amber-500 rounded-xl shadow-2xl p-4 max-w-md w-full mx-4 pointer-events-auto",
+          "bg-slate-900/85 backdrop-blur-md border-2 border-amber-500 rounded-xl shadow-2xl p-4 max-w-md w-full mx-4 pointer-events-auto",
           !isDragging && "animate-in fade-in zoom-in duration-200"
         )}
         {...containerProps}
@@ -276,7 +280,7 @@ export function ManeuverPrompt() {
               ? 'Skip Riposte (no reaction)'
               : pendingTrigger.type === 'on_damage_taken'
               ? `Take ${context.damage} damage (no reaction)`
-              : 'Attack without maneuver'}
+              : 'Accept the miss'}
           </span>
         </button>
       </div>

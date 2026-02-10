@@ -280,7 +280,7 @@ function TargetSelector({
 }) {
   const { onDragStart, dragStyle } = useDraggable()
   return (
-    <div className="absolute bottom-full left-1/2 mb-2 w-64 bg-slate-900 border-2 border-slate-700 rounded-lg shadow-2xl p-3 z-50" style={dragStyle}>
+    <div className="absolute bottom-full left-1/2 mb-2 w-64 bg-slate-900/85 backdrop-blur-md border-2 border-slate-700 rounded-lg shadow-2xl p-3 z-50" style={dragStyle}>
       <div className="text-sm font-semibold text-slate-200 mb-2 cursor-grab active:cursor-grabbing select-none flex items-center justify-between" onMouseDown={onDragStart}>
         {label}
         <GripHorizontal className="w-4 h-4 text-slate-600" />
@@ -377,7 +377,7 @@ function WeaponTargetSelector({
   const isBreathWeaponSelected = selectedWeapon?.type === 'breath_weapon'
 
   return (
-    <div className="absolute bottom-full left-1/2 mb-2 bg-slate-900 border-2 border-rose-800 rounded-lg shadow-2xl p-3 z-50" style={dragStyle}>
+    <div className="absolute bottom-full left-1/2 mb-2 bg-slate-900/85 backdrop-blur-md border-2 border-rose-800 rounded-lg shadow-2xl p-3 z-50" style={dragStyle}>
       <div className="text-sm font-semibold text-rose-300 mb-2 flex items-center gap-2 cursor-grab active:cursor-grabbing select-none" onMouseDown={onDragStart}>
         <Sword className="w-4 h-4" />
         Attack
@@ -569,7 +569,7 @@ function SpellSelector({
   const { onDragStart, dragStyle } = useDraggable()
 
   return (
-    <div className="absolute bottom-full left-1/2 mb-2 w-80 bg-slate-900 border-2 border-violet-800 rounded-lg shadow-2xl p-3 z-50" style={dragStyle}>
+    <div className="absolute bottom-full left-1/2 mb-2 w-80 bg-slate-900/85 backdrop-blur-md border-2 border-violet-800 rounded-lg shadow-2xl p-3 z-50" style={dragStyle}>
       <div className="text-sm font-semibold text-violet-300 mb-2 cursor-grab active:cursor-grabbing select-none flex items-center justify-between" onMouseDown={onDragStart}>
         {selectedSlotLevel ? `Cast with Level ${selectedSlotLevel} Slot` : 'Select Spell'}
         <GripHorizontal className="w-4 h-4 text-slate-600" />
@@ -707,7 +707,7 @@ function ProjectileTargetSelector({
   const remaining = totalProjectiles - totalAssigned
 
   return (
-    <div className="absolute bottom-full left-1/2 mb-2 w-80 bg-slate-900 border-2 border-violet-800 rounded-lg shadow-2xl p-3 z-50" style={dragStyle}>
+    <div className="absolute bottom-full left-1/2 mb-2 w-80 bg-slate-900/85 backdrop-blur-md border-2 border-violet-800 rounded-lg shadow-2xl p-3 z-50" style={dragStyle}>
       <div className="text-sm font-semibold text-violet-300 mb-1 flex items-center gap-2 cursor-grab active:cursor-grabbing select-none" onMouseDown={onDragStart}>
         <Sparkles className="w-4 h-4" />
         {spell.name}
@@ -919,7 +919,7 @@ function DebugMenu({
   const activeConditions = targetCombatant?.conditions.map(c => c.condition) ?? []
 
   return (
-    <div className="absolute bottom-full right-0 mb-2 w-80 bg-slate-900 border-2 border-orange-700 rounded-lg shadow-2xl p-3 z-50">
+    <div className="absolute bottom-full right-0 mb-2 w-80 bg-slate-900/85 backdrop-blur-md border-2 border-orange-700 rounded-lg shadow-2xl p-3 z-50">
       <div className="flex items-center justify-between mb-3">
         <div className="text-sm font-semibold text-orange-400 flex items-center gap-2">
           <Bug className="w-4 h-4" />
@@ -1959,7 +1959,7 @@ export function ActionBar() {
                         actionType="bonus"
                       />
                       {showBonusManeuvers && canUseBonusManeuver && (
-                        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-72 bg-slate-900 border-2 border-amber-600 rounded-lg shadow-2xl p-3 z-50">
+                        <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-72 bg-slate-900/85 backdrop-blur-md border-2 border-amber-600 rounded-lg shadow-2xl p-3 z-50">
                           <div className="flex items-center justify-between mb-2">
                             <span className="text-sm font-semibold text-amber-300">Bonus Action Maneuver</span>
                             <button onClick={() => { setShowBonusManeuvers(false); setIsSelectingFeintTarget(false) }} className="p-0.5 hover:bg-slate-700 rounded">

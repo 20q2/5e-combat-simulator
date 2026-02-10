@@ -34,7 +34,7 @@ export function IndomitablePrompt() {
     <div className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none">
       <div
         className={cn(
-          "bg-slate-900 border-2 border-amber-500 rounded-xl shadow-2xl p-4 max-w-md w-full mx-4 pointer-events-auto",
+          "bg-slate-900/85 backdrop-blur-md border-2 border-amber-500 rounded-xl shadow-2xl p-4 max-w-md w-full mx-4 pointer-events-auto",
           !isDragging && "animate-in fade-in zoom-in duration-200"
         )}
         {...containerProps}

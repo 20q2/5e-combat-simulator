@@ -207,11 +207,11 @@ export function ManeuverSelector() {
               </div>
             )}
 
-            {/* Pre-Attack Maneuvers */}
+            {/* On-Miss Maneuvers */}
             {maneuversByTrigger.pre_attack.length > 0 && (
               <div>
                 <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
-                  Pre-Attack (add to attack roll)
+                  On Miss (add to attack roll)
                 </h4>
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
                   {maneuversByTrigger.pre_attack.map((maneuver) => {

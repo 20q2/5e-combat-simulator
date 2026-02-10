@@ -203,7 +203,7 @@ interface CombatStore extends CombatState {
   // Combat actions
   dealDamage: (targetId: string, amount: number, source?: string) => void
   healDamage: (targetId: string, amount: number, source?: string) => void
-  performAttack: (attackerId: string, targetId: string, weapon?: Weapon, monsterAction?: MonsterAction, rangedWeapon?: Weapon, masteryOverride?: WeaponMastery, attackBonus?: number, skipPreAttackCheck?: boolean) => AttackResult | null
+  performAttack: (attackerId: string, targetId: string, weapon?: Weapon, monsterAction?: MonsterAction, rangedWeapon?: Weapon, masteryOverride?: WeaponMastery, attackBonus?: number, skipPreAttackCheck?: boolean, overrideNaturalRoll?: number) => AttackResult | null
   performAttackReplacement: (attackerId: string, replacementId: string, targetPosition: Position) => boolean
   performOpportunityAttack: (attackerId: string, targetId: string, attackReplacementId?: string) => AttackResult | null
   useDash: () => void
@@ -1257,21 +1257,28 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
       return
     }
 
-    // Handle pre_attack maneuvers (Precision Attack)
+    // Handle pre_attack maneuvers (Precision Attack - triggered on miss)
     if (pendingTrigger.type === 'pre_attack' && pendingAttack) {
       let attackBonus = 0
 
       if (optionId === 'precision-attack') {
-        // Apply Precision Attack
+        // Roll superiority die to see if the miss becomes a hit
         const maneuverResult = applyPrecisionAttack(reactor)
         attackBonus = maneuverResult.attackBonus || 0
 
-        // Log the maneuver usage
+        const originalTotal = pendingTrigger.context.attackRoll || 0
+        const targetAC = pendingTrigger.context.targetAC || 0
+        const newTotal = originalTotal + attackBonus
+        const wouldHit = newTotal >= targetAC
+
+        // Log the maneuver usage with hit/miss result
         get().addLogEntry({
           type: 'other',
           actorId: reactor.id,
           actorName: reactor.name,
-          message: maneuverResult.message,
+          message: wouldHit
+            ? `${reactor.name} uses Precision Attack! +${attackBonus} to attack roll (${originalTotal} → ${newTotal} vs AC ${targetAC}) - turns the miss into a hit!`
+            : `${reactor.name} uses Precision Attack! +${attackBonus} to attack roll (${originalTotal} → ${newTotal} vs AC ${targetAC}) - still not enough!`,
           details: `Superiority die: d${maneuverResult.superiorityDieSize}`,
         })
 
@@ -1292,8 +1299,8 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
       // Clear pending states
       set({ pendingTrigger: undefined, pendingAttack: undefined })
 
-      // Resume the attack with the bonus (or without if declined)
-      // Call performAttack with skipPreAttackCheck=true to avoid infinite loop
+      // Re-resolve the attack with the same d20 roll + precision bonus
+      // skipPreAttackCheck=true prevents re-prompting for Precision Attack
       get().performAttack(
         pendingAttack.attackerId,
         pendingAttack.targetId,
@@ -1301,8 +1308,9 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
         pendingAttack.monsterAction,
         pendingAttack.rangedWeapon,
         pendingAttack.masteryOverride,
-        attackBonus,  // Pass the precision attack bonus
-        true         // Skip pre-attack check to avoid re-prompting
+        attackBonus,                          // Precision die bonus (0 if declined)
+        true,                                 // Skip pre-attack check
+        pendingAttack.overrideNaturalRoll,    // Same d20 roll
       )
 
       return
@@ -2412,7 +2420,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
     })
   },
 
-  performAttack: (attackerId, targetId, weapon, monsterAction, rangedWeapon, masteryOverride, attackBonus, skipPreAttackCheck) => {
+  performAttack: (attackerId, targetId, weapon, monsterAction, rangedWeapon, masteryOverride, attackBonus, skipPreAttackCheck, overrideNaturalRoll) => {
     const { combatants, grid } = get()
     const attacker = combatants.find((c) => c.id === attackerId)
     const target = combatants.find((c) => c.id === targetId)
@@ -2465,59 +2473,6 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
       return null
     }
 
-    // Check for pre-attack maneuvers (Precision Attack) - only if not skipping
-    if (!skipPreAttackCheck) {
-      const preAttackManeuvers = getAvailableManeuvers(attacker, 'pre_attack')
-      if (
-        preAttackManeuvers.length > 0 &&
-        attacker.type === 'character' &&
-        attacker.superiorityDiceRemaining > 0 &&
-        !attacker.usedManeuverThisAttack
-      ) {
-        const dieSize = getSuperiorityDieSize(attacker)
-        const saveDC = getManeuverSaveDC(attacker)
-
-        const triggerOptions: TriggerOption[] = preAttackManeuvers.map(m => ({
-          id: m.id,
-          type: 'maneuver' as const,
-          name: m.name,
-          description: m.description,
-          cost: `1 Superiority Die (d${dieSize})`,
-          effect: m.addsToAttackRoll
-            ? `+1d${dieSize} to attack roll`
-            : m.addsDamageDie
-              ? `+1d${dieSize} damage`
-              : m.savingThrow
-                ? `${m.savingThrow.ability.toUpperCase()} save (DC ${saveDC}) or ${m.savingThrow.effect}`
-                : 'Unknown effect',
-        }))
-
-        // Store pending attack and trigger
-        const pendingTrigger: PendingTrigger = {
-          type: 'pre_attack',
-          triggererId: attackerId,
-          reactorId: attackerId,  // Attacker chooses their own maneuver
-          targetId,               // Target of the attack
-          options: triggerOptions,
-          context: {},            // Pre-attack doesn't have damage context yet
-        }
-
-        set({
-          pendingTrigger,
-          pendingAttack: {
-            attackerId,
-            targetId,
-            weapon: selectedWeapon,
-            monsterAction,
-            rangedWeapon,
-            masteryOverride,
-          },
-        })
-
-        return null  // Pause for player decision
-      }
-    }
-
     // Resolve the attack (pass all combatants for Sneak Attack check)
     const result = resolveAttack({
       attacker,
@@ -2528,6 +2483,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
       usedSneakAttackThisTurn: attacker.usedSneakAttackThisTurn,
       masteryOverride,
       attackBonus,
+      overrideNaturalRoll,
     })
 
     // Consume distracted condition if it granted advantage to this attacker
@@ -2576,6 +2532,60 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
         details: `${result.attackRoll.breakdown} vs AC ${result.targetAC}`,
       })
     } else {
+      // Check for Precision Attack (on miss, before logging)
+      // Only if not already re-resolving after a Precision Attack decision
+      if (!skipPreAttackCheck && !result.criticalMiss) {
+        const precisionManeuvers = getAvailableManeuvers(attacker, 'pre_attack')
+        if (
+          precisionManeuvers.length > 0 &&
+          attacker.superiorityDiceRemaining > 0 &&
+          !attacker.usedManeuverThisAttack &&
+          attacker.type === 'character'
+        ) {
+          const dieSize = getSuperiorityDieSize(attacker)
+          const missedBy = result.targetAC - result.attackRoll.total
+
+          const triggerOptions: TriggerOption[] = precisionManeuvers.map(m => ({
+            id: m.id,
+            type: 'maneuver' as const,
+            name: m.name,
+            description: m.description,
+            cost: `1 Superiority Die (d${dieSize})`,
+            effect: missedBy <= dieSize
+              ? `+1d${dieSize} to attack roll (missed by ${missedBy}, could hit!)`
+              : `+1d${dieSize} to attack roll (missed by ${missedBy}, max die is ${dieSize})`,
+          }))
+
+          const pendingTrigger: PendingTrigger = {
+            type: 'pre_attack',
+            triggererId: attackerId,
+            reactorId: attackerId,
+            targetId,
+            options: triggerOptions,
+            context: {
+              attackRoll: result.attackRoll.total,
+              naturalRoll: result.attackRoll.naturalRoll,
+              targetAC: result.targetAC,
+            },
+          }
+
+          set({
+            pendingTrigger,
+            pendingAttack: {
+              attackerId,
+              targetId,
+              weapon: selectedWeapon,
+              monsterAction,
+              rangedWeapon,
+              masteryOverride,
+              overrideNaturalRoll: result.attackRoll.naturalRoll,
+            },
+          })
+
+          return result  // Pause for Precision Attack decision
+        }
+      }
+
       get().addLogEntry({
         type: 'attack',
         actorId: attackerId,
