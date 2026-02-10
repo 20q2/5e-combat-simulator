@@ -1,15 +1,12 @@
+import { Link } from 'react-router-dom'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
 import { mapPresets, type MapPreset } from '@/data/maps'
-import { Map, Trees, Skull, Compass } from 'lucide-react'
+import { Map, Trees, Skull, Compass, Plus } from 'lucide-react'
 
 interface MapSelectorProps {
   selectedMap: MapPreset | null
   onSelectMap: (map: MapPreset | null) => void
-  customGridWidth: number
-  customGridHeight: number
-  onChangeGridWidth: (width: number) => void
-  onChangeGridHeight: (height: number) => void
 }
 
 // Icon mapping for map themes
@@ -58,7 +55,7 @@ function MapCard({
   )
 }
 
-export function MapSelector({ selectedMap, onSelectMap, customGridWidth, customGridHeight, onChangeGridWidth, onChangeGridHeight }: MapSelectorProps) {
+export function MapSelector({ selectedMap, onSelectMap }: MapSelectorProps) {
   return (
     <Card>
       <CardHeader className="pb-3">
@@ -82,30 +79,16 @@ export function MapSelector({ selectedMap, onSelectMap, customGridWidth, customG
               />
             ))}
 
-            {/* Custom grid size inputs when no preset selected */}
-            {selectedMap === null && (
-              <div className="flex items-center gap-2 pt-1 px-1">
-                <span className="text-xs text-muted-foreground">Grid:</span>
-                <input
-                  type="number"
-                  min={5}
-                  max={40}
-                  value={customGridWidth}
-                  onChange={(e) => onChangeGridWidth(Math.max(5, Math.min(40, parseInt(e.target.value) || 5)))}
-                  className="w-14 h-7 text-xs text-center bg-slate-800 border border-slate-700 rounded px-1 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                />
-                <span className="text-xs text-muted-foreground">x</span>
-                <input
-                  type="number"
-                  min={5}
-                  max={40}
-                  value={customGridHeight}
-                  onChange={(e) => onChangeGridHeight(Math.max(5, Math.min(40, parseInt(e.target.value) || 5)))}
-                  className="w-14 h-7 text-xs text-center bg-slate-800 border border-slate-700 rounded px-1 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                />
-                <span className="text-xs text-muted-foreground">cells</span>
+            {/* Create new map link */}
+            <Link
+              to="/map-builder"
+              className="w-full flex items-center gap-2 p-2 rounded-lg border border-dashed border-slate-600 hover:border-primary/50 transition-all text-sm text-muted-foreground hover:text-primary"
+            >
+              <div className="w-8 h-8 rounded flex items-center justify-center shrink-0 bg-slate-800 text-slate-400">
+                <Plus className="w-4 h-4" />
               </div>
-            )}
+              <span className="font-medium">Create New Map</span>
+            </Link>
           </div>
 
           {/* Map preview */}

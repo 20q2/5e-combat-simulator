@@ -21,8 +21,6 @@ import {
   getSubclassFeaturesByLevel,
   getBackgroundById,
 } from '@/data'
-import type { OriginFeatId } from '@/data/originFeats'
-import type { MagicInitiateChoice } from '@/stores/characterStore'
 import {
   useCharacterStore,
   calculateFinalAbilityScores,
@@ -31,10 +29,11 @@ import {
 } from '@/stores/characterStore'
 import { getAbilityModifier, getProficiencyBonus } from '@/types'
 import { getCharacterTokenImage } from '@/lib/tokenImages'
+import { buildCharacterFromDraft } from '@/lib/characterBuilder'
 import { getClassIcon } from '@/lib/classIcons'
 import { CharacterSaveSuccess } from './CharacterSaveSuccess'
 import type { Character, AbilityName } from '@/types'
-import type { ClassFeature, FightingStyleFeature, FightingStyle, SneakAttackFeature, ImprovedCriticalFeature, ExtraAttackFeature, CunningActionFeature } from '@/types/classFeature'
+import type { ClassFeature, FightingStyleFeature, SneakAttackFeature, ImprovedCriticalFeature, ExtraAttackFeature, CunningActionFeature } from '@/types/classFeature'
 import type { RacialAbility } from '@/types/race'
 import {
   Swords,
@@ -176,7 +175,6 @@ export function CharacterSheet() {
   const characterClass = draft.classId ? getClassById(draft.classId) ?? null : null
   const meleeWeapon = draft.meleeWeaponId ? getWeaponById(draft.meleeWeaponId) ?? null : null
   const rangedWeapon = draft.rangedWeaponId ? getWeaponById(draft.rangedWeaponId) ?? null : null
-  const offhandWeapon = draft.offhandWeaponId ? getWeaponById(draft.offhandWeaponId) ?? null : null
   const armor = draft.armorId ? getArmorById(draft.armorId) ?? null : null
   const subclass = characterClass?.subclasses.find((s) => s.id === draft.subclassId)
   const background = draft.backgroundId ? getBackgroundById(draft.backgroundId) ?? null : null
@@ -276,79 +274,8 @@ export function CharacterSheet() {
   const isValid = draft.name.trim() && race && characterClass && background && draft.backgroundOriginFeat
 
   const handleSave = () => {
-    if (!isValid || !race || !characterClass || !background || !draft.backgroundOriginFeat) return
-
-    // Collect all origin feats (human racial + background)
-    const originFeats: OriginFeatId[] = []
-    if (draft.raceId === 'human' && draft.humanOriginFeat) {
-      originFeats.push(draft.humanOriginFeat)
-    }
-    originFeats.push(draft.backgroundOriginFeat)
-
-    // Collect Magic Initiate spell choices
-    const magicInitiateChoices: MagicInitiateChoice[] = []
-    if (draft.humanOriginFeat === 'magic-initiate' && draft.humanMagicInitiate) {
-      magicInitiateChoices.push(draft.humanMagicInitiate)
-    }
-    if (draft.backgroundOriginFeat === 'magic-initiate' && draft.backgroundMagicInitiate) {
-      magicInitiateChoices.push(draft.backgroundMagicInitiate)
-    }
-
-    const character: Character = {
-      id: draft.editingCharacterId ?? `char-${Date.now()}`,
-      name: draft.name,
-      race,
-      class: characterClass,
-      subclass,
-      background,
-      originFeats,
-      magicInitiateChoices: magicInitiateChoices.length > 0 ? magicInitiateChoices : undefined,
-      level: draft.level,
-      abilityScores: finalAbilityScores,
-      // Store base scores and ASI choices for editing
-      baseAbilityScores: { ...draft.baseAbilityScores },
-      abilityBonusMode: draft.abilityBonusMode,
-      abilityBonusPlus2: draft.abilityBonusPlus2,
-      abilityBonusPlus1: draft.abilityBonusPlus1,
-      abilityBonusPlus1Trio: draft.abilityBonusPlus1Trio.length > 0 ? [...draft.abilityBonusPlus1Trio] : undefined,
-      classAsiSelections: draft.classAsiSelections.length > 0 ? [...draft.classAsiSelections] : undefined,
-      maxHp: hp,
-      currentHp: hp,
-      temporaryHp: 0,
-      ac,
-      speed: race.speed,
-      proficiencyBonus,
-      skillProficiencies: [],
-      savingThrowProficiencies: characterClass.savingThrowProficiencies,
-      equipment: {
-        meleeWeapon: meleeWeapon ?? undefined,
-        rangedWeapon: rangedWeapon ?? undefined,
-        offhandWeapon: offhandWeapon ?? undefined,
-        armor: armor ?? undefined,
-        shield: draft.shieldEquipped ? getArmorById('shield') : undefined,
-        items: [],
-      },
-      features: [...classFeatures, ...subclassFeatures],
-      conditions: [],
-      deathSaves: { successes: 0, failures: 0 },
-      spellSlots,
-      knownSpells: [
-        ...cantrips,
-        ...spells,
-        // Add Magic Initiate spells
-        ...magicInitiateChoices.flatMap((choice) => [
-          ...choice.cantrips.map((id) => getSpellById(id)),
-          choice.levelOneSpell ? getSpellById(choice.levelOneSpell) : undefined,
-        ]),
-      ].filter((s): s is NonNullable<typeof s> => s !== undefined),
-      masteredWeaponIds: draft.masteredWeaponIds.length > 0 ? draft.masteredWeaponIds : undefined,
-      fightingStyles: [
-        draft.fightingStyle,
-        draft.additionalFightingStyle,
-      ].filter((s): s is FightingStyle => s !== null),
-      knownManeuverIds: draft.selectedManeuverIds.length > 0 ? draft.selectedManeuverIds : undefined,
-      customTokenImage: draft.customTokenImage ?? undefined,
-    }
+    const character = buildCharacterFromDraft(draft)
+    if (!character) return
 
     saveCharacter(character)
     setSavedCharacter(character)

@@ -1,6 +1,8 @@
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { useCharacterStore } from '@/stores/characterStore'
+import { useNavigate } from 'react-router-dom'
+import { buildCharacterFromDraft } from '@/lib/characterBuilder'
 import { AbilityScoreSelector } from './AbilityScoreSelector'
 import { RaceSelector } from './RaceSelector'
 import { BackgroundSelector } from './BackgroundSelector'
@@ -22,6 +24,7 @@ import {
   Check,
   ChevronLeft,
   ChevronRight,
+  Save,
   Zap,
   type LucideIcon,
 } from 'lucide-react'
@@ -98,7 +101,9 @@ function StepIndicator({
 }
 
 export function CharacterCreator() {
-  const { currentStep, setCurrentStep, draft } = useCharacterStore()
+  const { currentStep, setCurrentStep, draft, saveCharacter, resetDraft } = useCharacterStore()
+  const navigate = useNavigate()
+  const isEditing = !!draft.editingCharacterId
 
   const selectedClass = draft.classId ? getClassById(draft.classId) : null
   const hasSpellcasting = selectedClass?.spellcasting !== undefined
@@ -254,12 +259,29 @@ export function CharacterCreator() {
             Previous
           </Button>
 
-          {!isReviewStep && (
-            <Button onClick={handleNext} disabled={!canProceed()}>
-              Next
-              <ChevronRight className="w-4 h-4 ml-1" />
-            </Button>
-          )}
+          <div className="flex items-center gap-2">
+            {isEditing && !isReviewStep && (
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  const character = buildCharacterFromDraft(draft)
+                  if (!character) return
+                  saveCharacter(character)
+                  resetDraft()
+                  navigate('/')
+                }}
+              >
+                <Save className="w-4 h-4 mr-1" />
+                Update & Close
+              </Button>
+            )}
+            {!isReviewStep && (
+              <Button onClick={handleNext} disabled={!canProceed()}>
+                Next
+                <ChevronRight className="w-4 h-4 ml-1" />
+              </Button>
+            )}
+          </div>
         </div>
       </div>
     </div>

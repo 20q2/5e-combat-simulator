@@ -7,6 +7,7 @@ import { getCharacterTokenImage } from '@/lib/tokenImages'
 import { cn } from '@/lib/utils'
 import type { Character } from '@/types'
 import { Trash2, Plus, Users, Heart, Shield, Footprints, Pencil } from 'lucide-react'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 
 function SavedCharacterCard({
   character,
@@ -20,61 +21,73 @@ function SavedCharacterCard({
   const tokenImage = getCharacterTokenImage(character)
 
   return (
-    <Card>
-      <CardHeader className="pb-3">
-        <div className="flex items-start gap-3">
-          {tokenImage ? (
-            <img
-              src={tokenImage}
-              alt={character.name}
-              className="w-16 h-16 rounded-full object-cover border-2 border-primary"
-            />
-          ) : (
-            <div className={cn(
-              'w-16 h-16 rounded-full flex items-center justify-center text-white font-bold text-xl shrink-0',
-              character.class.name === 'Fighter' && 'bg-orange-600',
-              character.class.name === 'Rogue' && 'bg-emerald-600',
-              character.class.name === 'Wizard' && 'bg-violet-600',
-              character.class.name === 'Cleric' && 'bg-amber-600',
-              !['Fighter', 'Rogue', 'Wizard', 'Cleric'].includes(character.class.name) && 'bg-slate-600'
-            )}>
-              {character.name.charAt(0)}
+    <TooltipProvider>
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-start gap-3">
+            {tokenImage ? (
+              <img
+                src={tokenImage}
+                alt={character.name}
+                className="w-16 h-16 rounded-full object-cover border-2 border-primary"
+              />
+            ) : (
+              <div className={cn(
+                'w-16 h-16 rounded-full flex items-center justify-center text-white font-bold text-xl shrink-0',
+                character.class.name === 'Fighter' && 'bg-orange-600',
+                character.class.name === 'Rogue' && 'bg-emerald-600',
+                character.class.name === 'Wizard' && 'bg-violet-600',
+                character.class.name === 'Cleric' && 'bg-amber-600',
+                !['Fighter', 'Rogue', 'Wizard', 'Cleric'].includes(character.class.name) && 'bg-slate-600'
+              )}>
+                {character.name.charAt(0)}
+              </div>
+            )}
+            <div className="flex-1 min-w-0">
+              <CardTitle className="text-lg truncate">{character.name}</CardTitle>
+              <CardDescription className="line-clamp-2">
+                {character.race.name} {character.class.name}
+                {character.subclass && ` (${character.subclass.name})`} · Level {character.level}
+              </CardDescription>
             </div>
-          )}
-          <div className="flex-1 min-w-0">
-            <CardTitle className="text-lg truncate">{character.name}</CardTitle>
-            <CardDescription className="line-clamp-2">
-              {character.race.name} {character.class.name}
-              {character.subclass && ` (${character.subclass.name})`} · Level {character.level}
-            </CardDescription>
+            <div className="flex gap-1 shrink-0">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button size="icon" variant="outline" className="h-8 w-8" onClick={onEdit}>
+                    <Pencil className="w-3.5 h-3.5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Edit character</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button size="icon" variant="destructive" className="h-8 w-8" onClick={onDelete}>
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Delete character</TooltipContent>
+              </Tooltip>
+            </div>
           </div>
-        </div>
-      </CardHeader>
-      <CardContent>
-        <div className="flex gap-3 text-sm text-muted-foreground mb-3">
-          <span className="flex items-center gap-1">
-            <Heart className="w-3.5 h-3.5 text-rose-400" />
-            {character.maxHp}
-          </span>
-          <span className="flex items-center gap-1">
-            <Shield className="w-3.5 h-3.5 text-sky-400" />
-            {character.ac}
-          </span>
-          <span className="flex items-center gap-1">
-            <Footprints className="w-3.5 h-3.5 text-emerald-400" />
-            {character.speed} ft
-          </span>
-        </div>
-        <div className="flex gap-2">
-          <Button size="icon" variant="outline" onClick={onEdit} title="Edit character">
-            <Pencil className="w-4 h-4" />
-          </Button>
-          <Button size="icon" variant="destructive" onClick={onDelete} title="Delete character">
-            <Trash2 className="w-4 h-4" />
-          </Button>
-        </div>
-      </CardContent>
-    </Card>
+        </CardHeader>
+        <CardContent>
+          <div className="flex gap-3 text-sm text-muted-foreground">
+            <span className="flex items-center gap-1">
+              <Heart className="w-3.5 h-3.5 text-rose-400" />
+              {character.maxHp}
+            </span>
+            <span className="flex items-center gap-1">
+              <Shield className="w-3.5 h-3.5 text-sky-400" />
+              {character.ac}
+            </span>
+            <span className="flex items-center gap-1">
+              <Footprints className="w-3.5 h-3.5 text-emerald-400" />
+              {character.speed} ft
+            </span>
+          </div>
+        </CardContent>
+      </Card>
+    </TooltipProvider>
   )
 }
 

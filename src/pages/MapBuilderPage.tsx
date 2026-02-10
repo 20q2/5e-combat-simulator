@@ -116,6 +116,8 @@ export function MapBuilderPage() {
   const [mapDescription, setMapDescription] = useState('')
   const [gridWidth, setGridWidth] = useState(14)
   const [gridHeight, setGridHeight] = useState(10)
+  const [widthInput, setWidthInput] = useState('14')
+  const [heightInput, setHeightInput] = useState('10')
   const [selectedTool, setSelectedTool] = useState<Tool>(obstacleTools[0])
   const [gridData, setGridData] = useState<Record<string, GridCellData>>({})
   const [isDragging, setIsDragging] = useState(false)
@@ -229,10 +231,7 @@ export function MapBuilderPage() {
     URL.revokeObjectURL(url)
   }
 
-  const handleGridSizeChange = (newWidth: number, newHeight: number) => {
-    setGridWidth(Math.max(5, Math.min(30, newWidth)))
-    setGridHeight(Math.max(5, Math.min(20, newHeight)))
-  }
+  const clampGridSize = (value: number) => Math.max(5, Math.min(100, value))
 
   // Check if a cell has a wall obstacle
   const hasWall = (x: number, y: number): boolean => {
@@ -504,11 +503,21 @@ export function MapBuilderPage() {
                     id="gridWidth"
                     type="number"
                     min={5}
-                    max={30}
-                    value={gridWidth}
-                    onChange={(e) =>
-                      handleGridSizeChange(parseInt(e.target.value) || 14, gridHeight)
-                    }
+                    max={100}
+                    value={widthInput}
+                    onChange={(e) => setWidthInput(e.target.value)}
+                    onBlur={() => {
+                      const v = clampGridSize(parseInt(widthInput) || 14)
+                      setGridWidth(v)
+                      setWidthInput(String(v))
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        const v = clampGridSize(parseInt(widthInput) || 14)
+                        setGridWidth(v)
+                        setWidthInput(String(v))
+                      }
+                    }}
                   />
                 </div>
                 <div className="space-y-2">
@@ -517,11 +526,21 @@ export function MapBuilderPage() {
                     id="gridHeight"
                     type="number"
                     min={5}
-                    max={20}
-                    value={gridHeight}
-                    onChange={(e) =>
-                      handleGridSizeChange(gridWidth, parseInt(e.target.value) || 10)
-                    }
+                    max={100}
+                    value={heightInput}
+                    onChange={(e) => setHeightInput(e.target.value)}
+                    onBlur={() => {
+                      const v = clampGridSize(parseInt(heightInput) || 10)
+                      setGridHeight(v)
+                      setHeightInput(String(v))
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        const v = clampGridSize(parseInt(heightInput) || 10)
+                        setGridHeight(v)
+                        setHeightInput(String(v))
+                      }
+                    }}
                   />
                 </div>
               </div>
