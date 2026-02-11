@@ -2732,7 +2732,9 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
 
       // Check for Riposte reaction (target can counter-attack on miss)
       // Only for melee attacks against player characters
-      const isMeleeAttack = !selectedWeapon || selectedWeapon.type === 'melee'
+      const isMeleeAttack = monsterAction
+        ? (monsterAction.reach !== undefined || !monsterAction.range)
+        : (!selectedWeapon || selectedWeapon.type === 'melee')
       const riposteManeuvers = getAvailableManeuvers(target, 'reaction').filter(m => m.id === 'riposte')
 
       if (
@@ -2920,7 +2922,9 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
       const availableReactionSpells = getAvailableReactionSpells(target, 'on_hit')
 
       // Check for Parry maneuver (only for melee attacks)
-      const isMeleeAttackForParry = !selectedWeapon || selectedWeapon.type === 'melee'
+      const isMeleeAttackForParry = monsterAction
+        ? (monsterAction.reach !== undefined || !monsterAction.range)
+        : (!selectedWeapon || selectedWeapon.type === 'melee')
       const parryManeuvers = isMeleeAttackForParry
         ? getAvailableManeuvers(target, 'reaction').filter(m => m.id === 'parry')
         : []
