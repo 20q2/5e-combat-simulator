@@ -1617,7 +1617,44 @@ export function ActionBar() {
   return (
     <div className="bg-gradient-to-t from-slate-950 via-slate-900 to-slate-800 border-t-2 border-slate-700">
 
-      <div className="max-w-5xl mx-auto p-3">
+      {/* Action Economy Indicators - thin row above */}
+      <div className="flex items-center justify-center gap-4 py-0.5 border-b border-slate-700/50">
+        <div className="flex items-center gap-1">
+          <Circle className={cn(
+            'w-3 h-3',
+            currentCombatant.hasActed
+              ? 'fill-slate-600 text-slate-500'
+              : 'fill-emerald-500 text-emerald-400'
+          )} />
+          <span className={cn('text-[10px]', currentCombatant.hasActed ? 'text-slate-500' : 'text-emerald-400')}>
+            Action
+          </span>
+        </div>
+        <div className="flex items-center gap-1">
+          <Triangle className={cn(
+            'w-3 h-3',
+            currentCombatant.hasBonusActed
+              ? 'fill-slate-600 text-slate-500'
+              : 'fill-amber-500 text-amber-400'
+          )} />
+          <span className={cn('text-[10px]', currentCombatant.hasBonusActed ? 'text-slate-500' : 'text-amber-400')}>
+            Bonus
+          </span>
+        </div>
+        <div className="flex items-center gap-1">
+          <Square className={cn(
+            'w-3 h-3',
+            currentCombatant.hasReacted
+              ? 'fill-slate-600 text-slate-500'
+              : 'fill-violet-500 text-violet-400'
+          )} />
+          <span className={cn('text-[10px]', currentCombatant.hasReacted ? 'text-slate-500' : 'text-violet-400')}>
+            Reaction
+          </span>
+        </div>
+      </div>
+
+      <div className="max-w-5xl mx-auto p-3 pt-2">
         {/* Unconscious/Death saves UI */}
         {isUnconscious && isCharacter ? (
           <div className="flex items-center justify-center">
@@ -1672,46 +1709,6 @@ export function ActionBar() {
                     total={speed}
                   />
                 </div>
-              </div>
-            </div>
-
-            {/* Action Economy Indicators */}
-            <div className="flex flex-col gap-1 px-3 border-r border-slate-700">
-              {/* Action - Green Circle */}
-              <div className="flex items-center gap-1.5">
-                <Circle className={cn(
-                  'w-3.5 h-3.5',
-                  currentCombatant.hasActed
-                    ? 'fill-slate-600 text-slate-500'
-                    : 'fill-emerald-500 text-emerald-400'
-                )} />
-                <span className={cn('text-[10px]', currentCombatant.hasActed ? 'text-slate-500' : 'text-emerald-400')}>
-                  Action
-                </span>
-              </div>
-              {/* Bonus Action - Yellow Triangle */}
-              <div className="flex items-center gap-1.5">
-                <Triangle className={cn(
-                  'w-3.5 h-3.5',
-                  currentCombatant.hasBonusActed
-                    ? 'fill-slate-600 text-slate-500'
-                    : 'fill-amber-500 text-amber-400'
-                )} />
-                <span className={cn('text-[10px]', currentCombatant.hasBonusActed ? 'text-slate-500' : 'text-amber-400')}>
-                  Bonus
-                </span>
-              </div>
-              {/* Reaction - Purple Square */}
-              <div className="flex items-center gap-1.5">
-                <Square className={cn(
-                  'w-3.5 h-3.5',
-                  currentCombatant.hasReacted
-                    ? 'fill-slate-600 text-slate-500'
-                    : 'fill-violet-500 text-violet-400'
-                )} />
-                <span className={cn('text-[10px]', currentCombatant.hasReacted ? 'text-slate-500' : 'text-violet-400')}>
-                  Reaction
-                </span>
               </div>
             </div>
 
@@ -1803,9 +1800,9 @@ export function ActionBar() {
                 </div>
               )}
 
-              {/* 2-Row Grid Layout */}
-              <div className="grid grid-rows-2 gap-1">
-                {/* Row 1: Core Actions */}
+              {/* Action Buttons Layout - 1 row if no class features, 2 rows if needed */}
+              <div className="flex flex-col gap-1">
+                {/* Core Actions */}
                 <div className="flex items-center justify-center gap-2">
                   <ActionButton
                     icon={<Footprints className="w-5 h-5" />}
@@ -1880,7 +1877,8 @@ export function ActionBar() {
                   />
                 </div>
 
-                {/* Row 2: Class Features & Resources */}
+                {/* Row 2: Class Features (only if any exist) */}
+                {(hasSecondWind || hasActionSurge || hasBattleMedicFeat || hasCunningActionFeature || bonusActionManeuvers.length > 0) && (
                 <div className="flex items-center justify-center gap-2">
                   {/* Second Wind (Fighter bonus action) */}
                   {hasSecondWind && (() => {
@@ -2075,6 +2073,7 @@ export function ActionBar() {
                     </div>
                   )}
                 </div>
+                )}
               </div>
             </div>
 

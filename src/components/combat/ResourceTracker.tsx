@@ -1,5 +1,5 @@
 import { cn } from '@/lib/utils'
-import { Dices, Clover } from 'lucide-react'
+import { Dices, Clover, Star } from 'lucide-react'
 import type { Combatant } from '@/types'
 import {
   hasCombatSuperiority,
@@ -9,6 +9,7 @@ import {
 import {
   getLuckPoints,
   getLuckPointsRemaining,
+  startsWithHeroicInspiration,
 } from '@/engine/originFeats'
 
 interface ResourceTrackerProps {
@@ -32,8 +33,12 @@ export function ResourceTracker({ combatant, compact = false }: ResourceTrackerP
   const hasLucky = maxLuckPoints > 0
   const hasLuckAvailable = currentLuckPoints > 0
 
+  // Check for Heroic Inspiration (Musician feat / Human race)
+  const hasHeroicInspirationSource = startsWithHeroicInspiration(combatant)
+  const hasInspirationAvailable = combatant.heroicInspiration
+
   // If no resources to show, return null
-  if (!hasSupDice && !hasLucky) return null
+  if (!hasSupDice && !hasLucky && !hasHeroicInspirationSource) return null
 
   // Build superiority dice indicators
   const supDiceIndicators: React.ReactNode[] = []
@@ -82,7 +87,7 @@ export function ResourceTracker({ combatant, compact = false }: ResourceTrackerP
 
   return (
     <div className={cn(
-      'flex items-center gap-2 bg-slate-900/80 rounded-lg border border-slate-700/50',
+      'flex flex-col flex-wrap gap-1.5 bg-slate-900/80 rounded-lg border border-slate-700/50',
       compact ? 'px-2 py-1' : 'px-3 py-1.5'
     )}>
       {/* Superiority Dice */}
@@ -146,6 +151,41 @@ export function ResourceTracker({ combatant, compact = false }: ResourceTrackerP
           <div className={cn('flex gap-0.5', compact && 'gap-px')}>
             {luckIndicators}
           </div>
+        </div>
+      )}
+
+      {/* Heroic Inspiration */}
+      {hasHeroicInspirationSource && (
+        <div
+          className={cn(
+            'flex items-center gap-1.5',
+            !hasInspirationAvailable && 'opacity-50'
+          )}
+          title={`Heroic Inspiration: ${hasInspirationAvailable ? 'Available' : 'Used'}`}
+        >
+          <div className="flex items-center gap-1">
+            <Star className={cn(
+              'transition-colors',
+              compact ? 'w-3 h-3' : 'w-3.5 h-3.5',
+              hasInspirationAvailable ? 'text-yellow-400' : 'text-slate-500'
+            )} />
+            <span className={cn(
+              'font-bold uppercase transition-colors',
+              compact ? 'text-[9px]' : 'text-[10px]',
+              hasInspirationAvailable ? 'text-yellow-300' : 'text-slate-500'
+            )}>
+              Insp
+            </span>
+          </div>
+          <div
+            className={cn(
+              'rounded-full transition-colors',
+              compact ? 'w-2 h-2' : 'w-2.5 h-2.5',
+              hasInspirationAvailable
+                ? 'bg-yellow-500 border border-yellow-400'
+                : 'bg-slate-700 border border-slate-600'
+            )}
+          />
         </div>
       )}
     </div>

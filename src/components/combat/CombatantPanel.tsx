@@ -8,6 +8,7 @@ import { getCombatantTokenImage } from '@/lib/tokenImages'
 import { getMaxAttacksPerAction, getSecondWindMaxUses, getIndomitableMaxUses, getIndomitableFeature } from '@/engine/classAbilities'
 import { canAttackTarget } from '@/engine/combat'
 import { hasCombatSuperiority, getMaxSuperiorityDice, getSuperiorityDieSize, getManeuverSaveDC } from '@/engine/maneuvers'
+import { startsWithHeroicInspiration } from '@/engine/originFeats'
 import { getManeuverById } from '@/data/maneuvers'
 import type { Character, Monster, Combatant, FightingStyle, Spell, Weapon } from '@/types'
 import type { Maneuver } from '@/types/maneuver'
@@ -398,6 +399,16 @@ function ClassResources({ combatant, character }: ClassResourcesProps) {
       current: currentUses,
       max: maxUses,
       color: 'bg-violet-500',
+    })
+  }
+
+  // Check for Heroic Inspiration (Musician feat / Human race)
+  if (startsWithHeroicInspiration(combatant)) {
+    resources.push({
+      name: 'Heroic Inspiration',
+      current: combatant.heroicInspiration ? 1 : 0,
+      max: 1,
+      color: 'bg-yellow-500',
     })
   }
 
