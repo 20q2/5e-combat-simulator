@@ -1057,6 +1057,7 @@ export function ActionBar() {
     getBattleMedicTargets,
     useBonusActionManeuver,
     preselectedWeaponId,
+    preselectedSpellId,
   } = state
 
   const navigate = useNavigate()
@@ -1597,6 +1598,22 @@ export function ActionBar() {
       setSelectedAction(undefined)
     }
   }
+
+  // Handle spell preselection from CombatantPanel
+  useEffect(() => {
+    if (!preselectedSpellId || !currentCombatant) return
+    if (currentCombatant.type !== 'character') return
+
+    // Clear the preselection from store
+    useCombatStore.setState({ preselectedSpellId: undefined })
+
+    // Find the spell in available spells
+    const spell = availableSpells.find(s => s.id === preselectedSpellId)
+    if (!spell) return
+
+    // Trigger the same flow as selecting from the spell menu
+    handleSpellSelect(spell)
+  }, [preselectedSpellId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleMoveClick = () => {
     if (selectedAction === 'move') {

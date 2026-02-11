@@ -649,7 +649,7 @@ function TargetActionsPanel({ target, currentCombatant }: { target: Combatant; c
 
 export function CombatantPanel() {
   const state = useCombatStore()
-  const { selectedCombatantId, combatants, phase, preselectWeapon } = state
+  const { selectedCombatantId, combatants, phase, preselectWeapon, preselectSpell } = state
   const currentCombatant = getCurrentCombatant(state)
   const [selectedFeature, setSelectedFeature] = useState<SelectedFeature | null>(null)
 
@@ -866,16 +866,23 @@ export function CombatantPanel() {
                   Spells ({character.knownSpells.length})
                 </div>
                 <div className="flex flex-wrap gap-1">
-                  {character.knownSpells.slice(0, 5).map(spell => (
-                    <span key={spell.id} className="text-xs bg-violet-900/50 text-violet-200 px-2 py-0.5 rounded">
-                      {spell.name}
-                    </span>
-                  ))}
-                  {character.knownSpells.length > 5 && (
-                    <span className="text-xs text-muted-foreground">
-                      +{character.knownSpells.length - 5} more
-                    </span>
-                  )}
+                  {character.knownSpells.map((spell, idx) => {
+                    const canCast = isCurrentTurn && phase === 'combat' && !displayCombatant.hasActed
+                    return (
+                      <button
+                        key={`${spell.id}-${idx}`}
+                        className={cn(
+                          "text-xs bg-violet-900/50 text-violet-200 px-2 py-0.5 rounded transition-colors",
+                          canCast
+                            ? "hover:bg-violet-700/60 hover:text-violet-100 cursor-pointer"
+                            : "cursor-default opacity-80"
+                        )}
+                        onClick={() => canCast && preselectSpell(spell.id)}
+                      >
+                        {spell.name}
+                      </button>
+                    )
+                  })}
                 </div>
               </div>
             )}

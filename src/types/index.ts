@@ -702,6 +702,7 @@ export interface CombatState {
   selectedCombatantId?: string
   selectedAction?: 'move' | 'attack' | 'spell' | 'dash' | 'disengage' | 'dodge' | 'help' | 'hide' | 'ready'
   preselectedWeaponId?: string // Set from CombatantPanel to open attack mode with a specific weapon
+  preselectedSpellId?: string // Set from CombatantPanel to shortcut directly to casting a spell
   targetingMode?: {
     type: 'single' | 'area'
     spell?: Spell

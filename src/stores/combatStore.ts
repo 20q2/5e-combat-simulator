@@ -162,6 +162,7 @@ interface CombatStore extends CombatState {
   selectCombatant: (id: string | undefined) => void
   setSelectedAction: (action: CombatState['selectedAction']) => void
   preselectWeapon: (weaponId: string) => void
+  preselectSpell: (spellId: string) => void
   setHoveredTarget: (id: string | undefined) => void
   setRangeHighlight: (highlight: CombatState['rangeHighlight']) => void
   setAoEPreview: (preview: CombatState['aoePreview']) => void
@@ -375,6 +376,7 @@ const initialState: CombatState = {
   selectedCombatantId: undefined,
   selectedAction: undefined,
   preselectedWeaponId: undefined,
+  preselectedSpellId: undefined,
   targetingMode: undefined,
   hoveredTargetId: undefined,
   damagePopups: [],
@@ -797,6 +799,10 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
 
   preselectWeapon: (weaponId) => {
     set({ selectedAction: 'attack', preselectedWeaponId: weaponId })
+  },
+
+  preselectSpell: (spellId) => {
+    set({ selectedAction: 'spell', preselectedSpellId: spellId })
   },
 
   setHoveredTarget: (id) => {
