@@ -4687,8 +4687,13 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
 
         if (action.type === 'move' && action.targetPosition) {
           get().moveCombatant(current.id, action.targetPosition)
-          // Small delay after move
-          await new Promise((resolve) => setTimeout(resolve, 300))
+
+          // Wait for movement animation to fully complete before proceeding
+          while (get().movementAnimation || get().pendingMovement) {
+            await new Promise((resolve) => setTimeout(resolve, 50))
+          }
+          // Small extra delay for visual clarity
+          await new Promise((resolve) => setTimeout(resolve, 200))
 
           // Get next action after move (monster may have died from opportunity attack)
           const updatedCombatants = get().combatants
@@ -4706,6 +4711,16 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
 
         // Wait for any active projectiles to complete before ending turn
         while (get().activeProjectiles.length > 0) {
+          await new Promise((resolve) => setTimeout(resolve, 50))
+        }
+
+        // Wait for any pending triggers (Shield, Parry, maneuvers) to resolve
+        while (get().pendingTrigger !== undefined) {
+          await new Promise((resolve) => setTimeout(resolve, 50))
+        }
+
+        // Wait for any pending heroic inspiration decisions to resolve
+        while (get().pendingHeroicInspiration !== undefined) {
           await new Promise((resolve) => setTimeout(resolve, 50))
         }
 
