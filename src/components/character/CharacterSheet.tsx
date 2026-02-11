@@ -23,8 +23,10 @@ import {
 import {
   useCharacterStore,
   calculateFinalAbilityScores,
-  calculateHP,
+  calculateMulticlassHP,
   calculateAC,
+  getDraftTotalLevel,
+  getAllDraftAsiSelections,
 } from '@/stores/characterStore'
 import { getAbilityModifier, getProficiencyBonus } from '@/types'
 import { getCharacterTokenImage } from '@/lib/tokenImages'
@@ -166,11 +168,13 @@ export function CharacterSheet() {
   const [showResetConfirm, setShowResetConfirm] = useState(false)
 
   const race = draft.raceId ? getRaceById(draft.raceId) ?? null : null
-  const characterClass = draft.classId ? getClassById(draft.classId) ?? null : null
+  const activeEntries = draft.classEntries.filter(e => e.level > 0)
+  const primaryEntry = activeEntries[0] ?? null
+  const characterClass = primaryEntry ? getClassById(primaryEntry.classId) ?? null : null
+  const totalLevel = getDraftTotalLevel(draft)
   const meleeWeapon = draft.meleeWeaponId ? getWeaponById(draft.meleeWeaponId) ?? null : null
   const rangedWeapon = draft.rangedWeaponId ? getWeaponById(draft.rangedWeaponId) ?? null : null
   const armor = draft.armorId ? getArmorById(draft.armorId) ?? null : null
-  const subclass = characterClass?.subclasses.find((s) => s.id === draft.subclassId)
 
   // Calculate final stats
   const finalAbilityScores = calculateFinalAbilityScores(
@@ -179,21 +183,21 @@ export function CharacterSheet() {
     draft.abilityBonusPlus1,
     draft.abilityBonusMode,
     draft.abilityBonusPlus1Trio,
-    draft.classAsiSelections
+    getAllDraftAsiSelections(draft)
   )
-  const proficiencyBonus = getProficiencyBonus(draft.level)
+  const proficiencyBonus = getProficiencyBonus(totalLevel)
 
   // Collect origin feats from human and background choices
   const originFeats = [draft.humanOriginFeat, draft.backgroundOriginFeat].filter(
     (f): f is NonNullable<typeof f> => f !== null
   )
 
-  const hp = characterClass
-    ? calculateHP(characterClass, draft.level, finalAbilityScores.constitution, originFeats)
+  const hp = activeEntries.length > 0
+    ? calculateMulticlassHP(activeEntries, finalAbilityScores.constitution, originFeats)
     : 0
 
-  const fightingStyles = [draft.fightingStyle, draft.additionalFightingStyle].filter(
-    (s): s is NonNullable<typeof s> => s !== null
+  const fightingStyles = activeEntries.flatMap(e =>
+    [e.fightingStyle, e.additionalFightingStyle].filter((s): s is NonNullable<typeof s> => s !== null)
   )
   const ac = calculateAC(
     armor?.category !== 'shield' ? armor : null,
@@ -202,34 +206,51 @@ export function CharacterSheet() {
     fightingStyles
   )
 
-  // Get features
-  const classFeatures = characterClass
-    ? getClassFeaturesByLevel(characterClass, draft.level)
-    : []
-  const subclassFeatures = characterClass && draft.subclassId
-    ? getSubclassFeaturesByLevel(characterClass, draft.subclassId, draft.level)
-    : []
-
-  // Get spells
-  const cantrips = draft.selectedCantrips.map((id) => getSpellById(id)).filter(Boolean)
-  const spells = draft.selectedSpellIds.map((id) => getSpellById(id)).filter(Boolean)
-
-  // Calculate spell slots for spellcasting classes
-  const spellSlots = useMemo(() => {
-    if (!characterClass?.spellcasting) return undefined
-    const slotProgression = characterClass.spellcasting.spellSlotProgression[draft.level] || []
-    return {
-      1: { max: slotProgression[0] || 0, current: slotProgression[0] || 0 },
-      2: { max: slotProgression[1] || 0, current: slotProgression[1] || 0 },
-      3: { max: slotProgression[2] || 0, current: slotProgression[2] || 0 },
-      4: { max: slotProgression[3] || 0, current: slotProgression[3] || 0 },
-      5: { max: slotProgression[4] || 0, current: slotProgression[4] || 0 },
-      6: { max: slotProgression[5] || 0, current: slotProgression[5] || 0 },
-      7: { max: slotProgression[6] || 0, current: slotProgression[6] || 0 },
-      8: { max: slotProgression[7] || 0, current: slotProgression[7] || 0 },
-      9: { max: slotProgression[8] || 0, current: slotProgression[8] || 0 },
+  // Get features from all class entries
+  const { classFeatures, subclassFeatures } = useMemo(() => {
+    const cf: ReturnType<typeof getClassFeaturesByLevel> = []
+    const sf: ReturnType<typeof getSubclassFeaturesByLevel> = []
+    for (const entry of activeEntries) {
+      const cd = getClassById(entry.classId)
+      if (!cd) continue
+      cf.push(...getClassFeaturesByLevel(cd, entry.level))
+      if (entry.subclassId) {
+        sf.push(...getSubclassFeaturesByLevel(cd, entry.subclassId, entry.level))
+      }
     }
-  }, [characterClass, draft.level])
+    return { classFeatures: cf, subclassFeatures: sf }
+  }, [activeEntries])
+
+  // Get spells from all class entries
+  const cantrips = activeEntries.flatMap(e => e.selectedCantrips).map((id: string) => getSpellById(id)).filter(Boolean)
+  const spells = activeEntries.flatMap(e => e.selectedSpellIds).map((id: string) => getSpellById(id)).filter(Boolean)
+
+  // Calculate spell slots from all spellcasting classes (merged)
+  const spellSlots = useMemo(() => {
+    const mergedSlots = [0, 0, 0, 0, 0, 0, 0, 0, 0]
+    let hasSpellcasting = false
+    for (const entry of activeEntries) {
+      const cd = getClassById(entry.classId)
+      if (!cd?.spellcasting) continue
+      hasSpellcasting = true
+      const slots = cd.spellcasting.spellSlotProgression[entry.level] || []
+      for (let i = 0; i < 9; i++) {
+        mergedSlots[i] = Math.max(mergedSlots[i], slots[i] || 0)
+      }
+    }
+    if (!hasSpellcasting) return undefined
+    return {
+      1: { max: mergedSlots[0], current: mergedSlots[0] },
+      2: { max: mergedSlots[1], current: mergedSlots[1] },
+      3: { max: mergedSlots[2], current: mergedSlots[2] },
+      4: { max: mergedSlots[3], current: mergedSlots[3] },
+      5: { max: mergedSlots[4], current: mergedSlots[4] },
+      6: { max: mergedSlots[5], current: mergedSlots[5] },
+      7: { max: mergedSlots[6], current: mergedSlots[6] },
+      8: { max: mergedSlots[7], current: mergedSlots[7] },
+      9: { max: mergedSlots[8], current: mergedSlots[8] },
+    }
+  }, [activeEntries])
 
   // Get token preview image (custom upload takes priority)
   const autoTokenImage = useMemo(() => {
@@ -294,22 +315,28 @@ export function CharacterSheet() {
                   className="text-xl font-bold h-auto py-1 px-2 border-none bg-transparent focus-visible:ring-1 max-w-[250px]"
                 />
               </div>
-              <div className="flex items-center gap-2 mb-3">
+              <div className="flex items-center gap-2 mb-3 flex-wrap">
                 <span className="text-sm bg-primary/20 text-primary px-2 py-0.5 rounded font-medium">
-                  Level {draft.level}
+                  Level {totalLevel}
                 </span>
-                <span className="text-sm text-muted-foreground flex items-center gap-1.5">
+                <span className="text-sm text-muted-foreground">
                   {race?.name ?? 'No race'}
-                  {characterClass && getClassIcon(characterClass.id) && (
-                    <img src={getClassIcon(characterClass.id)} alt="" className="w-5 h-5 object-contain" />
-                  )}
-                  {characterClass?.name ?? 'No class'}
                 </span>
-                {subclass && (
-                  <span className="text-sm text-amber-400 font-medium">
-                    {subclass.name}
-                  </span>
-                )}
+                {activeEntries.map(entry => {
+                  const cd = getClassById(entry.classId)
+                  const sc = cd?.subclasses.find(s => s.id === entry.subclassId)
+                  return (
+                    <span key={entry.classId} className="text-sm text-muted-foreground flex items-center gap-1.5">
+                      {cd && getClassIcon(cd.id) && (
+                        <img src={getClassIcon(cd.id)} alt="" className="w-5 h-5 object-contain" />
+                      )}
+                      {cd?.name ?? entry.classId} {entry.level}
+                      {sc && (
+                        <span className="text-amber-400 font-medium">{sc.name}</span>
+                      )}
+                    </span>
+                  )
+                })}
               </div>
 
               {/* Core Stats Row */}
@@ -522,7 +549,7 @@ export function CharacterSheet() {
               {(classFeatures.length > 0 || subclassFeatures.length > 0) ? (
                 <div className="space-y-2">
                   {[...classFeatures, ...subclassFeatures].map((feature, idx) => {
-                    const detail = getFeatureDetail(feature, draft.level)
+                    const detail = getFeatureDetail(feature, totalLevel)
                     const isSubclassFeature = subclassFeatures.some(sf => sf.id === feature.id)
                     const isAsi = feature.name === 'Ability Score Improvement'
                     return (
@@ -533,8 +560,8 @@ export function CharacterSheet() {
                         <div className="flex items-center justify-between">
                           <span className={cn("text-sm", isAsi ? "text-muted-foreground" : "font-medium")}>
                             {feature.name}
-                            {isSubclassFeature && subclass && (
-                              <span className="text-muted-foreground font-normal"> — {subclass.name}</span>
+                            {isSubclassFeature && (
+                              <span className="text-muted-foreground font-normal"> — Subclass</span>
                             )}
                           </span>
                           <span className="text-xs text-muted-foreground">Lv.{feature.level}</span>

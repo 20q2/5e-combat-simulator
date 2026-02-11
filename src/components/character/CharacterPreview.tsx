@@ -13,8 +13,10 @@ import {
 import {
   useCharacterStore,
   calculateFinalAbilityScores,
-  calculateHP,
+  calculateMulticlassHP,
   calculateAC,
+  getDraftTotalLevel,
+  getAllDraftAsiSelections,
 } from '@/stores/characterStore'
 import { getAbilityModifier, getProficiencyBonus } from '@/types'
 import { getCharacterTokenImage } from '@/lib/tokenImages'
@@ -45,8 +47,9 @@ export function CharacterPreview() {
   const { draft, setName, setCustomTokenImage } = useCharacterStore()
 
   const race = draft.raceId ? getRaceById(draft.raceId) ?? null : null
-  const characterClass = draft.classId ? getClassById(draft.classId) ?? null : null
-  const subclass = characterClass?.subclasses.find((s) => s.id === draft.subclassId)
+  const primaryEntry = draft.classEntries.find(e => e.level > 0) ?? draft.classEntries[0] ?? null
+  const characterClass = primaryEntry ? getClassById(primaryEntry.classId) ?? null : null
+  const totalLevel = getDraftTotalLevel(draft)
   const meleeWeapon = draft.meleeWeaponId ? getWeaponById(draft.meleeWeaponId) ?? null : null
   const rangedWeapon = draft.rangedWeaponId ? getWeaponById(draft.rangedWeaponId) ?? null : null
   const armor = draft.armorId ? getArmorById(draft.armorId) ?? null : null
@@ -57,17 +60,19 @@ export function CharacterPreview() {
     draft.abilityBonusPlus2,
     draft.abilityBonusPlus1,
     draft.abilityBonusMode,
-    draft.abilityBonusPlus1Trio
+    draft.abilityBonusPlus1Trio,
+    getAllDraftAsiSelections(draft)
   )
-  const proficiencyBonus = getProficiencyBonus(draft.level)
+  const proficiencyBonus = getProficiencyBonus(totalLevel)
 
   // Collect origin feats from human and background choices
   const originFeats = [draft.humanOriginFeat, draft.backgroundOriginFeat].filter(
     (f): f is NonNullable<typeof f> => f !== null
   )
 
-  const hp = characterClass
-    ? calculateHP(characterClass, draft.level, finalAbilityScores.constitution, originFeats)
+  const activeEntries = draft.classEntries.filter(e => e.level > 0)
+  const hp = activeEntries.length > 0
+    ? calculateMulticlassHP(activeEntries, finalAbilityScores.constitution, originFeats)
     : 0
 
   const ac = calculateAC(
@@ -76,13 +81,20 @@ export function CharacterPreview() {
     finalAbilityScores.dexterity
   )
 
-  // Get features
-  const classFeatures = characterClass
-    ? getClassFeaturesByLevel(characterClass, draft.level)
-    : []
-  const subclassFeatures = characterClass && draft.subclassId
-    ? getSubclassFeaturesByLevel(characterClass, draft.subclassId, draft.level)
-    : []
+  // Get features from all class entries
+  const allClassFeatures = useMemo(() => {
+    const features: ReturnType<typeof getClassFeaturesByLevel> = []
+    for (const entry of draft.classEntries) {
+      if (entry.level <= 0) continue
+      const cd = getClassById(entry.classId)
+      if (!cd) continue
+      features.push(...getClassFeaturesByLevel(cd, entry.level))
+      if (entry.subclassId) {
+        features.push(...getSubclassFeaturesByLevel(cd, entry.subclassId, entry.level))
+      }
+    }
+    return features
+  }, [draft.classEntries])
 
   // Get token preview image (custom upload takes priority)
   const autoTokenImage = useMemo(() => {
@@ -129,7 +141,7 @@ export function CharacterPreview() {
             )}
             {/* Level badge */}
             <div className="absolute -bottom-1 -right-1 w-10 h-10 rounded-full bg-primary flex items-center justify-center text-primary-foreground font-bold text-lg border-2 border-background shadow-lg z-10">
-              {draft.level}
+              {totalLevel}
             </div>
           </div>
 
@@ -145,9 +157,20 @@ export function CharacterPreview() {
           <div className="text-sm text-muted-foreground">
             {race?.name ?? <span className="text-slate-500">Select Race</span>}
             {' '}
-            {characterClass?.name ?? <span className="text-slate-500">Select Class</span>}
-            {subclass && (
-              <span className="text-primary"> ({subclass.name})</span>
+            {activeEntries.length > 0 ? (
+              activeEntries.map((entry, i) => {
+                const cd = getClassById(entry.classId)
+                const sc = cd?.subclasses.find(s => s.id === entry.subclassId)
+                return (
+                  <span key={entry.classId}>
+                    {i > 0 && ' / '}
+                    {cd?.name ?? entry.classId} {entry.level}
+                    {sc && <span className="text-primary"> ({sc.name})</span>}
+                  </span>
+                )
+              })
+            ) : (
+              <span className="text-slate-500">Select Class</span>
             )}
           </div>
         </div>
@@ -251,14 +274,14 @@ export function CharacterPreview() {
         )}
 
         {/* Class Features */}
-        {(classFeatures.length > 0 || subclassFeatures.length > 0) && (
+        {allClassFeatures.length > 0 && (
           <div>
             <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1">
               <Sparkles className="w-3 h-3" />
               Features
             </h4>
             <div className="space-y-1 max-h-[150px] overflow-y-auto">
-              {[...classFeatures, ...subclassFeatures].map((feature, idx) => (
+              {allClassFeatures.map((feature, idx) => (
                 <div
                   key={`${feature.name}-${idx}`}
                   className="text-xs px-2 py-1.5 bg-muted/30 rounded flex justify-between items-center"

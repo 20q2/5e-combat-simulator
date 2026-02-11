@@ -89,23 +89,32 @@ function SpellDetails({ spell }: { spell: Spell }) {
   )
 }
 
-export function SpellSelector() {
-  const { draft, toggleSpell, toggleCantrip } = useCharacterStore()
+/**
+ * Per-class spell section that handles one class's spell selection.
+ */
+function ClassSpellSection({ classId }: { classId: string }) {
+  const draft = useCharacterStore((state) => state.draft)
+  const toggleClassSpell = useCharacterStore((state) => state.toggleClassSpell)
+  const toggleClassCantrip = useCharacterStore((state) => state.toggleClassCantrip)
 
-  const selectedClass = draft.classId ? getClassById(draft.classId) : null
+  const entry = draft.classEntries.find(e => e.classId === classId)
+  const selectedClass = getClassById(classId) ?? null
+  const classLevel = entry?.level ?? 0
   const spellcasting = selectedClass?.spellcasting
+
+  const selectedSpellIds = entry?.selectedSpellIds ?? []
+  const selectedCantrips = entry?.selectedCantrips ?? []
 
   // Calculate max spell level based on class and level
   const maxSpellLevel = useMemo(() => {
     if (!spellcasting) return 0
-    const slots = spellcasting.spellSlotProgression[draft.level]
+    const slots = spellcasting.spellSlotProgression[classLevel]
     if (!slots) return 0
-    // Find highest level with slots
     for (let i = slots.length - 1; i >= 0; i--) {
       if (slots[i] > 0) return i + 1
     }
     return 0
-  }, [spellcasting, draft.level])
+  }, [spellcasting, classLevel])
 
   // Get available spells
   const availableSpells = useMemo(() => {
@@ -113,38 +122,151 @@ export function SpellSelector() {
     return getSpellsForClassAtLevel(selectedClass.name, maxSpellLevel)
   }, [selectedClass, maxSpellLevel])
 
-  // Separate cantrips and leveled spells
   const cantrips = availableSpells.filter((s) => s.level === 0)
   const leveledSpells = availableSpells.filter((s) => s.level > 0)
 
-  // Group leveled spells by level
   const spellsByLevel = useMemo(() => {
     const grouped: Record<number, Spell[]> = {}
     for (const spell of leveledSpells) {
-      if (!grouped[spell.level]) {
-        grouped[spell.level] = []
-      }
+      if (!grouped[spell.level]) grouped[spell.level] = []
       grouped[spell.level].push(spell)
     }
     return grouped
   }, [leveledSpells])
 
-  // Calculate limits
-  const cantripsKnown = spellcasting?.cantripsKnownProgression[draft.level - 1] ?? 0
-  const spellsKnown = spellcasting?.spellsKnownProgression?.[draft.level - 1]
+  const cantripsKnown = spellcasting?.cantripsKnownProgression[classLevel - 1] ?? 0
+  const spellsKnown = spellcasting?.spellsKnownProgression?.[classLevel - 1]
   const isPreparedCaster = spellcasting?.preparedCaster ?? false
+  const preparedLimit = isPreparedCaster ? classLevel + 3 : undefined
 
-  // For prepared casters, they can prepare INT/WIS mod + level spells
-  // We'll just show a reasonable limit for now
-  const preparedLimit = isPreparedCaster ? draft.level + 3 : undefined
-
-  const selectedSpell = draft.selectedSpellIds.length > 0
-    ? getSpellById(draft.selectedSpellIds[draft.selectedSpellIds.length - 1])
-    : draft.selectedCantrips.length > 0
-      ? getSpellById(draft.selectedCantrips[draft.selectedCantrips.length - 1])
+  const lastSelectedId = selectedSpellIds.length > 0
+    ? selectedSpellIds[selectedSpellIds.length - 1]
+    : selectedCantrips.length > 0
+      ? selectedCantrips[selectedCantrips.length - 1]
       : null
+  const selectedSpell = lastSelectedId ? getSpellById(lastSelectedId) : null
 
-  if (!spellcasting) {
+  if (!spellcasting) return null
+
+  return (
+    <div className="space-y-4">
+      <h3 className="text-lg font-semibold flex items-center gap-2">
+        <Wand2 className="w-5 h-5 text-violet-400" />
+        {selectedClass?.name} Spells (Level {classLevel})
+      </h3>
+      <div className="grid md:grid-cols-3 gap-6">
+        {/* Cantrips */}
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-lg flex items-center gap-2">
+              <Sparkles className="w-5 h-5 text-cyan-400" />
+              Cantrips
+            </CardTitle>
+            <CardDescription>
+              Selected: {selectedCantrips.length} / {cantripsKnown}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2 max-h-[400px] overflow-y-auto pr-2">
+              {cantrips.map((spell) => (
+                <SpellCard
+                  key={spell.id}
+                  spell={spell}
+                  selected={selectedCantrips.includes(spell.id)}
+                  onToggle={() => toggleClassCantrip(classId, spell.id)}
+                  disabled={
+                    selectedCantrips.length >= cantripsKnown &&
+                    !selectedCantrips.includes(spell.id)
+                  }
+                />
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Leveled Spells */}
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-lg flex items-center gap-2">
+              <BookOpen className="w-5 h-5 text-violet-400" />
+              Spells
+            </CardTitle>
+            <CardDescription>
+              {isPreparedCaster ? (
+                <>Prepared: {selectedSpellIds.length} (suggested max: {preparedLimit})</>
+              ) : (
+                <>Known: {selectedSpellIds.length}{spellsKnown ? ` / ${spellsKnown}` : ''}</>
+              )}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4 max-h-[400px] overflow-y-auto pr-2">
+              {Object.entries(spellsByLevel)
+                .sort(([a], [b]) => parseInt(a) - parseInt(b))
+                .map(([level, spells]) => (
+                  <div key={level}>
+                    <h4 className="font-medium text-sm text-muted-foreground mb-2">
+                      Level {level}
+                    </h4>
+                    <div className="space-y-2">
+                      {spells.map((spell) => (
+                        <SpellCard
+                          key={spell.id}
+                          spell={spell}
+                          selected={selectedSpellIds.includes(spell.id)}
+                          onToggle={() => toggleClassSpell(classId, spell.id)}
+                          disabled={
+                            !isPreparedCaster &&
+                            spellsKnown !== undefined &&
+                            selectedSpellIds.length >= spellsKnown &&
+                            !selectedSpellIds.includes(spell.id)
+                          }
+                        />
+                      ))}
+                    </div>
+                  </div>
+                ))}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Spell Details */}
+        <div>
+          {selectedSpell ? (
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <Info className="w-5 h-5 text-blue-400" />
+                  Spell Details
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <SpellDetails spell={selectedSpell} />
+              </CardContent>
+            </Card>
+          ) : (
+            <Card className="h-full flex items-center justify-center">
+              <CardContent className="text-center text-muted-foreground py-12">
+                Select a spell to see its details
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export function SpellSelector() {
+  const { draft } = useCharacterStore()
+
+  // Find all class entries that have spellcasting
+  const spellcastingEntries = draft.classEntries.filter(entry => {
+    const classData = getClassById(entry.classId)
+    return classData?.spellcasting !== undefined
+  })
+
+  if (spellcastingEntries.length === 0) {
     return (
       <Card>
         <CardHeader>
@@ -153,117 +275,21 @@ export function SpellSelector() {
             Spells
           </CardTitle>
           <CardDescription>
-            {selectedClass
-              ? `${selectedClass.name} is not a spellcasting class.`
-              : 'Select a class first to see spell options.'}
+            No spellcasting classes selected.
           </CardDescription>
         </CardHeader>
         <CardContent className="text-center text-muted-foreground py-8">
-          No spells available for this class.
+          No spells available for your current classes.
         </CardContent>
       </Card>
     )
   }
 
   return (
-    <div className="grid md:grid-cols-3 gap-6">
-      {/* Cantrips */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-lg flex items-center gap-2">
-            <Sparkles className="w-5 h-5 text-cyan-400" />
-            Cantrips
-          </CardTitle>
-          <CardDescription>
-            Selected: {draft.selectedCantrips.length} / {cantripsKnown}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-2 max-h-[400px] overflow-y-auto pr-2">
-            {cantrips.map((spell) => (
-              <SpellCard
-                key={spell.id}
-                spell={spell}
-                selected={draft.selectedCantrips.includes(spell.id)}
-                onToggle={() => toggleCantrip(spell.id)}
-                disabled={
-                  draft.selectedCantrips.length >= cantripsKnown &&
-                  !draft.selectedCantrips.includes(spell.id)
-                }
-              />
-            ))}
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Leveled Spells */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-lg flex items-center gap-2">
-            <BookOpen className="w-5 h-5 text-violet-400" />
-            Spells
-          </CardTitle>
-          <CardDescription>
-            {isPreparedCaster ? (
-              <>Prepared: {draft.selectedSpellIds.length} (suggested max: {preparedLimit})</>
-            ) : (
-              <>Known: {draft.selectedSpellIds.length}{spellsKnown ? ` / ${spellsKnown}` : ''}</>
-            )}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-4 max-h-[400px] overflow-y-auto pr-2">
-            {Object.entries(spellsByLevel)
-              .sort(([a], [b]) => parseInt(a) - parseInt(b))
-              .map(([level, spells]) => (
-                <div key={level}>
-                  <h4 className="font-medium text-sm text-muted-foreground mb-2">
-                    Level {level}
-                  </h4>
-                  <div className="space-y-2">
-                    {spells.map((spell) => (
-                      <SpellCard
-                        key={spell.id}
-                        spell={spell}
-                        selected={draft.selectedSpellIds.includes(spell.id)}
-                        onToggle={() => toggleSpell(spell.id)}
-                        disabled={
-                          !isPreparedCaster &&
-                          spellsKnown !== undefined &&
-                          draft.selectedSpellIds.length >= spellsKnown &&
-                          !draft.selectedSpellIds.includes(spell.id)
-                        }
-                      />
-                    ))}
-                  </div>
-                </div>
-              ))}
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Spell Details */}
-      <div>
-        {selectedSpell ? (
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-lg flex items-center gap-2">
-                <Info className="w-5 h-5 text-blue-400" />
-                Spell Details
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <SpellDetails spell={selectedSpell} />
-            </CardContent>
-          </Card>
-        ) : (
-          <Card className="h-full flex items-center justify-center">
-            <CardContent className="text-center text-muted-foreground py-12">
-              Select a spell to see its details
-            </CardContent>
-          </Card>
-        )}
-      </div>
+    <div className="space-y-8">
+      {spellcastingEntries.map(entry => (
+        <ClassSpellSection key={entry.classId} classId={entry.classId} />
+      ))}
     </div>
   )
 }

@@ -59,25 +59,27 @@ export function WeaponMasterySelector() {
   const draft = useCharacterStore((state) => state.draft)
   const setMasteredWeapons = useCharacterStore((state) => state.setMasteredWeapons)
 
-  // Get class weapon mastery feature
-  const characterClass = draft.classId ? getClassById(draft.classId) : null
-
+  // Get class weapon mastery feature — check all class entries
   const masteryFeature = useMemo(() => {
-    if (!characterClass) return null
+    for (const entry of draft.classEntries) {
+      if (entry.level <= 0) continue
+      const cd = getClassById(entry.classId)
+      if (!cd) continue
 
-    const allFeatures = [
-      ...characterClass.features,
-      ...(characterClass.subclasses.find(s => s.id === draft.subclassId)?.features ?? []),
-    ]
+      const allFeatures = [
+        ...cd.features,
+        ...(cd.subclasses.find(s => s.id === entry.subclassId)?.features ?? []),
+      ]
 
-    for (const feature of allFeatures) {
-      if (isWeaponMasteryFeature(feature) && feature.level <= draft.level) {
-        return feature
+      for (const feature of allFeatures) {
+        if (isWeaponMasteryFeature(feature) && feature.level <= entry.level) {
+          return feature
+        }
       }
     }
 
     return null
-  }, [characterClass, draft.subclassId, draft.level])
+  }, [draft.classEntries])
 
   // Get equipped weapons
   const meleeWeapon = draft.meleeWeaponId ? getWeaponById(draft.meleeWeaponId) : null

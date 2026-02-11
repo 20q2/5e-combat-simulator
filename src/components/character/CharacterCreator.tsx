@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { useCharacterStore } from '@/stores/characterStore'
@@ -17,6 +17,10 @@ import { CharacterSaveSuccess } from './CharacterSaveSuccess'
 import type { Character } from '@/types'
 import { getClassById } from '@/data'
 import {
+  isFightingStyleFeature,
+  isCombatSuperiorityFeature,
+} from '@/types'
+import {
   Brain,
   Users,
   BookOpen,
@@ -32,33 +36,31 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 
-const STEPS: { id: number; label: string; component: React.ComponentType; icon: LucideIcon }[] = [
-  { id: 0, label: 'Abilities', component: AbilityScoreSelector, icon: Brain },
-  { id: 1, label: 'Race', component: RaceSelector, icon: Users },
-  { id: 2, label: 'Background', component: BackgroundSelector, icon: BookOpen },
-  { id: 3, label: 'Class', component: ClassSelector, icon: Crown },
-  { id: 4, label: 'Class Options', component: SubclassSelector, icon: Zap },
-  { id: 5, label: 'Spells', component: SpellSelector, icon: Sparkles },
-  { id: 6, label: 'Equipment', component: EquipmentSelector, icon: Shield },
-  { id: 7, label: 'Review', component: CharacterSheet, icon: ScrollText },
-]
+interface StepDefinition {
+  id: string
+  label: string
+  component: React.ComponentType
+  icon: LucideIcon
+}
 
 function StepIndicator({
   steps,
-  currentStep,
+  currentStepId,
   onStepClick,
 }: {
-  steps: typeof STEPS
-  currentStep: number
-  onStepClick: (step: number) => void
+  steps: StepDefinition[]
+  currentStepId: string
+  onStepClick: (stepId: string) => void
 }) {
+  const currentIndex = steps.findIndex(s => s.id === currentStepId)
+
   return (
     <nav className="mb-8">
       <ol className="flex items-center justify-center gap-2 flex-wrap">
         {steps.map((step, index) => {
           const Icon = step.icon
-          const isCompleted = currentStep > step.id
-          const isCurrent = currentStep === step.id
+          const isCompleted = index < currentIndex
+          const isCurrent = step.id === currentStepId
 
           return (
             <li key={step.id} className="flex items-center">
@@ -103,6 +105,33 @@ function StepIndicator({
   )
 }
 
+/**
+ * Check if a class entry has configurable options (subclass, fighting style, maneuvers, ASIs)
+ */
+function classHasOptions(classId: string, subclassId: string | null, classLevel: number): boolean {
+  const characterClass = getClassById(classId)
+  if (!characterClass) return false
+
+  // Subclass at level 3+
+  if (classLevel >= 3 && characterClass.subclasses.length > 0) return true
+
+  const allFeatures = [
+    ...characterClass.features,
+    ...(characterClass.subclasses.find(s => s.id === subclassId)?.features ?? []),
+  ]
+
+  // Fighting Style
+  if (allFeatures.some(f => isFightingStyleFeature(f) && f.level <= classLevel && f.availableStyles && f.availableStyles.length > 0)) return true
+  // Combat Superiority
+  if (allFeatures.some(f => isCombatSuperiorityFeature(f) && f.level <= classLevel)) return true
+  // Weapon Mastery
+  if (allFeatures.some(f => f.type === 'weapon_mastery' && f.level <= classLevel)) return true
+  // ASI
+  if (characterClass.features.some(f => f.type === 'generic' && f.name === 'Ability Score Improvement' && f.level <= classLevel)) return true
+
+  return false
+}
+
 export function CharacterCreator() {
   const { currentStep, setCurrentStep, draft, saveCharacter, resetDraft } = useCharacterStore()
   const navigate = useNavigate()
@@ -118,119 +147,134 @@ export function CharacterCreator() {
     setShowSuccessModal(true)
   }
 
-  const selectedClass = draft.classId ? getClassById(draft.classId) : null
-  const hasSpellcasting = selectedClass?.spellcasting !== undefined
+  // Compute visible steps dynamically based on draft.classEntries
+  const visibleSteps = useMemo((): StepDefinition[] => {
+    const steps: StepDefinition[] = [
+      { id: 'abilities', label: 'Abilities', component: AbilityScoreSelector, icon: Brain },
+      { id: 'race', label: 'Race', component: RaceSelector, icon: Users },
+      { id: 'background', label: 'Background', component: BackgroundSelector, icon: BookOpen },
+      { id: 'class', label: 'Class', component: ClassSelector, icon: Crown },
+    ]
 
-  // Check if character has selectable class/subclass options
-  const hasSubclassFeatures = selectedClass
-    ? (() => {
-        // Show if needs subclass selection (level 3+)
-        if (draft.level >= 3 && selectedClass.subclasses.length > 0) return true
-
-        const allFeatures = [
-          ...selectedClass.features,
-          ...(selectedClass.subclasses.find(s => s.id === draft.subclassId)?.features ?? []),
-        ]
-
-        // Check for Fighting Style, Maneuvers, or Weapon Mastery
-        return allFeatures.some(f => {
-          if (f.level > draft.level) return false
-          if (f.type === 'fighting_style' && f.availableStyles && f.availableStyles.length > 0) return true
-          if (f.type === 'combat_superiority') return true
-          if (f.type === 'weapon_mastery') return true
-          return false
+    // For each class with levels, add a "Class Options" step if it has configurable options
+    for (const entry of draft.classEntries) {
+      if (classHasOptions(entry.classId, entry.subclassId, entry.level)) {
+        const classData = getClassById(entry.classId)
+        const className = classData?.name ?? entry.classId
+        steps.push({
+          id: `class-options-${entry.classId}`,
+          label: `Options: ${className}`,
+          component: () => <SubclassSelector classId={entry.classId} />,
+          icon: Zap,
         })
-      })()
-    : false
+      }
+    }
 
-  // Filter steps - skip class options/spells if not applicable
-  const visibleSteps = STEPS.filter((step) => {
-    if (step.label === 'Class Options' && !hasSubclassFeatures) return false
-    if (step.label === 'Spells' && !hasSpellcasting) return false
-    return true
-  })
+    // Spells step if any class has spellcasting
+    const hasAnySpellcasting = draft.classEntries.some(entry => {
+      const classData = getClassById(entry.classId)
+      return classData?.spellcasting !== undefined
+    })
+    if (hasAnySpellcasting) {
+      steps.push({ id: 'spells', label: 'Spells', component: SpellSelector, icon: Sparkles })
+    }
 
-  // Map current step to visible step index
-  const visibleStepIndex = visibleSteps.findIndex((s) => s.id === currentStep)
-  const actualCurrentStep = visibleStepIndex >= 0 ? visibleStepIndex : 0
+    steps.push({ id: 'equipment', label: 'Equipment', component: EquipmentSelector, icon: Shield })
+    steps.push({ id: 'review', label: 'Review', component: CharacterSheet, icon: ScrollText })
 
-  const CurrentStepComponent = visibleSteps[actualCurrentStep]?.component ?? AbilityScoreSelector
+    return steps
+  }, [draft.classEntries])
+
+  // Find current step in visible steps
+  const currentStepIndex = visibleSteps.findIndex(s => s.id === currentStep)
+  const actualCurrentIndex = currentStepIndex >= 0 ? currentStepIndex : 0
+  const currentStepDef = visibleSteps[actualCurrentIndex]
+
+  const CurrentStepComponent = currentStepDef?.component ?? AbilityScoreSelector
 
   const handleNext = () => {
-    const nextVisibleIndex = actualCurrentStep + 1
-    if (nextVisibleIndex < visibleSteps.length) {
-      setCurrentStep(visibleSteps[nextVisibleIndex].id)
+    const nextIndex = actualCurrentIndex + 1
+    if (nextIndex < visibleSteps.length) {
+      setCurrentStep(visibleSteps[nextIndex].id)
     }
   }
 
   const handlePrev = () => {
-    const prevVisibleIndex = actualCurrentStep - 1
-    if (prevVisibleIndex >= 0) {
-      setCurrentStep(visibleSteps[prevVisibleIndex].id)
+    const prevIndex = actualCurrentIndex - 1
+    if (prevIndex >= 0) {
+      setCurrentStep(visibleSteps[prevIndex].id)
     }
   }
 
-  const handleStepClick = (stepId: number) => {
-    // Check if the step is visible
-    if (visibleSteps.some((s) => s.id === stepId)) {
+  const handleStepClick = (stepId: string) => {
+    if (visibleSteps.some(s => s.id === stepId)) {
       setCurrentStep(stepId)
     }
   }
 
-  const isFirstStep = actualCurrentStep === 0
-  const isReviewStep = visibleSteps[actualCurrentStep]?.label === 'Review'
+  const isFirstStep = actualCurrentIndex === 0
+  const isReviewStep = currentStepDef?.id === 'review'
 
   // Validation for next button
   const canProceed = () => {
-    const step = visibleSteps[actualCurrentStep]
-    switch (step?.label) {
-      case 'Race':
+    const step = currentStepDef
+    if (!step) return true
+
+    switch (step.id) {
+      case 'race':
         return !!draft.raceId
-      case 'Background':
+      case 'background':
         return !!draft.backgroundId && !!draft.backgroundOriginFeat
-      case 'Class':
-        return !!draft.classId
-      case 'Class Options': {
-        if (!selectedClass) return true
+      case 'class':
+        return draft.classEntries.length > 0 && draft.classEntries.some(e => e.level > 0)
+      default: {
+        // Class options steps: validate per-class
+        if (step.id.startsWith('class-options-')) {
+          const classId = step.id.replace('class-options-', '')
+          const entry = draft.classEntries.find(e => e.classId === classId)
+          if (!entry) return true
 
-        // Check Subclass requirement (level 3+)
-        if (draft.level >= 3 && selectedClass.subclasses.length > 0 && !draft.subclassId) {
-          return false
-        }
+          const characterClass = getClassById(classId)
+          if (!characterClass) return true
 
-        const allFeatures = [
-          ...selectedClass.features,
-          ...(selectedClass.subclasses.find(s => s.id === draft.subclassId)?.features ?? []),
-        ]
+          // Check Subclass requirement (level 3+)
+          if (entry.level >= 3 && characterClass.subclasses.length > 0 && !entry.subclassId) {
+            return false
+          }
 
-        // Check Fighting Style requirement
-        const fightingStyleFeature = allFeatures.find(f =>
-          f.type === 'fighting_style' && f.level <= draft.level && f.availableStyles && f.availableStyles.length > 0
-        )
-        if (fightingStyleFeature && !draft.fightingStyle) return false
+          const allFeatures = [
+            ...characterClass.features,
+            ...(characterClass.subclasses.find(s => s.id === entry.subclassId)?.features ?? []),
+          ]
 
-        // Check Maneuvers requirement
-        const combatSuperiorityFeature = allFeatures.find(f =>
-          f.type === 'combat_superiority' && f.level <= draft.level
-        )
-        if (combatSuperiorityFeature) {
-          // Get required maneuver count
-          let maneuversRequired = (combatSuperiorityFeature as any).maneuversKnown || 0
-          const scalingLevels = (combatSuperiorityFeature as any).maneuversKnownAtLevels
-          if (scalingLevels) {
-            for (const [lvl, count] of Object.entries(scalingLevels)) {
-              if (draft.level >= parseInt(lvl)) {
-                maneuversRequired = count as number
+          // Check Fighting Style requirement
+          const fightingStyleFeature = allFeatures.find(f =>
+            isFightingStyleFeature(f) && f.level <= entry.level && f.availableStyles && f.availableStyles.length > 0
+          )
+          if (fightingStyleFeature && !entry.fightingStyle) return false
+
+          // Check Maneuvers requirement
+          const combatSuperiorityFeature = allFeatures.find(f =>
+            isCombatSuperiorityFeature(f) && f.level <= entry.level
+          )
+          if (combatSuperiorityFeature) {
+            let maneuversRequired = (combatSuperiorityFeature as any).maneuversKnown || 0
+            const scalingLevels = (combatSuperiorityFeature as any).maneuversKnownAtLevels
+            if (scalingLevels) {
+              for (const [lvl, count] of Object.entries(scalingLevels)) {
+                if (entry.level >= parseInt(lvl)) {
+                  maneuversRequired = count as number
+                }
               }
             }
+            if (entry.selectedManeuverIds.length < maneuversRequired) return false
           }
-          if (draft.selectedManeuverIds.length < maneuversRequired) return false
+
+          return true
         }
 
         return true
       }
-      default:
-        return true
     }
   }
 
@@ -238,7 +282,7 @@ export function CharacterCreator() {
     <div className="max-w-7xl mx-auto">
       <StepIndicator
         steps={visibleSteps}
-        currentStep={visibleSteps[actualCurrentStep]?.id ?? 0}
+        currentStepId={currentStepDef?.id ?? 'abilities'}
         onStepClick={handleStepClick}
       />
 

@@ -136,7 +136,6 @@ function ArmorCard({
 export function EquipmentSelector() {
   const { draft, setMeleeWeapon, setRangedWeapon, setOffhandWeapon, setArmor, setShield } = useCharacterStore()
 
-  const selectedClass = draft.classId ? getClassById(draft.classId) : null
   const weapons = getAllWeapons()
   const armors = getAllArmors()
 
@@ -151,22 +150,43 @@ export function EquipmentSelector() {
   const strMod = getAbilityModifier(finalAbilityScores.strength)
   const dexMod = getAbilityModifier(finalAbilityScores.dexterity)
 
+  // Aggregate weapon and armor proficiencies from all classes
+  const allWeaponProficiencies = useMemo(() => {
+    const profs = new Set<string>()
+    for (const entry of draft.classEntries) {
+      if (entry.level <= 0) continue
+      const cd = getClassById(entry.classId)
+      if (cd) cd.weaponProficiencies.forEach(p => profs.add(p))
+    }
+    return [...profs]
+  }, [draft.classEntries])
+
+  const allArmorProficiencies = useMemo(() => {
+    const profs = new Set<string>()
+    for (const entry of draft.classEntries) {
+      if (entry.level <= 0) continue
+      const cd = getClassById(entry.classId)
+      if (cd) cd.armorProficiencies.forEach(p => profs.add(p))
+    }
+    return [...profs]
+  }, [draft.classEntries])
+
   // Filter equipment by class proficiencies
   const availableWeapons = useMemo(() => {
-    if (!selectedClass) return weapons
+    if (allWeaponProficiencies.length === 0) return weapons
     return weapons.filter((w) => {
       // Check category proficiency
-      if (selectedClass.weaponProficiencies.includes(w.category)) return true
-      if (selectedClass.weaponProficiencies.includes('simple') && w.category === 'simple') return true
-      if (selectedClass.weaponProficiencies.includes('martial') && w.category === 'martial') return true
+      if (allWeaponProficiencies.includes(w.category)) return true
+      if (allWeaponProficiencies.includes('simple') && w.category === 'simple') return true
+      if (allWeaponProficiencies.includes('martial') && w.category === 'martial') return true
       // Check specific weapon proficiency
-      if (selectedClass.weaponProficiencies.some((p) =>
+      if (allWeaponProficiencies.some((p) =>
         w.name.toLowerCase().includes(p.toLowerCase()) ||
         p.toLowerCase().includes(w.name.toLowerCase())
       )) return true
       return false
     })
-  }, [selectedClass, weapons])
+  }, [allWeaponProficiencies, weapons])
 
   // Separate armors by category (excluding shields)
   const armorsByCategory = useMemo(() => {
@@ -182,11 +202,11 @@ export function EquipmentSelector() {
 
   // Check armor proficiency
   const canUseArmor = (armor: Armor): boolean => {
-    if (!selectedClass) return true
-    return selectedClass.armorProficiencies.includes(armor.category)
+    if (allArmorProficiencies.length === 0) return true
+    return allArmorProficiencies.includes(armor.category)
   }
 
-  const canUseShield = selectedClass?.armorProficiencies.includes('shields') ?? true
+  const canUseShield = allArmorProficiencies.length === 0 || allArmorProficiencies.includes('shields')
 
   // Get selected items
   const selectedMeleeWeapon = draft.meleeWeaponId ? getWeaponById(draft.meleeWeaponId) : null
@@ -231,9 +251,9 @@ export function EquipmentSelector() {
           </CardTitle>
           <CardDescription>
             Choose a melee weapon and/or a ranged weapon
-            {selectedClass && (
+            {allWeaponProficiencies.length > 0 && (
               <span className="block text-xs mt-1">
-                Proficient with: {selectedClass.weaponProficiencies.join(', ')}
+                Proficient with: {allWeaponProficiencies.join(', ')}
               </span>
             )}
           </CardDescription>
@@ -413,11 +433,9 @@ export function EquipmentSelector() {
           </CardTitle>
           <CardDescription>
             Choose your armor (Preview AC: {previewAC})
-            {selectedClass && (
+            {allArmorProficiencies.length > 0 && (
               <span className="block text-xs mt-1">
-                Proficient with: {selectedClass.armorProficiencies.length > 0
-                  ? selectedClass.armorProficiencies.join(', ')
-                  : 'None'}
+                Proficient with: {allArmorProficiencies.join(', ')}
               </span>
             )}
           </CardDescription>

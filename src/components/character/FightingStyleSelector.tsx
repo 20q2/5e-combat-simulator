@@ -158,60 +158,55 @@ function FightingStyleSelectorInner({
   )
 }
 
-export function FightingStyleSelector() {
+export function FightingStyleSelector({ classId }: { classId: string }) {
   const draft = useCharacterStore((state) => state.draft)
-  const setFightingStyle = useCharacterStore((state) => state.setFightingStyle)
-  const setAdditionalFightingStyle = useCharacterStore((state) => state.setAdditionalFightingStyle)
+  const setClassFightingStyle = useCharacterStore((state) => state.setClassFightingStyle)
+  const setClassAdditionalFightingStyle = useCharacterStore((state) => state.setClassAdditionalFightingStyle)
 
-  const characterClass = draft.classId ? getClassById(draft.classId) : null
+  const entry = draft.classEntries.find(e => e.classId === classId)
+  const characterClass = getClassById(classId) ?? null
+  const classLevel = entry?.level ?? 0
 
   // Find fighting style feature for current level
   const fightingStyleFeature = useMemo((): FightingStyleFeature | null => {
-    if (!characterClass) return null
+    if (!characterClass || !entry) return null
 
     const allFeatures = [
       ...characterClass.features,
-      ...(characterClass.subclasses.find(s => s.id === draft.subclassId)?.features ?? []),
+      ...(characterClass.subclasses.find(s => s.id === entry.subclassId)?.features ?? []),
     ]
 
     for (const feature of allFeatures) {
-      if (isFightingStyleFeature(feature) && feature.level <= draft.level) {
+      if (isFightingStyleFeature(feature) && feature.level <= classLevel) {
         return feature
       }
     }
 
     return null
-  }, [characterClass, draft.subclassId, draft.level])
+  }, [characterClass, entry?.subclassId, classLevel])
 
   // Find additional fighting style feature (Champion level 10)
   const additionalFightingStyleFeature = useMemo(() => {
-    if (!characterClass) return null
+    if (!characterClass || !entry) return null
 
     const allFeatures = [
       ...characterClass.features,
-      ...(characterClass.subclasses.find(s => s.id === draft.subclassId)?.features ?? []),
+      ...(characterClass.subclasses.find(s => s.id === entry.subclassId)?.features ?? []),
     ]
 
     for (const feature of allFeatures) {
-      if (isAdditionalFightingStyleFeature(feature) && feature.level <= draft.level) {
+      if (isAdditionalFightingStyleFeature(feature) && feature.level <= classLevel) {
         return feature
       }
     }
 
     return null
-  }, [characterClass, draft.subclassId, draft.level])
+  }, [characterClass, entry?.subclassId, classLevel])
 
-  // Don't render if no fighting style feature
-  if (!fightingStyleFeature) {
-    return null
-  }
+  if (!fightingStyleFeature) return null
 
   const availableStyles = fightingStyleFeature.availableStyles ?? []
-
-  // If no styles defined, don't render
-  if (availableStyles.length === 0) {
-    return null
-  }
+  if (availableStyles.length === 0) return null
 
   return (
     <div className="space-y-4">
@@ -219,8 +214,8 @@ export function FightingStyleSelector() {
         title="Fighting Style"
         description="Choose a fighting style to specialize in."
         availableStyles={availableStyles}
-        selectedStyle={draft.fightingStyle}
-        onSelectStyle={setFightingStyle}
+        selectedStyle={entry?.fightingStyle ?? null}
+        onSelectStyle={(style) => setClassFightingStyle(classId, style)}
       />
 
       {additionalFightingStyleFeature && (
@@ -228,9 +223,9 @@ export function FightingStyleSelector() {
           title="Additional Fighting Style"
           description="As a Champion, choose a second fighting style."
           availableStyles={availableStyles}
-          selectedStyle={draft.additionalFightingStyle}
-          onSelectStyle={setAdditionalFightingStyle}
-          disabledStyles={draft.fightingStyle ? [draft.fightingStyle] : []}
+          selectedStyle={entry?.additionalFightingStyle ?? null}
+          onSelectStyle={(style) => setClassAdditionalFightingStyle(classId, style)}
+          disabledStyles={entry?.fightingStyle ? [entry.fightingStyle] : []}
         />
       )}
     </div>

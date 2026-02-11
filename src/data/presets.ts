@@ -104,6 +104,12 @@ function createPresetCharacter(config: {
     class: charClass,
     subclass,
     level: config.level,
+    classes: [{
+      classId: charClass.id,
+      classData: charClass,
+      subclass,
+      level: config.level,
+    }],
     abilityScores: finalScores,
     originFeats: [], // Preset characters don't have origin feats defined
     maxHp,

@@ -36,6 +36,25 @@ export interface MagicInitiateChoice {
 // Re-export for backward compatibility
 export type OriginFeat = OriginFeatId
 
+export type ClassAsiSelection = {
+  level: number  // Which level grants this ASI (4, 6, 8, etc.)
+  mode: 'plus2-plus1' | 'plus1-plus1'  // +2 to one OR +1 to two
+  plus2Ability?: AbilityName  // If mode is 'plus2-plus1'
+  plus1Abilities: AbilityName[]  // 1 ability if 'plus2-plus1', 2 if 'plus1-plus1'
+}
+
+export interface ClassDraftEntry {
+  classId: string
+  subclassId: string | null
+  level: number  // levels in THIS class
+  fightingStyle: FightingStyle | null
+  additionalFightingStyle: FightingStyle | null
+  selectedManeuverIds: string[]
+  classAsiSelections: ClassAsiSelection[]
+  selectedSpellIds: string[]
+  selectedCantrips: string[]
+}
+
 export interface CharacterDraft {
   name: string
   abilityScoreMethod: AbilityScoreMethod
@@ -58,27 +77,14 @@ export interface CharacterDraft {
   backgroundId: string | null
   backgroundOriginFeat: OriginFeat | null
   backgroundMagicInitiate: MagicInitiateChoice | null // Spell choices if background feat is Magic Initiate
-  classId: string | null
-  subclassId: string | null
-  level: number
-  selectedSpellIds: string[]
-  selectedCantrips: string[]
+  // Multiclass entries — each class the character has levels in
+  classEntries: ClassDraftEntry[]
   meleeWeaponId: string | null
   rangedWeaponId: string | null
   offhandWeaponId: string | null // Light weapon for two-weapon fighting
   armorId: string | null
   shieldEquipped: boolean
   masteredWeaponIds: string[]
-  fightingStyle: FightingStyle | null
-  additionalFightingStyle: FightingStyle | null  // For Champion level 10
-  selectedManeuverIds: string[]  // Battle Master maneuvers
-  // Class ASI selections - array of ASI choices indexed by order
-  classAsiSelections: Array<{
-    level: number  // Which level grants this ASI (4, 6, 8, etc.)
-    mode: 'plus2-plus1' | 'plus1-plus1'  // +2 to one OR +1 to two
-    plus2Ability?: AbilityName  // If mode is 'plus2-plus1'
-    plus1Abilities: AbilityName[]  // 1 ability if 'plus2-plus1', 2 if 'plus1-plus1'
-  }>
   customTokenImage: string | null // User-uploaded token image as base64 data URL
   editingCharacterId: string | null // Set when editing an existing character
 }
@@ -90,8 +96,8 @@ interface CharacterState {
   // Saved characters
   savedCharacters: Character[]
 
-  // Current step in creation wizard
-  currentStep: number
+  // Current step in creation wizard (string ID for dynamic steps)
+  currentStep: string
 
   // Actions
   setName: (name: string) => void
@@ -110,11 +116,18 @@ interface CharacterState {
   setBackground: (backgroundId: string | null) => void
   setBackgroundOriginFeat: (feat: OriginFeat | null) => void
   setBackgroundMagicInitiate: (choice: MagicInitiateChoice | null) => void
-  setClass: (classId: string | null) => void
-  setSubclass: (subclassId: string | null) => void
-  setLevel: (level: number) => void
-  toggleSpell: (spellId: string) => void
-  toggleCantrip: (spellId: string) => void
+  // Multiclass actions
+  setClassLevel: (classId: string, level: number) => void
+  setClassSubclass: (classId: string, subclassId: string | null) => void
+  setClassFightingStyle: (classId: string, style: FightingStyle | null) => void
+  setClassAdditionalFightingStyle: (classId: string, style: FightingStyle | null) => void
+  setClassManeuvers: (classId: string, maneuverIds: string[]) => void
+  toggleClassManeuver: (classId: string, maneuverId: string) => void
+  setClassAsiSelection: (classId: string, index: number, selection: ClassAsiSelection) => void
+  clearClassAsiSelection: (classId: string, index: number) => void
+  toggleClassSpell: (classId: string, spellId: string) => void
+  toggleClassCantrip: (classId: string, spellId: string) => void
+  // Equipment actions (not per-class)
   setMeleeWeapon: (weaponId: string | null) => void
   setRangedWeapon: (weaponId: string | null) => void
   setOffhandWeapon: (weaponId: string | null) => void
@@ -122,22 +135,13 @@ interface CharacterState {
   setShield: (equipped: boolean) => void
   setMasteredWeapons: (weaponIds: string[]) => void
   toggleMasteredWeapon: (weaponId: string) => void
-  setFightingStyle: (style: FightingStyle | null) => void
-  setAdditionalFightingStyle: (style: FightingStyle | null) => void
-  setSelectedManeuvers: (maneuverIds: string[]) => void
-  toggleManeuver: (maneuverId: string) => void
-  setClassAsiSelection: (index: number, selection: CharacterDraft['classAsiSelections'][0]) => void
-  clearClassAsiSelection: (index: number) => void
-  resetClassAsiSelections: () => void
   setAbilityBonusPlus2: (ability: AbilityName | null) => void
   setAbilityBonusPlus1: (ability: AbilityName | null) => void
   setAbilityBonusMode: (mode: AbilityBonusMode) => void
   toggleAbilityBonusPlus1Trio: (ability: AbilityName) => void
   setAbilityBonusPlus1Trio: (abilities: AbilityName[]) => void
   setCustomTokenImage: (image: string | null) => void
-  setCurrentStep: (step: number) => void
-  nextStep: () => void
-  prevStep: () => void
+  setCurrentStep: (step: string) => void
   resetDraft: () => void
   saveCharacter: (character: Character) => void
   deleteCharacter: (characterId: string) => void
@@ -174,21 +178,13 @@ const initialDraft: CharacterDraft = {
   backgroundId: null,
   backgroundOriginFeat: null,
   backgroundMagicInitiate: null,
-  classId: null,
-  subclassId: null,
-  level: 1,
-  selectedSpellIds: [],
-  selectedCantrips: [],
+  classEntries: [],
   meleeWeaponId: null,
   rangedWeaponId: null,
   offhandWeaponId: null,
   armorId: null,
   shieldEquipped: false,
   masteredWeaponIds: [],
-  fightingStyle: null,
-  additionalFightingStyle: null,
-  selectedManeuverIds: [],
-  classAsiSelections: [],
   customTokenImage: null,
   editingCharacterId: null,
 }
@@ -198,7 +194,7 @@ export const useCharacterStore = create<CharacterState>()(
     (set, get) => ({
       draft: { ...initialDraft },
       savedCharacters: [],
-      currentStep: 0,
+      currentStep: 'abilities',
 
       setName: (name) =>
         set((state) => ({
@@ -335,73 +331,142 @@ export const useCharacterStore = create<CharacterState>()(
           draft: { ...state.draft, backgroundMagicInitiate: choice },
         })),
 
-      setClass: (classId) =>
-        set((state) => ({
-          draft: {
-            ...state.draft,
-            classId,
-            subclassId: null, // Reset subclass when class changes
-            selectedSpellIds: [],
-            selectedCantrips: [],
-            fightingStyle: null, // Reset fighting style when class changes
-            additionalFightingStyle: null,
-            selectedManeuverIds: [], // Reset maneuvers when class changes
-            classAsiSelections: [], // Reset ASI selections when class changes
-          },
-        })),
-
-      setSubclass: (subclassId) =>
-        set((state) => ({
-          draft: {
-            ...state.draft,
-            subclassId,
-            selectedManeuverIds: [], // Reset maneuvers when subclass changes
-          },
-        })),
-
-      setLevel: (level) =>
+      setClassLevel: (classId, level) =>
         set((state) => {
-          const newLevel = Math.max(1, Math.min(20, level))
-          // Get available ASI levels for current class
-          const classData = state.draft.classId ? getClassById(state.draft.classId) : null
-          const availableAsiLevels = classData
-            ? getClassAsiLevels(classData, newLevel)
-            : []
+          const entries = [...state.draft.classEntries]
+          const existingIdx = entries.findIndex(e => e.classId === classId)
+          const otherLevels = entries.reduce((sum, e, i) => i === existingIdx ? sum : sum + e.level, 0)
+          const clampedLevel = Math.max(0, Math.min(20 - otherLevels, level))
 
-          // Trim ASI selections that are no longer available
-          const trimmedAsiSelections = state.draft.classAsiSelections.filter(
-            (_, index) => index < availableAsiLevels.length
+          if (clampedLevel === 0) {
+            // Remove entry
+            return { draft: { ...state.draft, classEntries: entries.filter(e => e.classId !== classId) } }
+          }
+
+          if (existingIdx >= 0) {
+            const entry = { ...entries[existingIdx], level: clampedLevel }
+            // Trim ASI selections if level decreased
+            const classData = getClassById(classId)
+            if (classData) {
+              const maxAsis = getClassAsiLevels(classData, clampedLevel).length
+              entry.classAsiSelections = entry.classAsiSelections.slice(0, maxAsis)
+            }
+            entries[existingIdx] = entry
+          } else {
+            entries.push({
+              classId,
+              subclassId: null,
+              level: clampedLevel,
+              fightingStyle: null,
+              additionalFightingStyle: null,
+              selectedManeuverIds: [],
+              classAsiSelections: [],
+              selectedSpellIds: [],
+              selectedCantrips: [],
+            })
+          }
+
+          return { draft: { ...state.draft, classEntries: entries } }
+        }),
+
+      setClassSubclass: (classId, subclassId) =>
+        set((state) => {
+          const entries = state.draft.classEntries.map(e =>
+            e.classId === classId ? { ...e, subclassId, selectedManeuverIds: [] } : e
           )
-
-          return {
-            draft: {
-              ...state.draft,
-              level: newLevel,
-              classAsiSelections: trimmedAsiSelections,
-            },
-          }
+          return { draft: { ...state.draft, classEntries: entries } }
         }),
 
-      toggleSpell: (spellId) =>
+      setClassFightingStyle: (classId, style) =>
         set((state) => {
-          const spells = state.draft.selectedSpellIds
-          const newSpells = spells.includes(spellId)
-            ? spells.filter((id) => id !== spellId)
-            : [...spells, spellId]
-          return {
-            draft: { ...state.draft, selectedSpellIds: newSpells },
-          }
+          const entries = state.draft.classEntries.map(e =>
+            e.classId === classId ? { ...e, fightingStyle: style } : e
+          )
+          return { draft: { ...state.draft, classEntries: entries } }
         }),
 
-      toggleCantrip: (spellId) =>
+      setClassAdditionalFightingStyle: (classId, style) =>
         set((state) => {
-          const cantrips = state.draft.selectedCantrips
-          const newCantrips = cantrips.includes(spellId)
-            ? cantrips.filter((id) => id !== spellId)
-            : [...cantrips, spellId]
-          return {
-            draft: { ...state.draft, selectedCantrips: newCantrips },
-          }
+          const entries = state.draft.classEntries.map(e =>
+            e.classId === classId ? { ...e, additionalFightingStyle: style } : e
+          )
+          return { draft: { ...state.draft, classEntries: entries } }
+        }),
+
+      setClassManeuvers: (classId, maneuverIds) =>
+        set((state) => {
+          const entries = state.draft.classEntries.map(e =>
+            e.classId === classId ? { ...e, selectedManeuverIds: maneuverIds } : e
+          )
+          return { draft: { ...state.draft, classEntries: entries } }
+        }),
+
+      toggleClassManeuver: (classId, maneuverId) =>
+        set((state) => {
+          const entries = state.draft.classEntries.map(e => {
+            if (e.classId !== classId) return e
+            const isSelected = e.selectedManeuverIds.includes(maneuverId)
+            return {
+              ...e,
+              selectedManeuverIds: isSelected
+                ? e.selectedManeuverIds.filter(id => id !== maneuverId)
+                : [...e.selectedManeuverIds, maneuverId],
+            }
+          })
+          return { draft: { ...state.draft, classEntries: entries } }
+        }),
+
+      setClassAsiSelection: (classId, index, selection) =>
+        set((state) => {
+          const entries = state.draft.classEntries.map(e => {
+            if (e.classId !== classId) return e
+            const newSelections = [...e.classAsiSelections]
+            while (newSelections.length <= index) {
+              newSelections.push({ level: 0, mode: 'plus2-plus1', plus1Abilities: [] })
+            }
+            newSelections[index] = selection
+            return { ...e, classAsiSelections: newSelections }
+          })
+          return { draft: { ...state.draft, classEntries: entries } }
+        }),
+
+      clearClassAsiSelection: (classId, index) =>
+        set((state) => {
+          const entries = state.draft.classEntries.map(e => {
+            if (e.classId !== classId) return e
+            return { ...e, classAsiSelections: e.classAsiSelections.filter((_, i) => i !== index) }
+          })
+          return { draft: { ...state.draft, classEntries: entries } }
+        }),
+
+      toggleClassSpell: (classId, spellId) =>
+        set((state) => {
+          const entries = state.draft.classEntries.map(e => {
+            if (e.classId !== classId) return e
+            const has = e.selectedSpellIds.includes(spellId)
+            return {
+              ...e,
+              selectedSpellIds: has
+                ? e.selectedSpellIds.filter(id => id !== spellId)
+                : [...e.selectedSpellIds, spellId],
+            }
+          })
+          return { draft: { ...state.draft, classEntries: entries } }
+        }),
+
+      toggleClassCantrip: (classId, spellId) =>
+        set((state) => {
+          const entries = state.draft.classEntries.map(e => {
+            if (e.classId !== classId) return e
+            const has = e.selectedCantrips.includes(spellId)
+            return {
+              ...e,
+              selectedCantrips: has
+                ? e.selectedCantrips.filter(id => id !== spellId)
+                : [...e.selectedCantrips, spellId],
+            }
+          })
+          return { draft: { ...state.draft, classEntries: entries } }
         }),
 
       setMeleeWeapon: (weaponId) =>
@@ -458,64 +523,6 @@ export const useCharacterStore = create<CharacterState>()(
           }
         }),
 
-      setFightingStyle: (style) =>
-        set((state) => ({
-          draft: { ...state.draft, fightingStyle: style },
-        })),
-
-      setAdditionalFightingStyle: (style) =>
-        set((state) => ({
-          draft: { ...state.draft, additionalFightingStyle: style },
-        })),
-
-      setSelectedManeuvers: (maneuverIds) =>
-        set((state) => ({
-          draft: { ...state.draft, selectedManeuverIds: maneuverIds },
-        })),
-
-      toggleManeuver: (maneuverId) =>
-        set((state) => {
-          const current = state.draft.selectedManeuverIds
-          const isSelected = current.includes(maneuverId)
-          return {
-            draft: {
-              ...state.draft,
-              selectedManeuverIds: isSelected
-                ? current.filter((id) => id !== maneuverId)
-                : [...current, maneuverId],
-            },
-          }
-        }),
-
-      setClassAsiSelection: (index, selection) =>
-        set((state) => {
-          const newSelections = [...state.draft.classAsiSelections]
-          // Ensure array has enough elements to prevent sparse arrays
-          while (newSelections.length <= index) {
-            newSelections.push({
-              level: 0, // Will be set when actually used
-              mode: 'plus2-plus1',
-              plus1Abilities: [],
-            })
-          }
-          newSelections[index] = selection
-          return {
-            draft: { ...state.draft, classAsiSelections: newSelections },
-          }
-        }),
-
-      clearClassAsiSelection: (index) =>
-        set((state) => {
-          const newSelections = state.draft.classAsiSelections.filter((_, i) => i !== index)
-          return {
-            draft: { ...state.draft, classAsiSelections: newSelections },
-          }
-        }),
-
-      resetClassAsiSelections: () =>
-        set((state) => ({
-          draft: { ...state.draft, classAsiSelections: [] },
-        })),
 
       setAbilityBonusPlus2: (ability) =>
         set((state) => ({
@@ -589,20 +596,10 @@ export const useCharacterStore = create<CharacterState>()(
 
       setCurrentStep: (step) => set({ currentStep: step }),
 
-      nextStep: () =>
-        set((state) => ({
-          currentStep: Math.min(state.currentStep + 1, 7),
-        })),
-
-      prevStep: () =>
-        set((state) => ({
-          currentStep: Math.max(state.currentStep - 1, 0),
-        })),
-
       resetDraft: () =>
         set({
           draft: { ...initialDraft },
-          currentStep: 0,
+          currentStep: 'abilities',
         }),
 
       saveCharacter: (character) =>
@@ -637,6 +634,60 @@ export const useCharacterStore = create<CharacterState>()(
         const bonusPlus1 = character.abilityBonusPlus1 ?? null
         const bonusPlus1Trio = character.abilityBonusPlus1Trio ?? []
 
+        // Build classEntries from character data
+        let classEntries: ClassDraftEntry[]
+        if (character.classes && character.classes.length > 0) {
+          // New multiclass format
+          classEntries = character.classes.map(entry => ({
+            classId: entry.classId,
+            subclassId: entry.subclass?.id ?? null,
+            level: entry.level,
+            fightingStyle: null,  // Will be populated below
+            additionalFightingStyle: null,
+            selectedManeuverIds: [],
+            classAsiSelections: [],
+            selectedSpellIds: [],
+            selectedCantrips: [],
+          }))
+          // Put fighting styles on the first class that has a fighting style feature
+          if (character.fightingStyles && character.fightingStyles.length > 0 && classEntries.length > 0) {
+            classEntries[0].fightingStyle = character.fightingStyles[0] ?? null
+            classEntries[0].additionalFightingStyle = character.fightingStyles[1] ?? null
+          }
+          // Put maneuvers on the first class entry (usually fighter/battle master)
+          if (character.knownManeuverIds && classEntries.length > 0) {
+            classEntries[0].selectedManeuverIds = character.knownManeuverIds
+          }
+          // Put ASI selections on the first class entry
+          if (character.classAsiSelections && classEntries.length > 0) {
+            classEntries[0].classAsiSelections = character.classAsiSelections
+          }
+          // Put spells on the first spellcasting class
+          const spellIds = character.knownSpells?.filter(s => s.level > 0).map(s => s.id) ?? []
+          const cantripIds = character.knownSpells?.filter(s => s.level === 0).map(s => s.id) ?? []
+          const spellcasterEntry = classEntries.find(e => {
+            const cd = getClassById(e.classId)
+            return cd?.spellcasting !== undefined
+          })
+          if (spellcasterEntry) {
+            spellcasterEntry.selectedSpellIds = spellIds
+            spellcasterEntry.selectedCantrips = cantripIds
+          }
+        } else {
+          // Legacy single-class format
+          classEntries = [{
+            classId: character.class.id,
+            subclassId: character.subclass?.id ?? null,
+            level: character.level,
+            fightingStyle: character.fightingStyles?.[0] ?? null,
+            additionalFightingStyle: character.fightingStyles?.[1] ?? null,
+            selectedManeuverIds: character.knownManeuverIds ?? [],
+            classAsiSelections: character.classAsiSelections ?? [],
+            selectedSpellIds: character.knownSpells?.filter(s => s.level > 0).map(s => s.id) ?? [],
+            selectedCantrips: character.knownSpells?.filter(s => s.level === 0).map(s => s.id) ?? [],
+          }]
+        }
+
         // Map Character back to CharacterDraft
         set({
           draft: {
@@ -667,25 +718,17 @@ export const useCharacterStore = create<CharacterState>()(
             backgroundMagicInitiate: character.race.id === 'human' && character.originFeats.length > 1
               ? character.magicInitiateChoices?.[1] ?? null
               : character.magicInitiateChoices?.[0] ?? null,
-            classId: character.class.id,
-            subclassId: character.subclass?.id ?? null,
-            level: character.level,
-            selectedSpellIds: character.knownSpells?.map(s => s.id) ?? [],
-            selectedCantrips: character.knownSpells?.filter(s => s.level === 0).map(s => s.id) ?? [],
+            classEntries,
             meleeWeaponId: character.equipment.meleeWeapon?.id ?? null,
             rangedWeaponId: character.equipment.rangedWeapon?.id ?? null,
             offhandWeaponId: character.equipment.offhandWeapon?.id ?? null,
             armorId: character.equipment.armor?.id ?? null,
             shieldEquipped: !!character.equipment.shield,
             masteredWeaponIds: character.masteredWeaponIds ?? [],
-            fightingStyle: character.fightingStyles?.[0] ?? null,
-            additionalFightingStyle: character.fightingStyles?.[1] ?? null,
-            selectedManeuverIds: character.knownManeuverIds ?? [],
-            classAsiSelections: character.classAsiSelections ?? [],
             customTokenImage: character.customTokenImage ?? null,
             editingCharacterId: character.id,
           },
-          currentStep: 0,
+          currentStep: 'abilities',
         })
 
         return true
@@ -707,7 +750,7 @@ export function calculateFinalAbilityScores(
   abilityBonusPlus1: AbilityName | null,
   abilityBonusMode: AbilityBonusMode = 'standard',
   abilityBonusPlus1Trio: AbilityName[] = [],
-  classAsiSelections: CharacterDraft['classAsiSelections'] = []
+  classAsiSelections: ClassAsiSelection[] = []
 ): AbilityScores {
   const result = { ...baseScores }
 
@@ -766,6 +809,64 @@ export function calculateHP(
   }
 
   return hp
+}
+
+/**
+ * Calculate HP for multiclass characters.
+ * First class gets max hit die at level 1, subsequent classes use average for all levels.
+ */
+export function calculateMulticlassHP(
+  classEntries: Array<{ classId: string; level: number }>,
+  constitution: number,
+  originFeats: OriginFeatId[] = []
+): number {
+  const conMod = getAbilityModifier(constitution)
+  let hp = 0
+
+  classEntries.forEach((entry, index) => {
+    const classData = getClassById(entry.classId)
+    if (!classData) return
+
+    if (index === 0) {
+      // First class: max hit die at level 1
+      hp += classData.hitDie + conMod
+      // Subsequent levels in first class
+      hp += (entry.level - 1) * (Math.floor(classData.hitDie / 2) + 1 + conMod)
+    } else {
+      // Additional classes: average for all levels (no max at level 1)
+      hp += entry.level * (Math.floor(classData.hitDie / 2) + 1 + conMod)
+    }
+  })
+
+  hp = Math.max(1, hp)
+
+  const totalLevel = classEntries.reduce((s, e) => s + e.level, 0)
+  if (originFeats.includes('tough')) {
+    hp += totalLevel * 2
+  }
+
+  return hp
+}
+
+/**
+ * Helper to get total level from draft class entries
+ */
+export function getDraftTotalLevel(draft: CharacterDraft): number {
+  return draft.classEntries.reduce((sum, e) => sum + e.level, 0)
+}
+
+/**
+ * Helper to get a specific class entry from the draft
+ */
+export function getDraftClassEntry(draft: CharacterDraft, classId: string): ClassDraftEntry | undefined {
+  return draft.classEntries.find(e => e.classId === classId)
+}
+
+/**
+ * Get all ASI selections aggregated from all class entries
+ */
+export function getAllDraftAsiSelections(draft: CharacterDraft): ClassAsiSelection[] {
+  return draft.classEntries.flatMap(e => e.classAsiSelections)
 }
 
 export function calculateAC(

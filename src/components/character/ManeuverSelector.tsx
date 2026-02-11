@@ -103,28 +103,30 @@ function ManeuverCard({ maneuver, isSelected, isDisabled, onToggle }: ManeuverCa
   )
 }
 
-export function ManeuverSelector() {
+export function ManeuverSelector({ classId }: { classId: string }) {
   const draft = useCharacterStore((state) => state.draft)
-  const toggleManeuver = useCharacterStore((state) => state.toggleManeuver)
+  const toggleClassManeuver = useCharacterStore((state) => state.toggleClassManeuver)
 
-  const characterClass = draft.classId ? getClassById(draft.classId) : null
+  const entry = draft.classEntries.find(e => e.classId === classId)
+  const characterClass = getClassById(classId) ?? null
+  const classLevel = entry?.level ?? 0
 
   // Find combat superiority feature for current level
   const combatSuperiorityFeature = useMemo(() => {
-    if (!characterClass) return null
+    if (!characterClass || !entry) return null
 
     // Check subclass features (Battle Master is a subclass)
-    const subclass = characterClass.subclasses.find(s => s.id === draft.subclassId)
+    const subclass = characterClass.subclasses.find(s => s.id === entry.subclassId)
     if (!subclass) return null
 
     for (const feature of subclass.features) {
-      if (isCombatSuperiorityFeature(feature) && feature.level <= draft.level) {
+      if (isCombatSuperiorityFeature(feature) && feature.level <= classLevel) {
         return feature
       }
     }
 
     return null
-  }, [characterClass, draft.subclassId, draft.level])
+  }, [characterClass, entry?.subclassId, classLevel])
 
   // Calculate maneuvers known count based on level
   const maneuversKnownCount = useMemo(() => {
@@ -133,13 +135,13 @@ export function ManeuverSelector() {
     let count = combatSuperiorityFeature.maneuversKnown
     if (combatSuperiorityFeature.maneuversKnownAtLevels) {
       for (const [lvl, maneuverCount] of Object.entries(combatSuperiorityFeature.maneuversKnownAtLevels)) {
-        if (draft.level >= parseInt(lvl)) {
+        if (classLevel >= parseInt(lvl)) {
           count = maneuverCount
         }
       }
     }
     return count
-  }, [combatSuperiorityFeature, draft.level])
+  }, [combatSuperiorityFeature, classLevel])
 
   // Group maneuvers by trigger type for organization
   // Must be called before early return to maintain consistent hook order
@@ -164,7 +166,8 @@ export function ManeuverSelector() {
     return null
   }
 
-  const selectedCount = draft.selectedManeuverIds.length
+  const selectedManeuverIds = entry?.selectedManeuverIds ?? []
+  const selectedCount = selectedManeuverIds.length
   const canSelectMore = selectedCount < maneuversKnownCount
 
   return (
@@ -192,14 +195,14 @@ export function ManeuverSelector() {
                 </h4>
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
                   {maneuversByTrigger.on_hit.map((maneuver) => {
-                    const isSelected = draft.selectedManeuverIds.includes(maneuver.id)
+                    const isSelected = selectedManeuverIds.includes(maneuver.id)
                     return (
                       <ManeuverCard
                         key={maneuver.id}
                         maneuver={maneuver}
                         isSelected={isSelected}
                         isDisabled={!canSelectMore && !isSelected}
-                        onToggle={() => toggleManeuver(maneuver.id)}
+                        onToggle={() => toggleClassManeuver(classId, maneuver.id)}
                       />
                     )
                   })}
@@ -215,14 +218,14 @@ export function ManeuverSelector() {
                 </h4>
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
                   {maneuversByTrigger.pre_attack.map((maneuver) => {
-                    const isSelected = draft.selectedManeuverIds.includes(maneuver.id)
+                    const isSelected = selectedManeuverIds.includes(maneuver.id)
                     return (
                       <ManeuverCard
                         key={maneuver.id}
                         maneuver={maneuver}
                         isSelected={isSelected}
                         isDisabled={!canSelectMore && !isSelected}
-                        onToggle={() => toggleManeuver(maneuver.id)}
+                        onToggle={() => toggleClassManeuver(classId, maneuver.id)}
                       />
                     )
                   })}
@@ -238,14 +241,14 @@ export function ManeuverSelector() {
                 </h4>
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
                   {maneuversByTrigger.reaction.map((maneuver) => {
-                    const isSelected = draft.selectedManeuverIds.includes(maneuver.id)
+                    const isSelected = selectedManeuverIds.includes(maneuver.id)
                     return (
                       <ManeuverCard
                         key={maneuver.id}
                         maneuver={maneuver}
                         isSelected={isSelected}
                         isDisabled={!canSelectMore && !isSelected}
-                        onToggle={() => toggleManeuver(maneuver.id)}
+                        onToggle={() => toggleClassManeuver(classId, maneuver.id)}
                       />
                     )
                   })}
@@ -261,14 +264,14 @@ export function ManeuverSelector() {
                 </h4>
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
                   {maneuversByTrigger.bonus_action.map((maneuver) => {
-                    const isSelected = draft.selectedManeuverIds.includes(maneuver.id)
+                    const isSelected = selectedManeuverIds.includes(maneuver.id)
                     return (
                       <ManeuverCard
                         key={maneuver.id}
                         maneuver={maneuver}
                         isSelected={isSelected}
                         isDisabled={!canSelectMore && !isSelected}
-                        onToggle={() => toggleManeuver(maneuver.id)}
+                        onToggle={() => toggleClassManeuver(classId, maneuver.id)}
                       />
                     )
                   })}

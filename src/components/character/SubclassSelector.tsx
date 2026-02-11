@@ -16,9 +16,7 @@ import { Sparkles, BookOpen } from 'lucide-react'
 /**
  * SubclassSelector - Unified component for selecting class and subclass options
  *
- * Shows relevant selectors based on character's class and subclass:
- * - Fighting Styles (Fighter, Paladin, Ranger - class feature)
- * - Battle Master Maneuvers (Fighter - Battle Master subclass feature)
+ * Accepts a classId prop to support multiclass — shows options for a specific class.
  */
 
 // Class-specific flavor descriptions
@@ -40,36 +38,39 @@ const CLASS_DESCRIPTIONS: Record<string, string> = {
 function getClassDescription(classId: string): string {
   return CLASS_DESCRIPTIONS[classId] || 'Customize your character with specialized options and abilities'
 }
-export function SubclassSelector() {
-  const draft = useCharacterStore((state) => state.draft)
-  const setSubclass = useCharacterStore((state) => state.setSubclass)
 
-  const characterClass = draft.classId ? getClassById(draft.classId) : null
+export function SubclassSelector({ classId }: { classId: string }) {
+  const draft = useCharacterStore((state) => state.draft)
+  const setClassSubclass = useCharacterStore((state) => state.setClassSubclass)
+
+  const entry = draft.classEntries.find(e => e.classId === classId)
+  const characterClass = getClassById(classId) ?? null
+  const classLevel = entry?.level ?? 0
 
   // Check what features are available
   const hasFeatures = useMemo(() => {
-    if (!characterClass) return false
+    if (!characterClass || !entry) return false
 
     const allFeatures = [
       ...characterClass.features,
-      ...(characterClass.subclasses.find(s => s.id === draft.subclassId)?.features ?? []),
+      ...(characterClass.subclasses.find(s => s.id === entry.subclassId)?.features ?? []),
     ]
 
     // Check for any selectable features
     const hasFightingStyle = allFeatures.some(f =>
-      isFightingStyleFeature(f) && f.level <= draft.level && f.availableStyles && f.availableStyles.length > 0
+      isFightingStyleFeature(f) && f.level <= classLevel && f.availableStyles && f.availableStyles.length > 0
     )
     const hasManeuvers = allFeatures.some(f =>
-      isCombatSuperiorityFeature(f) && f.level <= draft.level
+      isCombatSuperiorityFeature(f) && f.level <= classLevel
     )
     const hasAsi = characterClass.features.some(f =>
       f.type === 'generic' &&
       f.name === 'Ability Score Improvement' &&
-      f.level <= draft.level
+      f.level <= classLevel
     )
 
     return hasFightingStyle || hasManeuvers || hasAsi
-  }, [characterClass, draft.subclassId, draft.level])
+  }, [characterClass, entry?.subclassId, classLevel])
 
   // Don't render if no features to select
   if (!hasFeatures) {
@@ -78,7 +79,7 @@ export function SubclassSelector() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Sparkles className="w-5 h-5 text-primary" />
-            Class Options
+            Class Options{characterClass ? `: ${characterClass.name}` : ''}
           </CardTitle>
           <CardDescription>
             Your character doesn't have any selectable class options at this level.
@@ -89,7 +90,7 @@ export function SubclassSelector() {
   }
 
   // Check if subclass selection should be shown
-  const showSubclassSelector = draft.level >= 3 && characterClass && characterClass.subclasses.length > 0
+  const showSubclassSelector = classLevel >= 3 && characterClass && characterClass.subclasses.length > 0
 
   return (
     <div className="space-y-6">
@@ -100,7 +101,7 @@ export function SubclassSelector() {
           <div className="relative p-8 flex items-center justify-between">
             <div>
               <div className="text-sm font-medium text-primary/80 uppercase tracking-wider mb-1">
-                Level {draft.level} Character
+                Level {classLevel} {characterClass.name}
               </div>
               <h1 className="text-5xl font-bold tracking-tight bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent">
                 {characterClass.name}
@@ -123,7 +124,7 @@ export function SubclassSelector() {
       )}
 
       {/* Subclass Selection */}
-      {showSubclassSelector && (
+      {showSubclassSelector && characterClass && (
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-lg flex items-center gap-2">
@@ -137,15 +138,15 @@ export function SubclassSelector() {
           <CardContent>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
               {characterClass.subclasses.map((subclass) => {
-                const featuresAtLevel = getSubclassFeaturesByLevel(characterClass, subclass.id, draft.level)
+                const featuresAtLevel = getSubclassFeaturesByLevel(characterClass, subclass.id, classLevel)
                 return (
                   <button
                     key={subclass.id}
-                    onClick={() => setSubclass(subclass.id)}
+                    onClick={() => setClassSubclass(classId, subclass.id)}
                     className={cn(
                       'p-4 rounded-lg border-2 transition-all text-left cursor-pointer',
                       'hover:border-primary/50 hover:bg-slate-800/60',
-                      draft.subclassId === subclass.id
+                      entry?.subclassId === subclass.id
                         ? 'border-primary bg-primary/10'
                         : 'border-border bg-slate-800/40'
                     )}
@@ -179,13 +180,13 @@ export function SubclassSelector() {
       )}
 
       {/* Fighting Style Selection */}
-      <FightingStyleSelector />
+      <FightingStyleSelector classId={classId} />
 
       {/* Ability Score Improvements */}
-      <ASISelector />
+      <ASISelector classId={classId} />
 
       {/* Battle Master Maneuver Selection */}
-      <ManeuverSelector />
+      <ManeuverSelector classId={classId} />
     </div>
   )
 }

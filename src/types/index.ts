@@ -369,16 +369,24 @@ export interface Spell {
 import type { Background, OriginFeatId } from '@/data'
 import type { MagicInitiateChoice, AbilityBonusMode } from '@/stores/characterStore'
 
+export interface ClassEntry {
+  classId: string
+  classData: CharacterClass
+  subclass?: Subclass
+  level: number  // levels in THIS class (not total character level)
+}
+
 export interface Character {
   id: string
   name: string
   race: Race
-  class: CharacterClass
-  subclass?: Subclass
+  class: CharacterClass          // Primary class (first class taken) — backward compat
+  subclass?: Subclass            // Primary class subclass — backward compat
   background?: Background
   originFeats: OriginFeatId[] // All origin feats (from background, and from human racial if applicable)
   magicInitiateChoices?: MagicInitiateChoice[] // Spell choices for Magic Initiate feat(s)
-  level: number
+  level: number                  // Total character level (sum of all class levels) — backward compat
+  classes: ClassEntry[]          // All class entries for multiclass support
   abilityScores: AbilityScores
   // For editing: store the base scores and ASI choices so we can reconstruct the draft
   baseAbilityScores?: AbilityScores

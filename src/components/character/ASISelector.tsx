@@ -32,17 +32,20 @@ const ABILITY_NAMES: AbilityName[] = [
  * Displays a card for each ASI available to the character based on their class and level.
  * Allows choosing between +2/+1 or +1/+1 distribution.
  */
-export function ASISelector() {
+export function ASISelector({ classId }: { classId: string }) {
   const draft = useCharacterStore((state) => state.draft)
   const setClassAsiSelection = useCharacterStore((state) => state.setClassAsiSelection)
 
-  const characterClass = draft.classId ? getClassById(draft.classId) : null
+  const entry = draft.classEntries.find(e => e.classId === classId)
+  const characterClass = getClassById(classId) ?? null
+  const classLevel = entry?.level ?? 0
+  const classAsiSelections = entry?.classAsiSelections ?? []
 
   // Get available ASI levels for this class and level
   const availableAsiLevels = useMemo(() => {
     if (!characterClass) return []
-    return getClassAsiLevels(characterClass, draft.level)
-  }, [characterClass, draft.level])
+    return getClassAsiLevels(characterClass, classLevel)
+  }, [characterClass, classLevel])
 
   // Don't render if no ASIs available
   if (availableAsiLevels.length === 0) {
@@ -50,21 +53,27 @@ export function ASISelector() {
   }
 
   // Calculate current ability scores (including background bonuses and previous ASIs)
+  // For multiclass, we only include ASIs from THIS class up to the given index
   const getCurrentScores = (upToIndex: number): AbilityScores => {
+    // Aggregate ASIs from other classes + this class up to index
+    const otherClassAsis = draft.classEntries
+      .filter(e => e.classId !== classId)
+      .flatMap(e => e.classAsiSelections)
+    const thisClassAsis = classAsiSelections.slice(0, upToIndex)
     return calculateFinalAbilityScores(
       draft.baseAbilityScores,
       draft.abilityBonusPlus2,
       draft.abilityBonusPlus1,
       draft.abilityBonusMode,
       draft.abilityBonusPlus1Trio,
-      draft.classAsiSelections.slice(0, upToIndex)
+      [...otherClassAsis, ...thisClassAsis]
     )
   }
 
   // Handle mode toggle for a specific ASI
   const handleModeChange = (index: number, mode: 'plus2-plus1' | 'plus1-plus1') => {
-    const currentSelection = draft.classAsiSelections[index]
-    setClassAsiSelection(index, {
+    const currentSelection = classAsiSelections[index]
+    setClassAsiSelection(classId, index, {
       level: availableAsiLevels[index],
       mode,
       plus2Ability: mode === 'plus2-plus1' ? currentSelection?.plus2Ability : undefined,
@@ -78,7 +87,7 @@ export function ASISelector() {
     abilityType: 'plus2' | 'plus1-first' | 'plus1-second',
     ability: AbilityName | ''
   ) => {
-    const currentSelection = draft.classAsiSelections[index] || {
+    const currentSelection = classAsiSelections[index] || {
       level: availableAsiLevels[index],
       mode: 'plus2-plus1' as const,
       plus1Abilities: [],
@@ -107,7 +116,7 @@ export function ASISelector() {
       newSelection.plus1Abilities = newPlus1
     }
 
-    setClassAsiSelection(index, newSelection)
+    setClassAsiSelection(classId, index, newSelection)
   }
 
   // Check if an ability would exceed 20 with the bonus
@@ -129,7 +138,7 @@ export function ASISelector() {
       </CardHeader>
       <CardContent className="space-y-6">
         {availableAsiLevels.map((asiLevel, index) => {
-          const selection = draft.classAsiSelections[index] || {
+          const selection = classAsiSelections[index] || {
             level: asiLevel,
             mode: 'plus2-plus1' as const,
             plus1Abilities: [],

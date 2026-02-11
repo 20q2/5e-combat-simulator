@@ -33,13 +33,30 @@ import { roll } from './dice'
 
 /**
  * Get all class features for a combatant (only characters have class features)
+ * Supports multiclass: uses character.classes when available, filtering each
+ * class's features by that class's individual level.
  */
 export function getCombatantClassFeatures(combatant: Combatant): ClassFeature[] {
   if (combatant.type !== 'character') return []
   const character = combatant.data as Character
-  // Handle legacy characters that may not have typed features
+
+  // Multiclass-aware: iterate each class entry
+  if (character.classes && character.classes.length > 0) {
+    const allFeatures: ClassFeature[] = []
+    for (const entry of character.classes) {
+      const classFeatures = entry.classData.features ?? []
+      allFeatures.push(...(classFeatures.filter(f => f.level <= entry.level) as ClassFeature[]))
+      // Include subclass features
+      if (entry.subclass) {
+        const subFeatures = entry.subclass.features ?? []
+        allFeatures.push(...(subFeatures.filter(f => f.level <= entry.level) as ClassFeature[]))
+      }
+    }
+    return allFeatures
+  }
+
+  // Legacy fallback: single class
   const features = character.class.features ?? []
-  // Filter features by level and cast to ClassFeature
   return features.filter(f => f.level <= character.level) as ClassFeature[]
 }
 
@@ -52,6 +69,26 @@ export function getFeatureOfType<T extends ClassFeature>(
 ): T | undefined {
   const features = getCombatantClassFeatures(combatant)
   return features.find(typeGuard)
+}
+
+/**
+ * Get the class level for a character that owns a given feature.
+ * For multiclass, finds which class entry contains the feature and returns that class's level.
+ * Falls back to total character level for legacy characters.
+ */
+function getClassLevelForFeature(character: Character, featureId: string): number {
+  if (character.classes && character.classes.length > 0) {
+    for (const entry of character.classes) {
+      const allFeatures = [
+        ...(entry.classData.features ?? []),
+        ...(entry.subclass?.features ?? []),
+      ]
+      if (allFeatures.some(f => f.id === featureId)) {
+        return entry.level
+      }
+    }
+  }
+  return character.level
 }
 
 // ============================================
@@ -76,10 +113,10 @@ export function getSecondWindMaxUses(combatant: Combatant): number {
   // If no level scaling, use base maxUses
   if (!feature.maxUsesAtLevels) return feature.maxUses
 
-  // Get character level
+  // Get class-specific level for this feature
   if (combatant.type !== 'character') return feature.maxUses
   const character = combatant.data as Character
-  const level = character.level
+  const level = getClassLevelForFeature(character, feature.id)
 
   // Find the highest threshold that applies
   let effectiveMax = feature.maxUses
@@ -127,10 +164,10 @@ export function rollSecondWind(combatant: Combatant): { total: number; rolls: nu
   const result = roll(feature.healDice)
   let total = result.total
 
-  // Add class level if specified
+  // Add class level if specified (use fighter class level for multiclass)
   if (feature.healBonusPerLevel && combatant.type === 'character') {
     const character = combatant.data as Character
-    total += character.level
+    total += getClassLevelForFeature(character, feature.id)
   }
 
   return { total, rolls: result.rolls }
@@ -258,9 +295,9 @@ export function getSneakAttackDice(combatant: Combatant): string {
   if (combatant.type !== 'character') return feature.baseDice
 
   const character = combatant.data as Character
-  const level = character.level
+  const level = getClassLevelForFeature(character, feature.id)
 
-  // Find highest scaling threshold that's <= character level
+  // Find highest scaling threshold that's <= class level
   let dice = feature.baseDice
   if (feature.diceScaling) {
     for (const [lvl, diceStr] of Object.entries(feature.diceScaling)) {
@@ -368,10 +405,10 @@ export function getActionSurgeMaxUses(combatant: Combatant): number {
   // If no level scaling, use base maxUses
   if (!feature.maxUsesAtLevels) return feature.maxUses
 
-  // Get character level
+  // Get class-specific level for this feature
   if (combatant.type !== 'character') return feature.maxUses
   const character = combatant.data as Character
-  const level = character.level
+  const level = getClassLevelForFeature(character, feature.id)
 
   // Find the highest threshold that applies
   let effectiveMax = feature.maxUses
@@ -608,10 +645,10 @@ export function getIndomitableMaxUses(combatant: Combatant): number {
   // If no level scaling, use base maxUses
   if (!feature.maxUsesAtLevels) return feature.maxUses
 
-  // Get character level
+  // Get class-specific level for this feature
   if (combatant.type !== 'character') return feature.maxUses
   const character = combatant.data as Character
-  const level = character.level
+  const level = getClassLevelForFeature(character, feature.id)
 
   // Find the highest threshold that applies
   let effectiveMax = feature.maxUses
@@ -666,7 +703,14 @@ export function getIndomitableUses(
 export function getIndomitableBonus(combatant: Combatant): number {
   if (combatant.type !== 'character') return 0
   const character = combatant.data as Character
-  // Only Fighters get this bonus, check class
+
+  // Multiclass-aware: find the fighter class entry
+  if (character.classes && character.classes.length > 0) {
+    const fighterEntry = character.classes.find(e => e.classId === 'fighter')
+    return fighterEntry?.level ?? 0
+  }
+
+  // Legacy fallback
   if (character.class.id !== 'fighter') return 0
   return character.level
 }
