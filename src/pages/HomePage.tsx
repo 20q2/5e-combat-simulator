@@ -167,7 +167,7 @@ export function HomePage() {
     }
   }, [location.state, savedCharacters, navigate])
 
-  const allCharacters = useCustomCharacter ? savedCharacters : presetCharacters
+  const allCharacters = useCustomCharacter ? [...savedCharacters].reverse() : presetCharacters
 
   const handleStartCombat = () => {
     if (!selectedCharacter || !selectedEncounter) return

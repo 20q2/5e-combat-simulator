@@ -275,7 +275,7 @@ interface CombatStore extends CombatState {
   addLogEntry: (entry: Omit<CombatLogEntry, 'id' | 'timestamp' | 'round'>) => void
 
   // Combat popups
-  addDamagePopup: (targetId: string, amount: number, damageType: DamageType, isCritical?: boolean) => void
+  addDamagePopup: (targetId: string, amount: number, damageType: DamageType, isCritical?: boolean, delay?: number) => void
   addCombatPopup: (targetId: string, popupType: CombatPopupType, text?: string) => void
   addHealPopup: (targetId: string, amount: number) => void
   removeDamagePopup: (id: string) => void
@@ -1333,7 +1333,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
           const halfDamage = Math.floor(context.damage / 2)
           if (halfDamage > 0) {
             get().dealDamage(combatant.id, halfDamage, context.sourceName)
-            get().addDamagePopup(combatant.id, halfDamage, context.damageType || 'bludgeoning', false)
+            get().addDamagePopup(combatant.id, halfDamage, context.damageType || 'bludgeoning', false, 400)
           }
         }
       } else {
@@ -1341,7 +1341,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
         get().addCombatPopup(combatant.id, 'save_failed')
         if (context.damage) {
           get().dealDamage(combatant.id, context.damage, context.sourceName)
-          get().addDamagePopup(combatant.id, context.damage, context.damageType || 'bludgeoning', false)
+          get().addDamagePopup(combatant.id, context.damage, context.damageType || 'bludgeoning', false, 400)
         }
       }
     } else {
@@ -1349,7 +1349,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
       get().addCombatPopup(combatant.id, 'save_failed')
       if (context.damage) {
         get().dealDamage(combatant.id, context.damage, context.sourceName)
-        get().addDamagePopup(combatant.id, context.damage, context.damageType || 'bludgeoning', false)
+        get().addDamagePopup(combatant.id, context.damage, context.damageType || 'bludgeoning', false, 400)
       }
     }
 
@@ -1479,7 +1479,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
             const halfDamage = Math.floor(context.damage / 2)
             if (halfDamage > 0) {
               get().dealDamage(combatant.id, halfDamage, context.sourceName)
-              get().addDamagePopup(combatant.id, halfDamage, context.damageType || 'bludgeoning', false)
+              get().addDamagePopup(combatant.id, halfDamage, context.damageType || 'bludgeoning', false, 400)
             }
           }
         } else {
@@ -1487,7 +1487,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
           get().addCombatPopup(combatant.id, 'save_failed')
           if (context.damage) {
             get().dealDamage(combatant.id, context.damage, context.sourceName)
-            get().addDamagePopup(combatant.id, context.damage, context.damageType || 'bludgeoning', false)
+            get().addDamagePopup(combatant.id, context.damage, context.damageType || 'bludgeoning', false, 400)
           }
         }
       }
@@ -1497,7 +1497,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
         get().addCombatPopup(combatant.id, 'save_failed')
         if (context.damage) {
           get().dealDamage(combatant.id, context.damage, context.sourceName)
-          get().addDamagePopup(combatant.id, context.damage, context.damageType || 'bludgeoning', false)
+          get().addDamagePopup(combatant.id, context.damage, context.damageType || 'bludgeoning', false, 400)
         }
       } else if (type === 'attack') {
         // Miss was logged but popup was deferred - launch projectile now with miss popup
@@ -3258,13 +3258,13 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
           }
         }
 
-        // Show damage popup
-        get().addDamagePopup(target.id, damage, aoeReplacement.damageType, false)
+        // Show save result first, then damage after a short delay
         if (saved) {
           get().addCombatPopup(target.id, 'saved')
         } else {
           get().addCombatPopup(target.id, 'save_failed')
         }
+        get().addDamagePopup(target.id, damage, aoeReplacement.damageType, false, 400)
         if (resistanceApplied) {
           get().addCombatPopup(target.id, 'resisted')
         }
@@ -3851,6 +3851,89 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
             }
           }
 
+          // Helper for explosionOnImpact (Ice Knife: secondary AoE that triggers hit or miss)
+          const triggerExplosionOnImpact = () => {
+            if (!spell.explosionOnImpact) return
+
+            const dc = getSpellSaveDC(character)
+
+            // Calculate explosion dice with upcast scaling
+            let explosionDice = spell.explosionOnImpact.damage.dice
+            if (castAtLevel && castAtLevel > spell.level && spell.explosionOnImpact.upcastDice) {
+              const upMatch = spell.explosionOnImpact.upcastDice.match(/(\d+)d(\d+)/)
+              if (upMatch) {
+                const extraDice = parseInt(upMatch[1]) * (castAtLevel - spell.level)
+                explosionDice = `${explosionDice}+${extraDice}d${upMatch[2]}`
+              }
+            }
+
+            const explosionDmgType = spell.explosionOnImpact.damage.type
+            const explosionRadius = spell.explosionOnImpact.radius
+
+            // Find all living creatures within blast radius of target
+            const freshCombatants = get().combatants
+            const primaryTarget = freshCombatants.find(c => c.id === currentTargetId)
+            if (!primaryTarget) return
+
+            const blastTargets = freshCombatants.filter(c => {
+              if (c.currentHp <= 0) return false
+              const dx = Math.abs(c.position.x - primaryTarget.position.x)
+              const dy = Math.abs(c.position.y - primaryTarget.position.y)
+              return Math.max(dx, dy) * 5 <= explosionRadius
+            })
+
+            if (blastTargets.length === 0) return
+
+            // Roll explosion damage once (shared for all targets)
+            const explosionDmg = rollDamage(explosionDice, false)
+            const halfDmg = Math.floor(explosionDmg.total / 2)
+
+            get().addLogEntry({
+              type: 'spell', actorId: casterId, actorName: caster.name,
+              message: `The shard explodes! (${explosionDmg.breakdown} = ${explosionDmg.total} ${explosionDmgType})`,
+            })
+
+            for (const blastTarget of blastTargets) {
+              const saveResult = rollCombatantSavingThrow(blastTarget, spell.explosionOnImpact!.savingThrow, dc)
+
+              if (saveResult.success) {
+                get().addLogEntry({
+                  type: 'spell', actorId: casterId, actorName: caster.name,
+                  targetId: blastTarget.id, targetName: blastTarget.name,
+                  message: `${blastTarget.name} saves (DC ${dc}) — half damage`,
+                  details: saveResult.roll.breakdown,
+                })
+                get().addCombatPopup(blastTarget.id, 'saved')
+                if (halfDmg > 0) {
+                  get().dealDamage(blastTarget.id, halfDmg, caster.name)
+                  get().addDamagePopup(blastTarget.id, halfDmg, explosionDmgType, false, 400)
+                  get().addLogEntry({
+                    type: 'damage', actorId: casterId, actorName: caster.name,
+                    targetId: blastTarget.id, targetName: blastTarget.name,
+                    message: `${halfDmg} ${explosionDmgType} damage (half of ${explosionDmg.total})`,
+                    details: `${explosionDmg.breakdown} → half = ${halfDmg}`,
+                  })
+                }
+              } else {
+                get().addLogEntry({
+                  type: 'spell', actorId: casterId, actorName: caster.name,
+                  targetId: blastTarget.id, targetName: blastTarget.name,
+                  message: `${blastTarget.name} fails save (DC ${dc})`,
+                  details: saveResult.roll.breakdown,
+                })
+                get().addCombatPopup(blastTarget.id, 'save_failed')
+                get().dealDamage(blastTarget.id, explosionDmg.total, caster.name)
+                get().addDamagePopup(blastTarget.id, explosionDmg.total, explosionDmgType, false, 400)
+                get().addLogEntry({
+                  type: 'damage', actorId: casterId, actorName: caster.name,
+                  targetId: blastTarget.id, targetName: blastTarget.name,
+                  message: `${explosionDmg.total} ${explosionDmgType} damage`,
+                  details: explosionDmg.breakdown,
+                })
+              }
+            }
+          }
+
           if (attackResult.naturalOne) {
             get().addLogEntry({
               type: 'attack', actorId: casterId, actorName: caster.name,
@@ -3858,7 +3941,10 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
               message: `${caster.name} misses ${target.name} with ${spell.name} (natural 1)`,
               details: attackResult.attackRoll.breakdown,
             })
-            deferIfRangedSpell(() => { get().addCombatPopup(currentTargetId, 'miss') })
+            deferIfRangedSpell(() => {
+              get().addCombatPopup(currentTargetId, 'miss')
+              triggerExplosionOnImpact()
+            })
           } else if (attackResult.hit) {
             get().addLogEntry({
               type: 'attack', actorId: casterId, actorName: caster.name,
@@ -3907,6 +3993,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
                   message: `${target.name} ${spell.onHitDescription}`,
                 })
               }
+              triggerExplosionOnImpact()
             })
           } else {
             get().addLogEntry({
@@ -3915,7 +4002,10 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
               message: `${caster.name} misses ${target.name} with ${spell.name}`,
               details: `${attackResult.attackRoll.breakdown} vs AC ${attackResult.targetAC}`,
             })
-            deferIfRangedSpell(() => { get().addCombatPopup(currentTargetId, 'miss') })
+            deferIfRangedSpell(() => {
+              get().addCombatPopup(currentTargetId, 'miss')
+              triggerExplosionOnImpact()
+            })
           }
         } else if (spell.savingThrow) {
           // Saving throw spell — use engine function
@@ -3932,7 +4022,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
 
             if (saveResult.halfDamage > 0) {
               get().dealDamage(currentTargetId, saveResult.halfDamage, caster.name)
-              get().addDamagePopup(currentTargetId, saveResult.halfDamage, saveResult.damageType, false)
+              get().addDamagePopup(currentTargetId, saveResult.halfDamage, saveResult.damageType, false, 400)
               get().addLogEntry({
                 type: 'damage', actorId: casterId, actorName: caster.name,
                 targetId: currentTargetId, targetName: target.name,
@@ -3996,7 +4086,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
             // No reroll options — apply damage immediately
             get().addCombatPopup(currentTargetId, 'save_failed')
             get().dealDamage(currentTargetId, saveResult.damage.total, caster.name)
-            get().addDamagePopup(currentTargetId, saveResult.damage.total, saveResult.damageType, false)
+            get().addDamagePopup(currentTargetId, saveResult.damage.total, saveResult.damageType, false, 400)
             get().addLogEntry({
               type: 'damage', actorId: casterId, actorName: caster.name,
               targetId: currentTargetId, targetName: target.name,
@@ -4899,31 +4989,39 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
     }))
   },
 
-  addDamagePopup: (targetId, amount, damageType, isCritical = false) => {
-    const { combatants } = get()
-    const target = combatants.find((c) => c.id === targetId)
-    if (!target || target.position.x < 0) return
+  addDamagePopup: (targetId, amount, damageType, isCritical = false, delay = 0) => {
+    const showPopup = () => {
+      const { combatants } = get()
+      const target = combatants.find((c) => c.id === targetId)
+      if (!target || target.position.x < 0) return
 
-    const popup: DamagePopup = {
-      id: generateId(),
-      targetId,
-      position: { ...target.position },
-      amount,
-      damageType,
-      isCritical,
-      timestamp: Date.now(),
-      velocityX: (Math.random() - 0.5) * 2, // Random value between -1 and 1
-      popupType: 'damage',
+      const popup: DamagePopup = {
+        id: generateId(),
+        targetId,
+        position: { ...target.position },
+        amount,
+        damageType,
+        isCritical,
+        timestamp: Date.now(),
+        velocityX: (Math.random() - 0.5) * 2, // Random value between -1 and 1
+        popupType: 'damage',
+      }
+
+      set((state) => ({
+        damagePopups: [...state.damagePopups, popup],
+      }))
+
+      // Auto-remove popup after animation completes (1.2 seconds)
+      setTimeout(() => {
+        get().removeDamagePopup(popup.id)
+      }, 1200)
     }
 
-    set((state) => ({
-      damagePopups: [...state.damagePopups, popup],
-    }))
-
-    // Auto-remove popup after animation completes (1.2 seconds)
-    setTimeout(() => {
-      get().removeDamagePopup(popup.id)
-    }, 1200)
+    if (delay > 0) {
+      setTimeout(showPopup, delay)
+    } else {
+      showPopup()
+    }
   },
 
   addCombatPopup: (targetId, popupType, text) => {

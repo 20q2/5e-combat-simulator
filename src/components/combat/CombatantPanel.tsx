@@ -690,6 +690,10 @@ export function CombatantPanel() {
   const ac = character?.ac ?? monster?.ac ?? 10
   const speed = character?.speed ?? monster?.speed.walk ?? 30
   const hpPercent = Math.round((displayCombatant.currentHp / displayCombatant.maxHp) * 100)
+  const tempHp = displayCombatant.temporaryHp || 0
+  const effectiveMax = Math.max(displayCombatant.maxHp, displayCombatant.currentHp + tempHp)
+  const hpBarWidth = (displayCombatant.currentHp / effectiveMax) * 100
+  const tempHpBarWidth = tempHp > 0 ? (tempHp / effectiveMax) * 100 : 0
 
   const isCurrentTurn = currentCombatant?.id === displayCombatant.id
 
@@ -757,22 +761,24 @@ export function CombatantPanel() {
               hpPercent > 50 ? 'text-emerald-400' : hpPercent > 25 ? 'text-amber-400' : 'text-rose-400'
             )}>
               {displayCombatant.currentHp} / {displayCombatant.maxHp}
+              {tempHp > 0 && <span className="text-sky-400"> +{tempHp}</span>}
             </span>
           </div>
-          <div className="h-3 bg-slate-800 rounded-full overflow-hidden">
+          <div className="h-3 bg-slate-800 rounded-full overflow-hidden flex">
             <div
               className={cn(
-                'h-full transition-all rounded-full',
+                'h-full transition-all shrink-0',
                 hpPercent > 50 ? 'bg-emerald-500' : hpPercent > 25 ? 'bg-amber-500' : 'bg-rose-500'
               )}
-              style={{ width: `${hpPercent}%` }}
+              style={{ width: `${hpBarWidth}%` }}
             />
+            {tempHp > 0 && (
+              <div
+                className="h-full bg-sky-400 transition-all shrink-0"
+                style={{ width: `${tempHpBarWidth}%` }}
+              />
+            )}
           </div>
-          {displayCombatant.temporaryHp > 0 && (
-            <div className="text-xs text-sky-400 mt-1">
-              +{displayCombatant.temporaryHp} temporary HP
-            </div>
-          )}
         </div>
 
         {/* Class Resources (Superiority Dice, Indomitable, etc.) */}

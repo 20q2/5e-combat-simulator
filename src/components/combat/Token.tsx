@@ -94,6 +94,12 @@ export function Token({
       ? 'bg-amber-500'
       : 'bg-rose-500'
 
+  // Temp HP bar calculations
+  const tempHp = combatant.temporaryHp || 0
+  const effectiveMax = Math.max(combatant.maxHp, combatant.currentHp + tempHp)
+  const hpBarWidth = (combatant.currentHp / effectiveMax) * 100
+  const tempHpBarWidth = tempHp > 0 ? (tempHp / effectiveMax) * 100 : 0
+
   const handleDragStart = (e: React.DragEvent) => {
     if (!isDraggable) {
       e.preventDefault()
@@ -197,11 +203,17 @@ export function Token({
         </div>
 
         {/* HP bar - positioned outside the clipped circle to be fully visible */}
-        <div className="absolute -bottom-0.5 left-1/2 -translate-x-1/2 w-3/4 h-1.5 bg-slate-900 rounded-full overflow-hidden border border-slate-600 shadow-md">
+        <div className="absolute -bottom-0.5 left-1/2 -translate-x-1/2 w-3/4 h-1.5 bg-slate-900 rounded-full overflow-hidden border border-slate-600 shadow-md flex">
           <div
-            className={cn('h-full transition-all', hpBarColor)}
-            style={{ width: `${hpPercent}%` }}
+            className={cn('h-full transition-all shrink-0', hpBarColor)}
+            style={{ width: `${hpBarWidth}%` }}
           />
+          {tempHp > 0 && (
+            <div
+              className="h-full bg-sky-400 transition-all shrink-0"
+              style={{ width: `${tempHpBarWidth}%` }}
+            />
+          )}
         </div>
 
         {/* Current turn indicator */}

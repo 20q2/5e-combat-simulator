@@ -394,6 +394,13 @@ export interface Spell {
     range: number       // Bounce range in feet (30 for Chromatic Orb)
     maxBounces: number  // Max bounces at base spell level
   }
+  // Explosion on impact: secondary AoE damage centered on target, triggers hit or miss (Ice Knife)
+  explosionOnImpact?: {
+    damage: { type: DamageType; dice: string }
+    savingThrow: AbilityName
+    radius: number          // Blast radius in feet
+    upcastDice?: string     // Extra dice per slot level above base (e.g., '1d6')
+  }
   // Creates a persistent zone on the battlefield
   createsZone?: ZoneType
   // Extra feet of AoE radius per spell slot level above base (Fog Cloud: +20ft/level)

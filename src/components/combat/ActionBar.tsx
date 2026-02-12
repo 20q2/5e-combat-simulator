@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, type ReactNode } from 'react'
+import React, { useState, useEffect, useRef, useMemo, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { cn, formatCR } from '@/lib/utils'
 import { useCombatStore, getCurrentCombatant } from '@/stores/combatStore'
@@ -192,14 +192,18 @@ function ResourceBar({
   color,
   label,
   showText = true,
+  tempHp = 0,
 }: {
   current: number
   max: number
   color: 'red' | 'green' | 'blue' | 'amber'
   label: string
   showText?: boolean
+  tempHp?: number
 }) {
-  const percent = Math.max(0, Math.min(100, (current / max) * 100))
+  const effectiveMax = Math.max(max, current + tempHp)
+  const hpWidth = Math.max(0, Math.min(100, (current / effectiveMax) * 100))
+  const tempWidth = tempHp > 0 ? (tempHp / effectiveMax) * 100 : 0
   const colorStyles = {
     red: 'bg-gradient-to-r from-rose-600 to-rose-500',
     green: 'bg-gradient-to-r from-emerald-600 to-emerald-500',
@@ -211,13 +215,24 @@ function ResourceBar({
     <div className="flex flex-col gap-0.5">
       <div className="flex justify-between text-[10px] text-slate-400">
         <span>{label}</span>
-        {showText && <span>{current}/{max}</span>}
+        {showText && (
+          <span>
+            {current}/{max}
+            {tempHp > 0 && <span className="text-sky-400"> +{tempHp}</span>}
+          </span>
+        )}
       </div>
-      <div className="h-2 bg-slate-900 rounded-full overflow-hidden border border-slate-700">
+      <div className="h-2 bg-slate-900 rounded-full overflow-hidden border border-slate-700 flex">
         <div
-          className={cn('h-full transition-all duration-300', colorStyles[color])}
-          style={{ width: `${percent}%` }}
+          className={cn('h-full transition-all duration-300 shrink-0', colorStyles[color])}
+          style={{ width: `${hpWidth}%` }}
         />
+        {tempHp > 0 && (
+          <div
+            className="h-full bg-gradient-to-r from-sky-500 to-sky-400 transition-all duration-300 shrink-0"
+            style={{ width: `${tempWidth}%` }}
+          />
+        )}
       </div>
     </div>
   )
@@ -495,6 +510,70 @@ function getSpellActionType(spell: Spell): 'action' | 'bonus' | 'reaction' {
   return 'action'
 }
 
+// Leveled spell button (shared between single-level and tabbed views)
+function SpellButton({
+  spell,
+  canCast,
+  hasFreeUse,
+  actionType,
+  disableReason,
+  isUpcast,
+  selectedSlotLevel,
+  onSelect,
+}: {
+  spell: Spell
+  canCast: boolean
+  hasFreeUse: boolean
+  actionType: 'action' | 'bonus' | 'reaction'
+  disableReason?: string
+  isUpcast: boolean
+  selectedSlotLevel?: number
+  onSelect: (spell: Spell) => void
+}) {
+  return (
+    <button
+      onClick={() => canCast && onSelect(spell)}
+      disabled={!canCast}
+      className={cn(
+        "flex justify-between items-center p-2 rounded transition-colors text-left",
+        canCast
+          ? "bg-slate-800 hover:bg-violet-900/50"
+          : "bg-slate-800/50 opacity-50 cursor-not-allowed"
+      )}
+      title={
+        disableReason
+          ? disableReason
+          : hasFreeUse
+          ? "Free cast (Magic Initiate)"
+          : isUpcast
+          ? `Upcast from level ${spell.level} to level ${selectedSlotLevel}`
+          : `Uses level ${spell.level} slot`
+      }
+    >
+      <div className="flex items-center gap-1.5 min-w-0">
+        {actionType === 'action' && <Circle className="w-2.5 h-2.5 fill-emerald-500 text-emerald-400 shrink-0" />}
+        {actionType === 'bonus' && <Triangle className="w-2.5 h-2.5 fill-amber-500 text-amber-400 shrink-0" />}
+        {actionType === 'reaction' && <Square className="w-2.5 h-2.5 fill-violet-500 text-violet-400 shrink-0" />}
+        <span className="text-xs text-slate-200 truncate">{spell.name}</span>
+      </div>
+      <div className="flex items-center gap-1 ml-1 shrink-0">
+        {hasFreeUse && (
+          <span className="text-[10px] text-emerald-400 font-medium">FREE</span>
+        )}
+        {isUpcast && !hasFreeUse && actionType !== 'reaction' && (
+          <span className="text-[10px] text-amber-400">↑</span>
+        )}
+        <span className={cn(
+          "text-[10px]",
+          actionType === 'reaction' ? "text-violet-400/70" : hasFreeUse ? "text-slate-500" : "text-violet-400"
+        )}>
+          Lv{spell.level}
+        </span>
+      </div>
+    </button>
+  )
+}
+
 // Spell selector modal
 function SpellSelector({
   spells,
@@ -522,6 +601,33 @@ function SpellSelector({
 
   const cantrips = selectedSlotLevel ? [] : spells.filter((s) => s.level === 0)
   const leveledSpells = filteredSpells.filter((s) => s.level > 0)
+
+  // Group leveled spells by level for tabs
+  const spellsByLevel = useMemo(() => {
+    const groups: Record<number, Spell[]> = {}
+    for (const spell of leveledSpells) {
+      if (!groups[spell.level]) groups[spell.level] = []
+      groups[spell.level].push(spell)
+    }
+    return groups
+  }, [leveledSpells])
+  const spellLevels = Object.keys(spellsByLevel).map(Number).sort((a, b) => a - b)
+  const [activeSpellLevel, setActiveSpellLevel] = useState<number>(() => {
+    if (selectedSlotLevel) {
+      // Default to the clicked slot level tab, or the highest available level below it
+      if (spellLevels.includes(selectedSlotLevel)) return selectedSlotLevel
+      const lower = spellLevels.filter(l => l <= selectedSlotLevel)
+      if (lower.length > 0) return lower[lower.length - 1]
+    }
+    return spellLevels[0] ?? 1
+  })
+
+  // Reset active tab if current selection is no longer valid
+  useEffect(() => {
+    if (spellLevels.length > 0 && !spellLevels.includes(activeSpellLevel)) {
+      setActiveSpellLevel(spellLevels[0])
+    }
+  }, [spellLevels, activeSpellLevel])
 
   // Check if a spell can be cast (has free use or spell slot, and action economy)
   const canCastSpell = (spell: Spell, atLevel?: number): { canCast: boolean; hasFreeUse: boolean; hasSlot: boolean; actionType: 'action' | 'bonus' | 'reaction'; disableReason?: string } => {
@@ -612,59 +718,71 @@ function SpellSelector({
 
       {leveledSpells.length > 0 && (
         <div>
-          <div className="text-xs text-slate-400 mb-1">
-            {selectedSlotLevel ? `Spells (level 1-${selectedSlotLevel})` : 'Spells'}
-          </div>
-          <div className="grid grid-cols-2 gap-1 max-h-32 overflow-y-auto">
-            {leveledSpells.map((spell) => {
-              const { canCast, hasFreeUse, actionType, disableReason } = canCastSpell(spell, selectedSlotLevel)
-              const isUpcast = selectedSlotLevel && spell.level < selectedSlotLevel
-              return (
-                <button
-                  key={spell.id}
-                  onClick={() => canCast && handleSpellSelect(spell)}
-                  disabled={!canCast}
-                  className={cn(
-                    "flex justify-between items-center p-2 rounded transition-colors text-left",
-                    canCast
-                      ? "bg-slate-800 hover:bg-violet-900/50"
-                      : "bg-slate-800/50 opacity-50 cursor-not-allowed"
-                  )}
-                  title={
-                    disableReason
-                      ? disableReason
-                      : hasFreeUse
-                      ? "Free cast (Magic Initiate)"
-                      : isUpcast
-                      ? `Upcast from level ${spell.level} to level ${selectedSlotLevel}`
-                      : `Uses level ${spell.level} slot`
-                  }
-                >
-                  <div className="flex items-center gap-1.5 min-w-0">
-                    {/* Action type indicator */}
-                    {actionType === 'action' && <Circle className="w-2.5 h-2.5 fill-emerald-500 text-emerald-400 shrink-0" />}
-                    {actionType === 'bonus' && <Triangle className="w-2.5 h-2.5 fill-amber-500 text-amber-400 shrink-0" />}
-                    {actionType === 'reaction' && <Square className="w-2.5 h-2.5 fill-violet-500 text-violet-400 shrink-0" />}
-                    <span className="text-xs text-slate-200 truncate">{spell.name}</span>
-                  </div>
-                  <div className="flex items-center gap-1 ml-1 shrink-0">
-                    {hasFreeUse && (
-                      <span className="text-[10px] text-emerald-400 font-medium">FREE</span>
+          {/* Level tabs - only show if multiple levels exist */}
+          {spellLevels.length > 1 ? (
+            <>
+              <div className="flex gap-1 mb-2">
+                {spellLevels.map((level) => (
+                  <button
+                    key={level}
+                    onClick={() => setActiveSpellLevel(level)}
+                    className={cn(
+                      "px-2.5 py-1 rounded text-xs font-medium transition-colors",
+                      activeSpellLevel === level
+                        ? "bg-violet-700 text-violet-100"
+                        : "bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-slate-300"
                     )}
-                    {isUpcast && !hasFreeUse && actionType !== 'reaction' && (
-                      <span className="text-[10px] text-amber-400">↑</span>
-                    )}
-                    <span className={cn(
-                      "text-[10px]",
-                      actionType === 'reaction' ? "text-violet-400/70" : hasFreeUse ? "text-slate-500" : "text-violet-400"
-                    )}>
-                      Lv{spell.level}
-                    </span>
-                  </div>
-                </button>
-              )
-            })}
-          </div>
+                  >
+                    {level === 1 ? '1st' : level === 2 ? '2nd' : level === 3 ? '3rd' : `${level}th`}
+                  </button>
+                ))}
+              </div>
+              <div className="grid grid-cols-2 gap-1 max-h-32 overflow-y-auto">
+                {(spellsByLevel[activeSpellLevel] ?? []).map((spell) => {
+                  const { canCast, hasFreeUse, actionType, disableReason } = canCastSpell(spell, selectedSlotLevel)
+                  const isUpcast = selectedSlotLevel && spell.level < selectedSlotLevel
+                  return (
+                    <SpellButton
+                      key={spell.id}
+                      spell={spell}
+                      canCast={canCast}
+                      hasFreeUse={hasFreeUse}
+                      actionType={actionType}
+                      disableReason={disableReason}
+                      isUpcast={!!isUpcast}
+                      selectedSlotLevel={selectedSlotLevel}
+                      onSelect={handleSpellSelect}
+                    />
+                  )
+                })}
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="text-xs text-slate-400 mb-1">
+                {selectedSlotLevel ? `Spells (level ${spellLevels[0]})` : `${spellLevels[0] === 1 ? '1st' : spellLevels[0] === 2 ? '2nd' : spellLevels[0] === 3 ? '3rd' : `${spellLevels[0]}th`} Level`}
+              </div>
+              <div className="grid grid-cols-2 gap-1 max-h-32 overflow-y-auto">
+                {leveledSpells.map((spell) => {
+                  const { canCast, hasFreeUse, actionType, disableReason } = canCastSpell(spell, selectedSlotLevel)
+                  const isUpcast = selectedSlotLevel && spell.level < selectedSlotLevel
+                  return (
+                    <SpellButton
+                      key={spell.id}
+                      spell={spell}
+                      canCast={canCast}
+                      hasFreeUse={hasFreeUse}
+                      actionType={actionType}
+                      disableReason={disableReason}
+                      isUpcast={!!isUpcast}
+                      selectedSlotLevel={selectedSlotLevel}
+                      onSelect={handleSpellSelect}
+                    />
+                  )
+                })}
+              </div>
+            </>
+          )}
         </div>
       )}
 
@@ -1785,6 +1903,7 @@ export function ActionBar() {
                   max={currentCombatant.maxHp}
                   color={hpColor}
                   label="HP"
+                  tempHp={currentCombatant.temporaryHp || 0}
                 />
                 <div className="mt-1">
                   <MovementSlider
