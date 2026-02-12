@@ -129,6 +129,25 @@ export interface StudiedAttacksFeature extends ClassFeatureBase {
   type: 'studied_attacks'
 }
 
+// Remarkable Athlete - Champion Fighter level 3 feature
+// Advantage on Initiative and Athletics, bonus movement after crits
+export interface RemarkableAthleteFeature extends ClassFeatureBase {
+  type: 'remarkable_athlete'
+}
+
+// Heroic Warrior - Champion Fighter level 10 feature
+// Gain Heroic Inspiration at the start of your turn if you don't have it
+export interface HeroicWarriorFeature extends ClassFeatureBase {
+  type: 'heroic_warrior'
+}
+
+// Survivor - Champion Fighter level 18 feature
+// Defy Death: Advantage on death saves, 18-20 counts as nat 20
+// Heroic Rally: Regain 5 + CON mod HP at start of turn when bloodied
+export interface SurvivorFeature extends ClassFeatureBase {
+  type: 'survivor'
+}
+
 // ============================================
 // Union Type
 // ============================================
@@ -148,6 +167,9 @@ export type ClassFeature =
   | IndomitableFeature
   | TacticalMasterFeature
   | StudiedAttacksFeature
+  | RemarkableAthleteFeature
+  | HeroicWarriorFeature
+  | SurvivorFeature
   | GenericClassFeature
 
 // ============================================
@@ -212,4 +234,16 @@ export function isTacticalMasterFeature(f: ClassFeature): f is TacticalMasterFea
 
 export function isStudiedAttacksFeature(f: ClassFeature): f is StudiedAttacksFeature {
   return f.type === 'studied_attacks'
+}
+
+export function isRemarkableAthleteFeature(f: ClassFeature): f is RemarkableAthleteFeature {
+  return f.type === 'remarkable_athlete'
+}
+
+export function isHeroicWarriorFeature(f: ClassFeature): f is HeroicWarriorFeature {
+  return f.type === 'heroic_warrior'
+}
+
+export function isSurvivorFeature(f: ClassFeature): f is SurvivorFeature {
+  return f.type === 'survivor'
 }

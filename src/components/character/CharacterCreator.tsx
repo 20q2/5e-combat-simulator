@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { useCharacterStore } from '@/stores/characterStore'
 import { useNavigate } from 'react-router-dom'
-import { buildCharacterFromDraft } from '@/lib/characterBuilder'
+import { buildCharacterFromDraft, getMissingDraftFields } from '@/lib/characterBuilder'
 import { AbilityScoreSelector } from './AbilityScoreSelector'
 import { RaceSelector } from './RaceSelector'
 import { BackgroundSelector } from './BackgroundSelector'
@@ -333,10 +333,23 @@ export function CharacterCreator() {
               </Button>
             )}
             {isReviewStep ? (
-              <Button onClick={handleSave} disabled={!buildCharacterFromDraft(draft)} size="lg">
-                <Save className="w-4 h-4 mr-2" />
-                {isEditing ? 'Update Character' : 'Save Character'}
-              </Button>
+              <>
+                {(() => {
+                  const missing = getMissingDraftFields(draft)
+                  if (missing.length > 0) {
+                    return (
+                      <span className="text-sm text-amber-400 mr-2">
+                        Missing: {missing.join(', ')}
+                      </span>
+                    )
+                  }
+                  return null
+                })()}
+                <Button onClick={handleSave} disabled={!buildCharacterFromDraft(draft)} size="lg">
+                  <Save className="w-4 h-4 mr-2" />
+                  {isEditing ? 'Update Character' : 'Save Character'}
+                </Button>
+              </>
             ) : (
               <Button onClick={handleNext} disabled={!canProceed()}>
                 Next

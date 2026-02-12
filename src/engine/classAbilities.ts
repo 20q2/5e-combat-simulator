@@ -11,6 +11,9 @@ import type {
   IndomitableFeature,
   TacticalMasterFeature,
   StudiedAttacksFeature,
+  RemarkableAthleteFeature,
+  HeroicWarriorFeature,
+  SurvivorFeature,
   FightingStyle,
 } from '@/types/classFeature'
 import {
@@ -24,6 +27,9 @@ import {
   isIndomitableFeature,
   isTacticalMasterFeature,
   isStudiedAttacksFeature,
+  isRemarkableAthleteFeature,
+  isHeroicWarriorFeature,
+  isSurvivorFeature,
 } from '@/types/classFeature'
 import { roll } from './dice'
 
@@ -757,4 +763,52 @@ export function getStudiedAttacksFeature(combatant: Combatant): StudiedAttacksFe
  */
 export function hasStudiedAttacks(combatant: Combatant): boolean {
   return getStudiedAttacksFeature(combatant) !== undefined
+}
+
+// ============================================
+// Remarkable Athlete (Champion Fighter)
+// ============================================
+
+/**
+ * Get the Remarkable Athlete feature for a combatant
+ */
+export function getRemarkableAthleteFeature(combatant: Combatant): RemarkableAthleteFeature | undefined {
+  return getFeatureOfType(combatant, isRemarkableAthleteFeature)
+}
+
+/**
+ * Check if combatant has Remarkable Athlete (advantage on initiative, bonus movement after crits)
+ */
+export function hasRemarkableAthlete(combatant: Combatant): boolean {
+  return getRemarkableAthleteFeature(combatant) !== undefined
+}
+
+// ============================================
+// Heroic Warrior (Champion Fighter Level 10)
+// ============================================
+
+/**
+ * Get the Heroic Warrior feature for a combatant
+ */
+export function getHeroicWarriorFeature(combatant: Combatant): HeroicWarriorFeature | undefined {
+  return getFeatureOfType(combatant, isHeroicWarriorFeature)
+}
+
+/**
+ * Check if combatant has Heroic Warrior (auto-grant Heroic Inspiration at start of turn)
+ */
+export function hasHeroicWarrior(combatant: Combatant): boolean {
+  return getHeroicWarriorFeature(combatant) !== undefined
+}
+
+// ============================================
+// Survivor (Champion Fighter Level 18)
+// ============================================
+
+export function getSurvivorFeature(combatant: Combatant): SurvivorFeature | undefined {
+  return getFeatureOfType(combatant, isSurvivorFeature)
+}
+
+export function hasSurvivor(combatant: Combatant): boolean {
+  return getSurvivorFeature(combatant) !== undefined
 }

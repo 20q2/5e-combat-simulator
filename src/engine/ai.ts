@@ -167,21 +167,67 @@ function getBestUsableAttack(
 
 
 /**
+ * Check if a combatant is dead (monsters at 0 HP, characters with 3 death save failures)
+ */
+function isDead(combatant: Combatant): boolean {
+  if (combatant.type === 'monster') return combatant.currentHp <= 0
+  return combatant.deathSaves.failures >= 3
+}
+
+/**
+ * Build occupied position sets for AI pathfinding.
+ * D&D 5e rules: you can move through a friendly creature's space but can't end there.
+ *
+ * Returns:
+ * - pathBlocked: positions that block pathfinding (only enemies, not allies or dead)
+ * - endBlocked: positions you can't end movement on (all living creatures)
+ */
+function buildOccupiedSets(
+  self: Combatant,
+  combatants: Combatant[]
+): { pathBlocked: Set<string>; endBlocked: Set<string> } {
+  const pathBlocked = new Set<string>()
+  const endBlocked = new Set<string>()
+
+  for (const c of combatants) {
+    if (c.id === self.id) continue
+    if (c.position.x < 0) continue
+    if (isDead(c)) continue
+
+    const key = `${c.position.x},${c.position.y}`
+
+    // Can't end on anyone's space
+    endBlocked.add(key)
+
+    // Only enemies block pathfinding; allies can be moved through
+    if (c.type !== self.type) {
+      pathBlocked.add(key)
+    }
+  }
+
+  return { pathBlocked, endBlocked }
+}
+
+/**
  * Calculate path toward a target position using A* pathfinding
  * Returns the best position to move to given remaining movement budget
+ *
+ * pathBlocked: positions that block A* pathfinding (enemies only)
+ * endBlocked: positions the creature can't stop on (all living creatures)
  */
 function getPositionTowardTarget(
   current: Position,
   target: Position,
   maxMovement: number,
   grid: Grid,
-  occupiedPositions: Set<string>,
+  pathBlocked: Set<string>,
+  endBlocked: Set<string>,
   movementContext?: MovementContext
 ): Position | null {
   if (maxMovement <= 0) return null
 
   // Use A* to find path to target (or adjacent to target)
-  const path = findPath(grid, current, target, occupiedPositions, undefined, 1, movementContext)
+  const path = findPath(grid, current, target, pathBlocked, undefined, 1, movementContext)
 
   if (path && path.length > 1) {
     // Find how far along the path we can go with our movement budget
@@ -198,30 +244,31 @@ function getPositionTowardTarget(
       }
     }
 
-    // Don't move to the target's exact position (it's occupied by the enemy)
-    // Move to the second-to-last position if we would reach the target
+    // Walk back from the furthest reachable position until we find an unblocked cell
     if (lastValidIndex > 0) {
-      const destination = path[lastValidIndex]
-      // Don't move to the enemy's position
-      if (destination.x === target.x && destination.y === target.y && lastValidIndex > 1) {
-        return path[lastValidIndex - 1]
-      }
-      if (destination.x !== current.x || destination.y !== current.y) {
-        return destination
+      for (let i = lastValidIndex; i >= 1; i--) {
+        const dest = path[i]
+        const destKey = `${dest.x},${dest.y}`
+        // Can't end on the target's position or any living creature's space
+        if (endBlocked.has(destKey)) continue
+        if (dest.x === current.x && dest.y === current.y) continue
+        return dest
       }
     }
   }
 
   // If no path found, try to find reachable positions that get us closer
-  const reachable = getReachablePositions(grid, current, maxMovement, occupiedPositions, 1, movementContext)
+  // Use pathBlocked for BFS so we can traverse through ally spaces
+  const reachable = getReachablePositions(grid, current, maxMovement, pathBlocked, 1, movementContext)
 
   let bestPosition: Position | null = null
   let bestDistance = Infinity
 
   reachable.forEach((_, key) => {
+    // Can't end on any living creature's space
+    if (endBlocked.has(key)) return
+
     const [x, y] = key.split(',').map(Number)
-    // Don't move to the enemy's position
-    if (x === target.x && y === target.y) return
 
     const distance = Math.max(Math.abs(target.x - x), Math.abs(target.y - y))
     if (distance < bestDistance) {
@@ -317,12 +364,8 @@ export function decideMonsterAction(
     actions.push(cunningAction)
   }
 
-  // Get occupied positions
-  const occupiedPositions = new Set(
-    combatants
-      .filter((c) => c.id !== monster.id && c.position.x >= 0)
-      .map((c) => `${c.position.x},${c.position.y}`)
-  )
+  // Build occupied position sets (allies passable for pathing, not for ending)
+  const { pathBlocked, endBlocked } = buildOccupiedSets(monster, combatants)
 
   // Calculate remaining movement
   const speed = monsterData?.speed.walk ?? characterData?.speed ?? 30
@@ -365,7 +408,8 @@ export function decideMonsterAction(
         bestTarget.position,
         remainingMovement,
         grid,
-        occupiedPositions,
+        pathBlocked,
+        endBlocked,
         movementContext
       )
 

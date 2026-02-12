@@ -1,6 +1,6 @@
 import { rollAttack, rollDamage, rollD20, rollDie, type D20RollResult, type DiceRollResult } from './dice'
 import { getAbilityModifier } from '@/types'
-import type { Combatant, Character, Monster, Weapon, MonsterAction, Condition, Grid, Position, AbilityName, WeaponMastery } from '@/types'
+import type { Combatant, Character, Monster, Weapon, MonsterAction, Condition, Grid, Position, AbilityName, WeaponMastery, Spell } from '@/types'
 import { hasLineOfSight } from '@/lib/lineOfSight'
 import { getDistanceBetweenPositions } from '@/lib/distance'
 import {
@@ -18,6 +18,7 @@ import {
   rollSneakAttackDamage,
   getCriticalRange,
   hasStudiedAttacks,
+  hasSurvivor,
 } from './classAbilities'
 import {
   hasTavernBrawler,
@@ -741,16 +742,47 @@ export interface DeathSaveResult {
 
 /**
  * Roll a death saving throw
+ * Survivor (Champion 18) grants advantage and treats 18-20 as nat 20
  */
-export function rollDeathSave(): DeathSaveResult {
-  const rollResult = rollD20(0, 'normal')
+export function rollDeathSave(combatant?: Combatant): DeathSaveResult {
+  const hasSurvivorFeature = combatant ? hasSurvivor(combatant) : false
+  const rollResult = rollD20(0, hasSurvivorFeature ? 'advantage' : 'normal')
+
+  // Survivor - Defy Death: 18-20 on death save counts as rolling a 20
+  const criticalSuccess = rollResult.isNatural20 ||
+    (hasSurvivorFeature && rollResult.naturalRoll >= 18)
 
   return {
     roll: rollResult,
-    success: rollResult.total >= 10,
-    criticalSuccess: rollResult.isNatural20,
-    criticalFailure: rollResult.isNatural1,
+    success: criticalSuccess || rollResult.total >= 10,
+    criticalSuccess,
+    criticalFailure: rollResult.isNatural1 && !criticalSuccess,
   }
+}
+
+// ============================================
+// Cantrip Scaling
+// ============================================
+
+/**
+ * Get the scaled damage dice for a cantrip based on caster level.
+ * Cantrips scale at character levels 5, 11, and 17 (not class level).
+ */
+export function getScaledCantripDice(spell: Spell, casterLevel: number): string {
+  if (spell.level !== 0 || !spell.damage?.scaling) return spell.damage?.dice ?? '0'
+
+  // Find the highest scaling tier the caster qualifies for
+  const tiers = Object.keys(spell.damage.scaling)
+    .map(Number)
+    .sort((a, b) => b - a) // Descending
+
+  for (const tier of tiers) {
+    if (casterLevel >= tier) {
+      return spell.damage.scaling[tier]
+    }
+  }
+
+  return spell.damage.dice
 }
 
 // ============================================

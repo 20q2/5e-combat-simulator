@@ -147,8 +147,8 @@ export function rollD20(
 /**
  * Roll for initiative (d20 + DEX modifier)
  */
-export function rollInitiative(dexModifier: number): D20RollResult {
-  return rollD20(dexModifier)
+export function rollInitiative(dexModifier: number, advantage: 'normal' | 'advantage' | 'disadvantage' = 'normal'): D20RollResult {
+  return rollD20(dexModifier, advantage)
 }
 
 /**

@@ -17,6 +17,11 @@ import {
   applyParry,
   applyPrecisionAttack,
   prepareRiposte,
+  findSweepTarget,
+  applySweepingAttack,
+  applyEvasiveFootwork,
+  applyFeintingAttack,
+  applyLungingAttack,
 } from '@/engine/maneuvers'
 import type { Combatant, Character, Grid } from '@/types'
 import type { CombatSuperiorityFeature, RelentlessFeature, ClassFeature } from '@/types/classFeature'
@@ -803,6 +808,293 @@ describe('Maneuver Application', () => {
       expect(result.maneuverId).toBe('riposte')
       expect(result.bonusDamage).toBe(5)
       expect(result.superiorityDieRoll).toBe(5)
+    })
+  })
+})
+
+// ============================================
+// Sweeping Attack Tests
+// ============================================
+
+describe('Sweeping Attack', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  describe('findSweepTarget', () => {
+    it('finds an adjacent enemy within 5ft of original target', () => {
+      const attacker = createBattleMasterCombatant(5, ['sweeping-attack'])
+      attacker.position = { x: 5, y: 5 }
+
+      const target = createMonsterCombatant({ position: { x: 6, y: 5 } })
+
+      const secondEnemy = createMonsterCombatant({
+        id: 'monster-2',
+        name: 'Goblin 2',
+        position: { x: 6, y: 6 },  // Adjacent to target AND attacker
+      })
+
+      const result = findSweepTarget(attacker, target, [attacker, target, secondEnemy])
+      expect(result).toBeDefined()
+      expect(result?.id).toBe('monster-2')
+    })
+
+    it('returns undefined when no valid targets nearby', () => {
+      const attacker = createBattleMasterCombatant(5, ['sweeping-attack'])
+      attacker.position = { x: 5, y: 5 }
+
+      const target = createMonsterCombatant({ position: { x: 6, y: 5 } })
+
+      // Far away enemy - not adjacent
+      const farEnemy = createMonsterCombatant({
+        id: 'monster-2',
+        name: 'Goblin 2',
+        position: { x: 9, y: 9 },
+      })
+
+      const result = findSweepTarget(attacker, target, [attacker, target, farEnemy])
+      expect(result).toBeUndefined()
+    })
+
+    it('does not select dead enemies', () => {
+      const attacker = createBattleMasterCombatant(5, ['sweeping-attack'])
+      attacker.position = { x: 5, y: 5 }
+
+      const target = createMonsterCombatant({ position: { x: 6, y: 5 } })
+
+      const deadEnemy = createMonsterCombatant({
+        id: 'monster-2',
+        name: 'Goblin 2',
+        position: { x: 6, y: 6 },
+        currentHp: 0,
+      })
+
+      const result = findSweepTarget(attacker, target, [attacker, target, deadEnemy])
+      expect(result).toBeUndefined()
+    })
+
+    it('does not select allies', () => {
+      const attacker = createBattleMasterCombatant(5, ['sweeping-attack'])
+      attacker.position = { x: 5, y: 5 }
+
+      const target = createMonsterCombatant({ position: { x: 6, y: 5 } })
+
+      // Another character (same team as attacker)
+      const ally = createNonBattleMasterCombatant()
+      ally.position = { x: 6, y: 6 }
+
+      const result = findSweepTarget(attacker, target, [attacker, target, ally])
+      expect(result).toBeUndefined()
+    })
+
+    it('does not select the original target', () => {
+      const attacker = createBattleMasterCombatant(5, ['sweeping-attack'])
+      attacker.position = { x: 5, y: 5 }
+
+      const target = createMonsterCombatant({ position: { x: 6, y: 5 } })
+
+      // Only the original target is adjacent
+      const result = findSweepTarget(attacker, target, [attacker, target])
+      expect(result).toBeUndefined()
+    })
+  })
+
+  describe('applySweepingAttack', () => {
+    it('deals superiority die damage to sweep target when attack roll beats AC', () => {
+      vi.spyOn(Math, 'random').mockReturnValue(0.625)  // Superiority die: 6 on d8
+
+      const attacker = createBattleMasterCombatant(5, ['sweeping-attack'])
+      attacker.position = { x: 5, y: 5 }
+
+      const target = createMonsterCombatant({ position: { x: 6, y: 5 } })
+
+      const secondEnemy = createMonsterCombatant({
+        id: 'monster-2',
+        name: 'Goblin 2',
+        position: { x: 6, y: 6 },
+      })
+
+      const allCombatants = [attacker, target, secondEnemy]
+      const result = applySweepingAttack(
+        attacker, target, 20, allCombatants, () => 'slashing'
+      )
+
+      expect(result.success).toBe(true)
+      expect(result.sweepTargetId).toBe('monster-2')
+      expect(result.sweepDamage).toBe(6)
+      expect(result.sweepDamageType).toBe('slashing')
+    })
+
+    it('fails when attack roll does not beat sweep target AC', () => {
+      vi.spyOn(Math, 'random').mockReturnValue(0.5)
+
+      const attacker = createBattleMasterCombatant(5, ['sweeping-attack'])
+      attacker.position = { x: 5, y: 5 }
+
+      const target = createMonsterCombatant({ position: { x: 6, y: 5 } })
+
+      const secondEnemy = createMonsterCombatant({
+        id: 'monster-2',
+        name: 'Goblin 2',
+        position: { x: 6, y: 6 },
+      })
+
+      const allCombatants = [attacker, target, secondEnemy]
+      // Attack total of 10 vs Goblin AC 15 → miss
+      const result = applySweepingAttack(
+        attacker, target, 10, allCombatants, () => 'slashing'
+      )
+
+      expect(result.success).toBe(false)
+      expect(result.sweepTargetId).toBeUndefined()
+    })
+
+    it('fails when there is no valid sweep target', () => {
+      vi.spyOn(Math, 'random').mockReturnValue(0.5)
+
+      const attacker = createBattleMasterCombatant(5, ['sweeping-attack'])
+      attacker.position = { x: 5, y: 5 }
+
+      const target = createMonsterCombatant({ position: { x: 6, y: 5 } })
+
+      const result = applySweepingAttack(
+        attacker, target, 20, [attacker, target], () => 'slashing'
+      )
+
+      expect(result.success).toBe(false)
+      expect(result.sweepTargetId).toBeUndefined()
+    })
+  })
+})
+
+// ============================================
+// Evasive Footwork Tests
+// ============================================
+
+describe('Evasive Footwork', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  describe('applyEvasiveFootwork', () => {
+    it('provides AC bonus equal to superiority die roll', () => {
+      vi.spyOn(Math, 'random').mockReturnValue(0.75)  // Roll 7 on d8
+      const combatant = createBattleMasterCombatant(5)
+
+      const result = applyEvasiveFootwork(combatant)
+
+      expect(result.maneuverId).toBe('evasive-footwork')
+      expect(result.acBonus).toBe(7)
+      expect(result.superiorityDieRoll).toBe(7)
+      expect(result.success).toBe(true)
+    })
+
+    it('uses d10 at level 10+', () => {
+      vi.spyOn(Math, 'random').mockReturnValue(0.5)  // Roll 6 on d10
+      const combatant = createBattleMasterCombatant(10)
+
+      const result = applyEvasiveFootwork(combatant)
+
+      expect(result.superiorityDieSize).toBe(10)
+      expect(result.acBonus).toBe(6)
+    })
+
+    it('uses d12 at level 18+', () => {
+      vi.spyOn(Math, 'random').mockReturnValue(0.5)  // Roll 7 on d12
+      const combatant = createBattleMasterCombatant(18)
+
+      const result = applyEvasiveFootwork(combatant)
+
+      expect(result.superiorityDieSize).toBe(12)
+      expect(result.acBonus).toBe(7)
+    })
+  })
+})
+
+// ============================================
+// Feinting Attack Tests
+// ============================================
+
+describe('Feinting Attack', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  describe('applyFeintingAttack', () => {
+    it('provides bonus damage equal to superiority die roll', () => {
+      vi.spyOn(Math, 'random').mockReturnValue(0.5)  // Roll 5 on d8
+      const combatant = createBattleMasterCombatant(5)
+
+      const result = applyFeintingAttack(combatant, 'Goblin')
+
+      expect(result.maneuverId).toBe('feinting-attack')
+      expect(result.bonusDamage).toBe(5)
+      expect(result.superiorityDieRoll).toBe(5)
+      expect(result.success).toBe(true)
+    })
+
+    it('includes target name in message', () => {
+      vi.spyOn(Math, 'random').mockReturnValue(0.5)
+      const combatant = createBattleMasterCombatant(5)
+
+      const result = applyFeintingAttack(combatant, 'Dragon')
+
+      expect(result.message).toContain('Dragon')
+      expect(result.message).toContain('feints')
+    })
+
+    it('scales die size with level', () => {
+      vi.spyOn(Math, 'random').mockReturnValue(0.5)  // Roll 6 on d10
+      const combatant = createBattleMasterCombatant(10)
+
+      const result = applyFeintingAttack(combatant, 'Goblin')
+
+      expect(result.superiorityDieSize).toBe(10)
+      expect(result.bonusDamage).toBe(6)
+    })
+  })
+})
+
+// ============================================
+// Lunging Attack Tests
+// ============================================
+
+describe('Lunging Attack', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  describe('applyLungingAttack', () => {
+    it('provides bonus damage equal to superiority die roll', () => {
+      vi.spyOn(Math, 'random').mockReturnValue(0.625)  // Roll 6 on d8
+      const combatant = createBattleMasterCombatant(5)
+
+      const result = applyLungingAttack(combatant)
+
+      expect(result.maneuverId).toBe('lunging-attack')
+      expect(result.bonusDamage).toBe(6)
+      expect(result.superiorityDieRoll).toBe(6)
+      expect(result.success).toBe(true)
+    })
+
+    it('scales die size with level', () => {
+      vi.spyOn(Math, 'random').mockReturnValue(0.5)  // Roll 7 on d12
+      const combatant = createBattleMasterCombatant(18)
+
+      const result = applyLungingAttack(combatant)
+
+      expect(result.superiorityDieSize).toBe(12)
+      expect(result.bonusDamage).toBe(7)
+    })
+
+    it('message includes Dash and damage info', () => {
+      vi.spyOn(Math, 'random').mockReturnValue(0.5)
+      const combatant = createBattleMasterCombatant(5)
+
+      const result = applyLungingAttack(combatant)
+
+      expect(result.message).toContain('Lunging Attack')
+      expect(result.message).toContain('Dash')
     })
   })
 })

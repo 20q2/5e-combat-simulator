@@ -19,6 +19,20 @@ import type { FightingStyle } from '@/types/classFeature'
  * Build a Character object from a CharacterDraft.
  * Returns null if the draft is missing required fields.
  */
+/**
+ * Returns a list of field names that are missing/invalid in the draft.
+ * Empty array means the draft is valid and ready to save.
+ */
+export function getMissingDraftFields(draft: CharacterDraft): string[] {
+  const missing: string[] = []
+  if (!draft.name.trim()) missing.push('Character name')
+  if (!draft.raceId || !getRaceById(draft.raceId)) missing.push('Race')
+  if (!draft.backgroundId || !getBackgroundById(draft.backgroundId)) missing.push('Background')
+  if (!draft.backgroundOriginFeat) missing.push('Background origin feat')
+  if (draft.classEntries.length === 0 || draft.classEntries.reduce((s, e) => s + e.level, 0) === 0) missing.push('Class')
+  return missing
+}
+
 export function buildCharacterFromDraft(draft: CharacterDraft): Character | null {
   const race = draft.raceId ? getRaceById(draft.raceId) ?? null : null
   const background = draft.backgroundId ? getBackgroundById(draft.backgroundId) ?? null : null

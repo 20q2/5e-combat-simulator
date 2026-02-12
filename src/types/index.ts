@@ -350,6 +350,7 @@ export interface Spell {
     damagePerProjectile: string      // Damage dice per projectile (e.g., "1d4+1")
     scalingPerSlotLevel?: number     // Additional projectiles per slot level above base
   }
+  // Multi-projectile spells (Magic Missile, Scorching Ray, Eldritch Blast, etc.)
   // Reaction spells (Shield, Counterspell, Absorb Elements, etc.)
   reaction?: {
     trigger: 'on_hit' | 'on_magic_missile' | 'enemy_casts_spell' | 'take_damage'
@@ -359,6 +360,23 @@ export interface Spell {
       damageType?: DamageType        // For Absorb Elements
     }
   }
+
+  // ---- Data-driven spell effects (applied generically by combat store) ----
+
+  // Condition applied when the spell attack hits (e.g., Shocking Grasp can't react)
+  conditionOnHit?: Condition
+  // Condition applied when target fails saving throw (e.g., Charm Person → charmed)
+  conditionOnFailedSave?: Condition
+  // Target gets advantage on save during combat (e.g., Charm Person)
+  saveAdvantageInCombat?: boolean
+  // Target can't take reactions until start of its next turn (Shocking Grasp)
+  onHitNoReactions?: boolean
+  // Descriptive effect logged on hit (Ray of Frost speed, Chill Touch healing)
+  onHitDescription?: string
+  // Descriptive effect logged on failed save (Mind Sliver -1d4)
+  onFailedSaveDescription?: string
+  // Replace base die type when target is below max HP (Toll the Dead: 'd8' → 'd12')
+  damagedTargetDieUpgrade?: string
 }
 
 // ============================================

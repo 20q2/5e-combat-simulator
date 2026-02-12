@@ -143,11 +143,86 @@ function FeatureList({ features, title }: { features: ClassFeature[]; title: str
   )
 }
 
+function ClassDetailsContent({ entry }: {
+  entry: { classId: string; level: number; subclassId: string | null }
+}) {
+  const classData = getClassById(entry.classId)
+  if (!classData) return null
+
+  const classFeatures = getClassFeaturesByLevel(classData, entry.level)
+  const subclassFeatures = entry.subclassId
+    ? getSubclassFeaturesByLevel(classData, entry.subclassId, entry.level)
+    : []
+  const selectedSubclass = classData.subclasses.find(s => s.id === entry.subclassId)
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <p className="text-xs text-muted-foreground">
+          d{classData.hitDie} Hit Die · Saves: {classData.savingThrowProficiencies.map(s => ABILITY_LABELS[s]).join(', ')}
+        </p>
+      </div>
+
+      {/* Proficiencies */}
+      <div>
+        <h4 className="font-medium text-sm mb-1 flex items-center gap-1.5">
+          <Shield className="w-3.5 h-3.5 text-blue-400" />
+          Armor & Weapons
+        </h4>
+        <p className="text-sm text-muted-foreground">
+          {classData.armorProficiencies.length > 0
+            ? `Armor: ${classData.armorProficiencies.join(', ')}`
+            : 'No armor proficiencies'}
+        </p>
+        <p className="text-sm text-muted-foreground">
+          Weapons: {classData.weaponProficiencies.join(', ')}
+        </p>
+      </div>
+
+      {/* Spellcasting */}
+      {classData.spellcasting && (
+        <div>
+          <h4 className="font-medium text-sm mb-1 flex items-center gap-1.5">
+            <Wand2 className="w-3.5 h-3.5 text-violet-400" />
+            Spellcasting
+          </h4>
+          <p className="text-sm text-muted-foreground">
+            Spellcasting Ability: {ABILITY_LABELS[classData.spellcasting.ability]}
+            {classData.spellcasting.preparedCaster && ' (Prepared caster)'}
+          </p>
+        </div>
+      )}
+
+      <FeatureList features={classFeatures} title="Class Features" />
+
+      {selectedSubclass && subclassFeatures.length > 0 && (
+        <FeatureList
+          features={subclassFeatures}
+          title={`${selectedSubclass.name} Features`}
+        />
+      )}
+    </div>
+  )
+}
+
 function MulticlassDetails({ classEntries, focusedClassId }: {
   classEntries: Array<{ classId: string; level: number; subclassId: string | null }>
   focusedClassId: string | null
 }) {
   const activeEntries = classEntries.filter(e => e.level > 0)
+
+  // Determine which tab to show — sync with focusedClassId if it's active
+  const initialTab = focusedClassId && activeEntries.some(e => e.classId === focusedClassId)
+    ? focusedClassId
+    : activeEntries[0]?.classId ?? null
+  const [selectedTab, setSelectedTab] = useState<string | null>(initialTab)
+
+  // Keep selectedTab in sync: if focusedClassId changes and is active, switch to it
+  const effectiveTab = focusedClassId && activeEntries.some(e => e.classId === focusedClassId)
+    ? focusedClassId
+    : selectedTab && activeEntries.some(e => e.classId === selectedTab)
+      ? selectedTab
+      : activeEntries[0]?.classId ?? null
 
   if (activeEntries.length === 0) {
     return (
@@ -159,14 +234,7 @@ function MulticlassDetails({ classEntries, focusedClassId }: {
     )
   }
 
-  // If a class is focused, show it first
-  const sortedEntries = focusedClassId
-    ? [...activeEntries].sort((a, b) => {
-        if (a.classId === focusedClassId) return -1
-        if (b.classId === focusedClassId) return 1
-        return 0
-      })
-    : activeEntries
+  const currentEntry = activeEntries.find(e => e.classId === effectiveTab) ?? activeEntries[0]
 
   return (
     <Card className="h-full flex flex-col">
@@ -175,78 +243,51 @@ function MulticlassDetails({ classEntries, focusedClassId }: {
           <Info className="w-5 h-5 text-blue-400" />
           Class Features
         </CardTitle>
-        <CardDescription>
-          Total Level: {activeEntries.reduce((s, e) => s + e.level, 0)} / 20
-        </CardDescription>
+        {/* Tabs — only show when multiclassing */}
+        {activeEntries.length > 1 ? (
+          <div className="flex flex-wrap gap-1 mt-2">
+            {activeEntries.map(entry => {
+              const classData = getClassById(entry.classId)
+              const classIcon = getClassIcon(entry.classId)
+              const isActive = entry.classId === effectiveTab
+              return (
+                <button
+                  key={entry.classId}
+                  onClick={() => setSelectedTab(entry.classId)}
+                  className={cn(
+                    'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors',
+                    isActive
+                      ? 'bg-primary text-primary-foreground'
+                      : 'bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground'
+                  )}
+                >
+                  {classIcon && (
+                    <img src={classIcon} alt="" className={cn("w-4 h-4 object-contain", isActive ? "" : "invert")} />
+                  )}
+                  {classData?.name ?? entry.classId} {entry.level}
+                </button>
+              )
+            })}
+          </div>
+        ) : (
+          <CardDescription>
+            {(() => {
+              const classData = getClassById(currentEntry.classId)
+              const classIcon = getClassIcon(currentEntry.classId)
+              return (
+                <span className="flex items-center gap-1.5">
+                  {classIcon && (
+                    <img src={classIcon} alt="" className="w-4 h-4 object-contain invert" />
+                  )}
+                  {classData?.name} Level {currentEntry.level}
+                </span>
+              )
+            })()}
+          </CardDescription>
+        )}
       </CardHeader>
-      <CardContent className="space-y-6 flex-1 overflow-y-auto">
-        {sortedEntries.map(entry => {
-          const classData = getClassById(entry.classId)
-          if (!classData) return null
-          const classIcon = getClassIcon(entry.classId)
-          const classFeatures = getClassFeaturesByLevel(classData, entry.level)
-          const subclassFeatures = entry.subclassId
-            ? getSubclassFeaturesByLevel(classData, entry.subclassId, entry.level)
-            : []
-          const selectedSubclass = classData.subclasses.find(s => s.id === entry.subclassId)
-
-          return (
-            <div key={entry.classId} className="space-y-4">
-              <div className="flex items-center gap-2 pb-2 border-b border-border">
-                {classIcon ? (
-                  <img src={classIcon} alt={classData.name} className="w-7 h-7 object-contain invert" />
-                ) : (
-                  <Info className="w-5 h-5 text-blue-400" />
-                )}
-                <div>
-                  <h3 className="font-semibold">{classData.name} (Level {entry.level})</h3>
-                  <p className="text-xs text-muted-foreground">
-                    d{classData.hitDie} Hit Die · Saves: {classData.savingThrowProficiencies.map(s => ABILITY_LABELS[s]).join(', ')}
-                  </p>
-                </div>
-              </div>
-
-              {/* Proficiencies */}
-              <div>
-                <h4 className="font-medium text-sm mb-1 flex items-center gap-1.5">
-                  <Shield className="w-3.5 h-3.5 text-blue-400" />
-                  Armor & Weapons
-                </h4>
-                <p className="text-sm text-muted-foreground">
-                  {classData.armorProficiencies.length > 0
-                    ? `Armor: ${classData.armorProficiencies.join(', ')}`
-                    : 'No armor proficiencies'}
-                </p>
-                <p className="text-sm text-muted-foreground">
-                  Weapons: {classData.weaponProficiencies.join(', ')}
-                </p>
-              </div>
-
-              {/* Spellcasting */}
-              {classData.spellcasting && (
-                <div>
-                  <h4 className="font-medium text-sm mb-1 flex items-center gap-1.5">
-                    <Wand2 className="w-3.5 h-3.5 text-violet-400" />
-                    Spellcasting
-                  </h4>
-                  <p className="text-sm text-muted-foreground">
-                    Spellcasting Ability: {ABILITY_LABELS[classData.spellcasting.ability]}
-                    {classData.spellcasting.preparedCaster && ' (Prepared caster)'}
-                  </p>
-                </div>
-              )}
-
-              <FeatureList features={classFeatures} title="Class Features" />
-
-              {selectedSubclass && subclassFeatures.length > 0 && (
-                <FeatureList
-                  features={subclassFeatures}
-                  title={`${selectedSubclass.name} Features`}
-                />
-              )}
-            </div>
-          )
-        })}
+      <CardContent className="flex-1 overflow-y-auto">
+        <ClassDetailsContent key={currentEntry.classId} entry={currentEntry} />
       </CardContent>
     </Card>
   )
@@ -261,26 +302,8 @@ export function ClassSelector() {
 
   const totalLevel = draft.classEntries.reduce((s, e) => s + e.level, 0)
 
-  // Build summary text
-  const activeEntries = draft.classEntries.filter(e => e.level > 0)
-  const summaryText = activeEntries.length > 0
-    ? activeEntries.map(e => {
-        const cd = getClassById(e.classId)
-        return `${cd?.name ?? e.classId} ${e.level}`
-      }).join(' / ')
-    : 'No classes selected'
-
   return (
     <div className="space-y-6">
-      {/* Total Level Summary */}
-      <div className="flex items-center justify-between px-4 py-3 rounded-lg bg-muted/30 border border-border">
-        <div className="flex items-center gap-2">
-          <Crown className="w-5 h-5 text-amber-400" />
-          <span className="font-medium">Total Level: {totalLevel} / 20</span>
-        </div>
-        <span className="text-sm text-muted-foreground">{summaryText}</span>
-      </div>
-
       <div className="grid md:grid-cols-2 gap-6 items-stretch">
         {/* Class List */}
         <Card className="flex flex-col">

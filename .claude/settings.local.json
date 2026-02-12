@@ -42,7 +42,8 @@
       "Bash(npm run dev:*)",
       "Bash(./node_modules/.bin/tsc:*)",
       "Bash(node_modules.bintsc:*)",
-      "Bash(npx:*)"
+      "Bash(npx:*)",
+      "Bash(git log:*)"
     ]
   }
 }

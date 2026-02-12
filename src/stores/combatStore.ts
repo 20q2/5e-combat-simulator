@@ -21,7 +21,7 @@ import type {
 } from '@/types'
 import { rollInitiative, rollDie, rollD20 } from '@/engine/dice'
 import { getAbilityModifier } from '@/types'
-import { resolveAttack, canAttackTarget, getSpellSaveDC, getSpellAttackBonus, rollCombatantSavingThrow, rollDeathSave, selectWeaponForTarget, isRangedAttack, type AttackResult } from '@/engine/combat'
+import { resolveAttack, canAttackTarget, getSpellSaveDC, getSpellAttackBonus, rollCombatantSavingThrow, rollDeathSave, selectWeaponForTarget, isRangedAttack, getScaledCantripDice, type AttackResult } from '@/engine/combat'
 import { rollAttack, rollDamage } from '@/engine/dice'
 import { getNextAIAction } from '@/engine/ai'
 // Movement calculations now handled by pathfinding module
@@ -56,6 +56,9 @@ import {
   getIndomitableFeature,
   getIndomitableBonus,
   hasStudiedAttacks,
+  hasRemarkableAthlete,
+  hasHeroicWarrior,
+  hasSurvivor,
 } from '@/engine/classAbilities'
 import {
   applyOnHitMasteryEffect,
@@ -611,15 +614,21 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
       // Alert feat: add proficiency bonus to initiative
       const alertBonus = getAlertInitiativeBonus(c)
       const totalMod = dexMod + alertBonus
-      const roll = rollInitiative(totalMod)
+
+      // Remarkable Athlete: advantage on initiative rolls
+      const initAdvantage = hasRemarkableAthlete(c) ? 'advantage' as const : 'normal' as const
+      const roll = rollInitiative(totalMod, initAdvantage)
+
+      const bonusLabels: string[] = []
+      if (alertBonus > 0) bonusLabels.push(`Alert +${alertBonus}`)
+      if (initAdvantage === 'advantage') bonusLabels.push('Remarkable Athlete')
+      const bonusSuffix = bonusLabels.length > 0 ? ` (${bonusLabels.join(', ')})` : ''
 
       get().addLogEntry({
         type: 'initiative',
         actorId: c.id,
         actorName: c.name,
-        message: alertBonus > 0
-          ? `rolls initiative (Alert +${alertBonus}): ${roll.breakdown}`
-          : `rolls initiative: ${roll.breakdown}`,
+        message: `rolls initiative${bonusSuffix}: ${roll.breakdown}`,
       })
 
       // Check Relentless feature for Battle Masters with 0 dice
@@ -756,8 +765,50 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
       }
     })
 
+    // Heroic Warrior: Champion Fighter level 10 — grant Heroic Inspiration at start of turn if missing
+    const combatantsAfterHeroicWarrior = combatantsWithExpiredConditions.map((c) => {
+      if (c.id !== nextCombatantId) return c
+      if (c.heroicInspiration) return c // Already has it
+      if (!hasHeroicWarrior(c)) return c // Doesn't have the feature
+
+      get().addLogEntry({
+        type: 'other',
+        actorId: c.id,
+        actorName: c.name,
+        message: `Heroic Warrior: ${c.name} gains Heroic Inspiration`,
+      })
+
+      return { ...c, heroicInspiration: true }
+    })
+
+    // Survivor - Heroic Rally: Champion Fighter level 18 — heal 5 + CON mod at start of turn when bloodied
+    const finalCombatants = combatantsAfterHeroicWarrior.map((c) => {
+      if (c.id !== nextCombatantId) return c
+      if (c.currentHp <= 0) return c // Must have at least 1 HP
+      if (!hasSurvivor(c)) return c
+
+      // Check if bloodied (HP <= half max)
+      if (c.currentHp > Math.floor(c.maxHp / 2)) return c
+
+      const character = c.type === 'character' ? c.data as Character : null
+      const monster = c.type === 'monster' ? c.data as Monster : null
+      const conScore = character?.abilityScores.constitution ?? monster?.abilityScores.constitution ?? 10
+      const conMod = getAbilityModifier(conScore)
+      const healing = 5 + conMod
+      const newHp = Math.min(c.currentHp + healing, c.maxHp)
+
+      get().addLogEntry({
+        type: 'heal',
+        actorId: c.id,
+        actorName: c.name,
+        message: `Heroic Rally: ${c.name} regains ${newHp - c.currentHp} HP (${c.currentHp} → ${newHp})`,
+      })
+
+      return { ...c, currentHp: newHp }
+    })
+
     set({
-      combatants: combatantsWithExpiredConditions,
+      combatants: finalCombatants,
       currentTurnIndex: nextIndex,
       round: newRound,
       selectedAction: undefined,
@@ -765,7 +816,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
     })
 
     // Auto-skip dead combatants (monsters at 0 HP or characters who have died)
-    const nextCombatant = combatantsWithExpiredConditions.find((c) => c.id === turnOrder[nextIndex])
+    const nextCombatant = finalCombatants.find((c) => c.id === turnOrder[nextIndex])
     if (nextCombatant) {
       const isDead = nextCombatant.currentHp <= 0 && (
         nextCombatant.type === 'monster' || // Monsters are dead at 0 HP
@@ -3181,6 +3232,20 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
       }
     }
 
+    // Remarkable Athlete (Champion Fighter): after scoring a crit, gain half speed of free movement without OAs
+    let remarkableAthleteMovement = 0
+    if (result.critical && hasRemarkableAthlete(attacker)) {
+      const character = attacker.type === 'character' ? attacker.data as Character : null
+      const speed = character?.speed ?? 30
+      remarkableAthleteMovement = Math.floor(speed / 2)
+      get().addLogEntry({
+        type: 'other',
+        actorId: attackerId,
+        actorName: attacker.name,
+        message: `Remarkable Athlete: gains ${remarkableAthleteMovement}ft of free movement after critical hit`,
+      })
+    }
+
     set((state) => ({
       combatants: state.combatants.map((c) =>
         c.id === attackerId
@@ -3188,6 +3253,10 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
               ...c,
               attacksMadeThisTurn: newAttacksMade,
               hasActed: allAttacksUsed,
+              movementUsed: Math.max(0, c.movementUsed - remarkableAthleteMovement),
+              ...(remarkableAthleteMovement > 0 && {
+                conditions: [...c.conditions, { condition: 'disengaging' as const, duration: 1 }],
+              }),
               usedSneakAttackThisTurn: c.usedSneakAttackThisTurn || (result.sneakAttackUsed ?? false),
               usedSavageAttackerThisTurn: c.usedSavageAttackerThisTurn || usedSavageAttackerFeat,
               studiedTargetId: newStudiedTargetId,
@@ -3803,6 +3872,10 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
       message: `${caster.name} casts ${spell.name}!`,
     })
 
+    // Calculate scaled cantrip damage dice based on character level
+    const casterLevel = character.level
+    const scaledDamageDice = spell.damage ? getScaledCantripDice(spell, casterLevel) : undefined
+
     // Handle multi-projectile spells (Magic Missile, Scorching Ray, etc.)
     if (spell.projectiles && projectileAssignments && projectileAssignments.length > 0) {
       const damageType = spell.damage?.type || 'force'
@@ -3958,7 +4031,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
             })
           } else if (attackRoll.isNatural20 || attackRoll.total >= targetAC) {
             const isCrit = attackRoll.isNatural20
-            const damage = rollDamage(spell.damage.dice, isCrit)
+            const damage = rollDamage(scaledDamageDice!, isCrit)
 
             get().addLogEntry({
               type: 'attack',
@@ -3988,6 +4061,35 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
                 message: `${damage.total} ${spellDamageType} damage`,
                 details: damage.breakdown,
               })
+
+              // Apply data-driven on-hit effects
+              if (spell.onHitNoReactions) {
+                set((state) => ({
+                  combatants: state.combatants.map((c) =>
+                    c.id === currentTargetId ? { ...c, hasReacted: true } : c
+                  ),
+                }))
+              }
+              if (spell.conditionOnHit) {
+                set((state) => ({
+                  combatants: state.combatants.map((c) =>
+                    c.id === currentTargetId
+                      ? { ...c, conditions: [...c.conditions, { condition: spell.conditionOnHit!, source: `${caster.name}'s ${spell.name}` }] }
+                      : c
+                  ),
+                }))
+                get().addCombatPopup(currentTargetId, 'condition', spell.conditionOnHit)
+              }
+              if (spell.onHitDescription) {
+                get().addLogEntry({
+                  type: 'condition',
+                  actorId: casterId,
+                  actorName: caster.name,
+                  targetId: currentTargetId,
+                  targetName: target.name,
+                  message: `${target.name} ${spell.onHitDescription}`,
+                })
+              }
             })
           } else {
             get().addLogEntry({
@@ -4008,9 +4110,18 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
           const dc = getSpellSaveDC(character)
           const saveResult = rollCombatantSavingThrow(target, spell.savingThrow, dc)
 
+          // Upgrade die type when target is damaged (e.g., Toll the Dead d8→d12)
+          let effectiveDice = scaledDamageDice!
+          if (spell.damagedTargetDieUpgrade && target.currentHp < target.maxHp) {
+            const baseDie = effectiveDice.match(/d\d+/)?.[0]
+            if (baseDie) {
+              effectiveDice = effectiveDice.replace(new RegExp(baseDie, 'g'), spell.damagedTargetDieUpgrade)
+            }
+          }
+
           if (saveResult.success) {
             // Usually half damage on save for damaging spells
-            const damage = rollDamage(spell.damage.dice, false)
+            const damage = rollDamage(effectiveDice, false)
             const halfDamage = Math.floor(damage.total / 2)
 
             get().addLogEntry({
@@ -4032,7 +4143,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
             }
           } else {
             // Roll damage for the full hit
-            const damage = rollDamage(spell.damage.dice, false)
+            const damage = rollDamage(effectiveDice, false)
 
             // Log the failed save
             get().addLogEntry({
@@ -4107,10 +4218,32 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
               message: `${damage.total} ${spell.damage.type} damage`,
               details: damage.breakdown,
             })
+
+            // Apply data-driven on-failed-save effects
+            if (spell.onFailedSaveDescription) {
+              get().addLogEntry({
+                type: 'condition',
+                actorId: casterId,
+                actorName: caster.name,
+                targetId: currentTargetId,
+                targetName: target.name,
+                message: `${target.name} ${spell.onFailedSaveDescription}`,
+              })
+            }
+            if (spell.conditionOnFailedSave) {
+              set((state) => ({
+                combatants: state.combatants.map((c) =>
+                  c.id === currentTargetId
+                    ? { ...c, conditions: [...c.conditions, { condition: spell.conditionOnFailedSave!, source: `${caster.name}'s ${spell.name}` }] }
+                    : c
+                ),
+              }))
+              get().addCombatPopup(currentTargetId, 'condition', spell.conditionOnFailedSave)
+            }
           }
         } else if (spell.autoHit) {
           // Auto-hit spells (like Magic Missile) - no attack roll or saving throw
-          const damage = rollDamage(spell.damage.dice, false)
+          const damage = rollDamage(scaledDamageDice!, false)
 
           get().addLogEntry({
             type: 'spell',
@@ -4134,6 +4267,89 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
             details: damage.breakdown,
           })
         }
+      }
+    }
+
+    // Handle non-damage saving throw spells (Charm Person, Hold Person, etc.)
+    if (!spell.damage && spell.savingThrow && targets.length > 0) {
+      const dc = getSpellSaveDC(character)
+
+      for (const target of targets) {
+        // Data-driven save advantage (e.g., Charm Person in combat)
+        const saveAdvantage = spell.saveAdvantageInCombat ? 'advantage' as const : 'normal' as const
+
+        const saveResult = rollCombatantSavingThrow(target, spell.savingThrow, dc, saveAdvantage)
+
+        if (saveResult.success) {
+          get().addLogEntry({
+            type: 'spell',
+            actorId: casterId,
+            actorName: caster.name,
+            targetId: target.id,
+            targetName: target.name,
+            message: `${target.name} saves against ${spell.name} (DC ${dc})`,
+            details: saveResult.roll.breakdown,
+          })
+          get().addCombatPopup(target.id, 'saved')
+        } else {
+          get().addLogEntry({
+            type: 'spell',
+            actorId: casterId,
+            actorName: caster.name,
+            targetId: target.id,
+            targetName: target.name,
+            message: `${target.name} fails save against ${spell.name} (DC ${dc})`,
+            details: saveResult.roll.breakdown,
+          })
+          get().addCombatPopup(target.id, 'save_failed')
+
+          // Apply data-driven condition
+          if (spell.conditionOnFailedSave) {
+            set((state) => ({
+              combatants: state.combatants.map((c) =>
+                c.id === target.id
+                  ? {
+                      ...c,
+                      conditions: [
+                        ...c.conditions,
+                        { condition: spell.conditionOnFailedSave!, source: `${caster.name}'s ${spell.name}` },
+                      ],
+                    }
+                  : c
+              ),
+            }))
+            get().addLogEntry({
+              type: 'condition',
+              actorId: casterId,
+              actorName: caster.name,
+              targetId: target.id,
+              targetName: target.name,
+              message: `${target.name} is ${spell.conditionOnFailedSave}!`,
+            })
+            get().addCombatPopup(target.id, 'condition', spell.conditionOnFailedSave)
+          }
+
+          // Apply data-driven descriptive effect
+          if (spell.onFailedSaveDescription) {
+            get().addLogEntry({
+              type: 'condition',
+              actorId: casterId,
+              actorName: caster.name,
+              targetId: target.id,
+              targetName: target.name,
+              message: `${target.name} ${spell.onFailedSaveDescription}`,
+            })
+          }
+        }
+      }
+
+      // Set concentration if spell requires it
+      if (spell.concentration) {
+        set((state) => ({
+          combatants: state.combatants.map((c) =>
+            c.id === casterId ? { ...c, concentratingOn: spell } : c
+          ),
+        }))
       }
     }
 
@@ -4164,7 +4380,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
 
     if (!combatant || combatant.currentHp > 0 || combatant.isStable) return
 
-    const result = rollDeathSave()
+    const result = rollDeathSave(combatant)
 
     // Handle critical success (nat 20) - regain 1 HP
     if (result.criticalSuccess) {

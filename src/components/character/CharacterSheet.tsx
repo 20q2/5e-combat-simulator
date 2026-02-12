@@ -311,8 +311,13 @@ export function CharacterSheet() {
                 <Input
                   value={draft.name}
                   onChange={(e) => setName(e.target.value)}
-                  placeholder="Character Name"
-                  className="text-xl font-bold h-auto py-1 px-2 border-none bg-transparent focus-visible:ring-1 max-w-[250px]"
+                  placeholder="Enter character name"
+                  className={cn(
+                    "text-xl font-bold h-auto py-1 px-2 focus-visible:ring-1 max-w-[250px]",
+                    draft.name.trim()
+                      ? "border-none bg-transparent"
+                      : "border border-amber-500/50 bg-amber-500/5 rounded"
+                  )}
                 />
               </div>
               <div className="flex items-center gap-2 mb-3 flex-wrap">

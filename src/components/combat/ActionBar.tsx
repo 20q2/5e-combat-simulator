@@ -1106,6 +1106,56 @@ export function ActionBar() {
     return () => clearTimeout(timeoutId)
   }, [phase, currentTurnIndex, isAITurn, executeAITurn, isExecutingAI])
 
+  // Handle spell preselection from CombatantPanel
+  // (must be before early returns to maintain consistent hook order)
+  useEffect(() => {
+    if (!preselectedSpellId || !currentCombatant) return
+    if (currentCombatant.type !== 'character') return
+
+    // Clear the preselection from store
+    useCombatStore.setState({ preselectedSpellId: undefined })
+
+    // Find the spell in available spells
+    const spells = getAvailableSpells(currentCombatant.id)
+    const spell = spells.find(s => s.id === preselectedSpellId)
+    if (!spell) return
+
+    // Trigger the same flow as selecting from the spell menu (inlined)
+    setSelectedSpell(spell)
+    setIsSelectingSpell(false)
+    setSelectedSlotLevel(undefined)
+
+    if (spell.damage || spell.attackType || spell.savingThrow) {
+      const spellRange = parseSpellRange(spell.range)
+      if (spellRange > 0) {
+        setRangeHighlight({
+          origin: currentCombatant.position,
+          range: spellRange,
+          type: 'spell',
+        })
+      }
+      if (spell.areaOfEffect) {
+        setAoEPreview({
+          type: spell.areaOfEffect.type,
+          size: spell.areaOfEffect.size,
+          origin: currentCombatant.position,
+          originType: spell.areaOfEffect.origin,
+        })
+      } else {
+        setAoEPreview(undefined)
+      }
+      if (spell.projectiles) {
+        startProjectileTargeting(spell)
+      } else {
+        setIsSelectingTarget(true)
+      }
+    } else {
+      castSpell(currentCombatant.id, spell)
+      setSelectedSpell(undefined)
+      setSelectedAction(undefined)
+    }
+  }, [preselectedSpellId]) // eslint-disable-line react-hooks/exhaustive-deps
+
   // Handle weapon preselection from CombatantPanel
   // (must be before early returns to maintain consistent hook order)
   useEffect(() => {
@@ -1598,22 +1648,6 @@ export function ActionBar() {
       setSelectedAction(undefined)
     }
   }
-
-  // Handle spell preselection from CombatantPanel
-  useEffect(() => {
-    if (!preselectedSpellId || !currentCombatant) return
-    if (currentCombatant.type !== 'character') return
-
-    // Clear the preselection from store
-    useCombatStore.setState({ preselectedSpellId: undefined })
-
-    // Find the spell in available spells
-    const spell = availableSpells.find(s => s.id === preselectedSpellId)
-    if (!spell) return
-
-    // Trigger the same flow as selecting from the spell menu
-    handleSpellSelect(spell)
-  }, [preselectedSpellId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleMoveClick = () => {
     if (selectedAction === 'move') {
