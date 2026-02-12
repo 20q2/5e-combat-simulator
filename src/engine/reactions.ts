@@ -25,11 +25,20 @@ export function getAvailableReactionSpells(
     if (!spell.reaction) return false
     if (spell.reaction.trigger !== trigger) return false
 
-    // Check if character has spell slots available (for leveled spells)
-    if (spell.level > 0 && character.spellSlots) {
-      const slotLevel = spell.level as 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9
-      const slots = character.spellSlots[slotLevel]
-      if (!slots || slots.current <= 0) return false
+    // Check if character can cast this leveled spell
+    if (spell.level > 0) {
+      // Magic Initiate free use available?
+      if (combatant.magicInitiateFreeUses[spell.id] === true) return true
+
+      // Check any spell slot at or above the spell's level
+      if (character.spellSlots) {
+        const hasSlot = ([1, 2, 3, 4, 5, 6, 7, 8, 9] as const).some(
+          lvl => lvl >= spell.level && character.spellSlots![lvl] && character.spellSlots![lvl]!.current > 0
+        )
+        if (!hasSlot) return false
+      } else {
+        return false
+      }
     }
 
     return true

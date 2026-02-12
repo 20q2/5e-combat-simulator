@@ -1188,31 +1188,49 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
         details: `AC ${pendingReaction.context.targetAC} → ${newAC}`,
       })
 
-      // Consume a spell slot (Shield is level 1)
+      // Consume a spell slot or Magic Initiate free use
       if (reactor.type === 'character') {
-        const character = reactor.data as Character
-        const spellSlots = character.spellSlots
-        if (spellSlots) {
-          // Find the lowest available slot level that can cast Shield
-          const slotLevel = ([1, 2, 3, 4, 5, 6, 7, 8, 9] as const).find(
-            lvl => spellSlots[lvl] && spellSlots[lvl]!.current > 0
-          )
-          if (slotLevel) {
-            const slot = spellSlots[slotLevel]!
-            const updatedSpellSlots = { ...spellSlots, [slotLevel]: { ...slot, current: slot.current - 1 } }
-            set((state) => ({
-              combatants: state.combatants.map(c =>
-                c.id === pendingReaction.reactingCombatantId && c.type === 'character'
-                  ? { ...c, data: { ...(c.data as Character), spellSlots: updatedSpellSlots } }
-                  : c
-              ),
-            }))
-            get().addLogEntry({
-              type: 'spell',
-              actorId: pendingReaction.reactingCombatantId,
-              actorName: reactor.name,
-              message: `${reactor.name} uses a level ${slotLevel} spell slot (${slot.current - 1}/${slot.max} remaining)`,
-            })
+        const reactorId = pendingReaction.reactingCombatantId
+        // Check Magic Initiate free use first
+        if (reactor.magicInitiateFreeUses[spell.id] === true) {
+          set((state) => ({
+            combatants: state.combatants.map(c =>
+              c.id === reactorId
+                ? { ...c, magicInitiateFreeUses: { ...c.magicInitiateFreeUses, [spell.id]: false } }
+                : c
+            ),
+          }))
+          get().addLogEntry({
+            type: 'spell',
+            actorId: reactorId,
+            actorName: reactor.name,
+            message: `${reactor.name} uses Magic Initiate free cast of ${spell.name}`,
+          })
+        } else {
+          const character = reactor.data as Character
+          const spellSlots = character.spellSlots
+          if (spellSlots) {
+            // Find the lowest available slot level that can cast this spell
+            const slotLevel = ([1, 2, 3, 4, 5, 6, 7, 8, 9] as const).find(
+              lvl => lvl >= spell.level && spellSlots[lvl] && spellSlots[lvl]!.current > 0
+            )
+            if (slotLevel) {
+              const slot = spellSlots[slotLevel]!
+              const updatedSpellSlots = { ...spellSlots, [slotLevel]: { ...slot, current: slot.current - 1 } }
+              set((state) => ({
+                combatants: state.combatants.map(c =>
+                  c.id === reactorId && c.type === 'character'
+                    ? { ...c, data: { ...(c.data as Character), spellSlots: updatedSpellSlots } }
+                    : c
+                ),
+              }))
+              get().addLogEntry({
+                type: 'spell',
+                actorId: reactorId,
+                actorName: reactor.name,
+                message: `${reactor.name} uses a level ${slotLevel} spell slot (${slot.current - 1}/${slot.max} remaining)`,
+              })
+            }
           }
         }
       }
