@@ -10,8 +10,9 @@ import { ContextMenu } from './ContextMenu'
 import { calculateMovementDistance } from '@/lib/movement'
 import { findPath, calculatePathCost } from '@/lib/pathfinding'
 import { getAoEAffectedCells, aoeOriginatesFromCaster } from '@/lib/aoeShapes'
-import { hasLineOfSight } from '@/lib/lineOfSight'
+import { hasLineOfSight, canTargetWithRangedAttack } from '@/lib/lineOfSight'
 import { getCombatantSize, getFootprintSize, getVisualScale, getOccupiedCellKeys } from '@/lib/creatureSize'
+import { ZoneType } from '@/types'
 import type { Position, Character, Monster, GridCell as GridCellType } from '@/types'
 
 // Use Vite's glob import to load obstacle images
@@ -112,6 +113,7 @@ interface GridCellProps {
   isBlockedByLOS: boolean
   isInAoEPreview: boolean
   isInFogZone: boolean
+  isInGreaseZone: boolean
   distance?: number
   wallBorderStyle?: React.CSSProperties // For wall outline rendering
   onDragOver: (e: React.DragEvent) => void
@@ -156,6 +158,7 @@ function GridCell({
   isBlockedByLOS,
   isInAoEPreview,
   isInFogZone,
+  isInGreaseZone,
   distance,
   wallBorderStyle,
   onDragOver,
@@ -195,6 +198,8 @@ function GridCell({
         isInAoEPreview && 'bg-orange-500/50 border-orange-400 ring-1 ring-orange-400/50',
         // Persistent fog zone
         isInFogZone && !isInAoEPreview && 'bg-slate-300/40 border-slate-400/50',
+        // Persistent grease zone
+        isInGreaseZone && !isInAoEPreview && 'bg-yellow-800/35 border-yellow-700/40',
         // Terrain backgrounds
         hasDifficultTerrain && 'bg-amber-900/40',
         hasHazardTerrain && 'bg-red-900/50 animate-pulse',
@@ -275,6 +280,11 @@ function GridCell({
       {/* Fog zone overlay */}
       {isInFogZone && (
         <div className="absolute inset-0 bg-gradient-to-br from-white/20 to-slate-400/30 pointer-events-none z-10" />
+      )}
+
+      {/* Grease zone overlay */}
+      {isInGreaseZone && (
+        <div className="absolute inset-0 bg-gradient-to-br from-yellow-600/25 to-yellow-900/30 pointer-events-none z-10" />
       )}
 
       {/* Stairs indicator */}
@@ -376,11 +386,23 @@ export function CombatGrid() {
   // Drive the movement animation
   useMovementAnimation()
 
-  // Compute fog cell set from persistent zones (for rendering + LOS highlighting)
+  // Compute zone cell sets from persistent zones (for rendering + LOS/movement)
   const fogCellSet = useMemo(() => {
     const cells = new Set<string>()
     for (const zone of persistentZones) {
-      for (const cell of zone.affectedCells) cells.add(cell)
+      if (zone.zoneType === ZoneType.Fog) {
+        for (const cell of zone.affectedCells) cells.add(cell)
+      }
+    }
+    return cells
+  }, [persistentZones])
+
+  const greaseCellSet = useMemo(() => {
+    const cells = new Set<string>()
+    for (const zone of persistentZones) {
+      if (zone.zoneType === ZoneType.Grease) {
+        for (const cell of zone.affectedCells) cells.add(cell)
+      }
     }
     return cells
   }, [persistentZones])
@@ -591,12 +613,10 @@ export function CombatGrid() {
         (attacker.type === 'monster' && c.type === 'character')
       )
 
-      // Filter by range
+      // Filter by range + LOS using the same check as ranged weapon attacks
       const inRangeTargets = validEnemies.filter(c => {
-        const dx = Math.abs(c.position.x - attacker.position.x)
-        const dy = Math.abs(c.position.y - attacker.position.y)
-        const distance = Math.max(dx, dy) * 5 // Simple grid distance in feet
-        return distance <= spellRange
+        const { canTarget } = canTargetWithRangedAttack(grid, attacker.position, c.position, spellRange, fogCellSet)
+        return canTarget
       })
 
       return {
@@ -632,7 +652,7 @@ export function CombatGrid() {
       attackerWeapons: { meleeWeapon, rangedWeapon, monsterAction },
       isSpellTargeting: false
     }
-  }, [phase, selectedAction, currentTurnId, combatants, getValidTargets, selectedSpell, aoePreview])
+  }, [phase, selectedAction, currentTurnId, combatants, getValidTargets, selectedSpell, aoePreview, grid, fogCellSet])
 
   // Calculate threatened positions (cells adjacent to enemies - opportunity attack zones)
   const threatenedPositions = useMemo(() => {
@@ -743,6 +763,28 @@ export function CombatGrid() {
       originType: aoePreview.originType,
     })
   }, [aoePreview, hoveredCell])
+
+  // Compute hovered cell info label
+  const hoveredCellLabel = useMemo(() => {
+    if (!hoveredCell) return undefined
+    const cell = grid.cells[hoveredCell.y]?.[hoveredCell.x]
+    if (!cell) return undefined
+
+    const parts: string[] = []
+    if (cell.obstacle) {
+      const names: Record<string, string> = { wall: 'Wall', pillar: 'Pillar', tree: 'Tree', boulder: 'Boulder', furniture: 'Furniture' }
+      parts.push(names[cell.obstacle.type] ?? cell.obstacle.type)
+    }
+    if (cell.terrain === 'difficult') parts.push('Difficult Terrain')
+    if (cell.terrain === 'hazard') parts.push('Hazard')
+    if (cell.terrain === 'water') parts.push('Water')
+    if ((cell.elevation ?? 0) > 0) parts.push(`Elevated (+${cell.elevation! * 5} ft)`)
+    if (cell.stairConnection) parts.push(`Stairs ${cell.stairConnection.direction === 'up' ? 'Up' : 'Down'}`)
+    if (fogCellSet.has(`${hoveredCell.x},${hoveredCell.y}`)) parts.push('Fog (Heavily Obscured)')
+    if (greaseCellSet.has(`${hoveredCell.x},${hoveredCell.y}`)) parts.push('Grease (Difficult Terrain)')
+
+    return parts.length > 0 ? parts.join(' · ') : undefined
+  }, [hoveredCell, grid, fogCellSet, greaseCellSet])
 
   // Calculate movement path when hovering over a reachable cell in move mode using A* pathfinding
   // This is computed first so getDistanceToCell can use the path cost
@@ -1180,6 +1222,7 @@ export function CombatGrid() {
                 isBlockedByLOS={isBlockedByLOS}
                 isInAoEPreview={isInAoEPreview}
                 isInFogZone={fogCellSet.has(cellKey)}
+                isInGreaseZone={greaseCellSet.has(cellKey)}
                 distance={distance}
                 wallBorderStyle={isWallCell ? getWallBorderStyle(x, y) : undefined}
                 onDragOver={(e) => handleCellDragOver(e, x, y)}
@@ -1316,8 +1359,13 @@ export function CombatGrid() {
         />
       )}
 
-      {/* Zoom controls — sticky in bottom-right, outside the transform */}
-      <div className="sticky bottom-2 left-0 w-full flex justify-end pointer-events-none z-[100]" style={{ marginTop: -36 }}>
+      {/* Zoom controls + cell info — sticky in bottom-right, outside the transform */}
+      <div className="sticky bottom-2 left-0 w-full flex justify-end items-end gap-2 pointer-events-none z-[100]" style={{ marginTop: -36 }}>
+        {hoveredCellLabel && (
+          <div className="bg-slate-800/90 backdrop-blur-sm rounded-lg border border-slate-600 px-2.5 py-1 pointer-events-none">
+            <span className="text-xs text-slate-300">{hoveredCellLabel}</span>
+          </div>
+        )}
         <div className="flex items-center gap-1 bg-slate-800/90 backdrop-blur-sm rounded-lg border border-slate-600 px-2 py-1 mr-2 pointer-events-auto">
           <button
             onClick={() => setZoom(z => Math.max(0.25, +(z - 0.25).toFixed(2)))}

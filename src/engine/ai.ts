@@ -223,12 +223,13 @@ function getPositionTowardTarget(
   grid: Grid,
   pathBlocked: Set<string>,
   endBlocked: Set<string>,
-  movementContext?: MovementContext
+  movementContext?: MovementContext,
+  difficultZoneCells?: Set<string>
 ): Position | null {
   if (maxMovement <= 0) return null
 
   // Use A* to find path to target (or adjacent to target)
-  const path = findPath(grid, current, target, pathBlocked, undefined, 1, movementContext)
+  const path = findPath(grid, current, target, pathBlocked, undefined, 1, movementContext, difficultZoneCells)
 
   if (path && path.length > 1) {
     // Find how far along the path we can go with our movement budget
@@ -236,7 +237,7 @@ function getPositionTowardTarget(
     let lastValidIndex = 0
 
     for (let i = 1; i < path.length; i++) {
-      const segmentCost = calculatePathCost(grid, [path[i - 1], path[i]], movementContext)
+      const segmentCost = calculatePathCost(grid, [path[i - 1], path[i]], movementContext, difficultZoneCells)
       if (movementUsed + segmentCost <= maxMovement) {
         movementUsed += segmentCost
         lastValidIndex = i
@@ -260,7 +261,7 @@ function getPositionTowardTarget(
 
   // If no path found, try to find reachable positions that get us closer
   // Use pathBlocked for BFS so we can traverse through ally spaces
-  const reachable = getReachablePositions(grid, current, maxMovement, pathBlocked, 1, movementContext)
+  const reachable = getReachablePositions(grid, current, maxMovement, pathBlocked, 1, movementContext, difficultZoneCells)
 
   let bestPosition: Position | null = null
   let bestDistance = Infinity
@@ -332,7 +333,8 @@ export function decideMonsterAction(
   monster: Combatant,
   combatants: Combatant[],
   grid: Grid,
-  fogCells?: Set<string>
+  fogCells?: Set<string>,
+  greaseCells?: Set<string>
 ): AIDecision {
   const actions: AIAction[] = []
 
@@ -412,7 +414,8 @@ export function decideMonsterAction(
         grid,
         pathBlocked,
         endBlocked,
-        movementContext
+        movementContext,
+        greaseCells
       )
 
       if (moveTarget) {
@@ -459,8 +462,9 @@ export function getNextAIAction(
   monster: Combatant,
   combatants: Combatant[],
   grid: Grid,
-  fogCells?: Set<string>
+  fogCells?: Set<string>,
+  greaseCells?: Set<string>
 ): AIAction {
-  const decision = decideMonsterAction(monster, combatants, grid, fogCells)
+  const decision = decideMonsterAction(monster, combatants, grid, fogCells, greaseCells)
   return decision.actions[0] ?? { type: 'end' }
 }

@@ -72,6 +72,13 @@ export function hasLineOfSight(
   const dy = Math.abs(to.y - from.y)
   if (dx <= 1 && dy <= 1) return true
 
+  // Fog on either endpoint blocks LOS (heavily obscured = can't see in or out)
+  // getLineBetween excludes endpoints, so we check them explicitly
+  if (fogCells) {
+    if (fogCells.has(`${from.x},${from.y}`)) return false
+    if (fogCells.has(`${to.x},${to.y}`)) return false
+  }
+
   // Get all cells along the line
   const lineCells = getLineBetween(from, to)
 
@@ -106,6 +113,12 @@ export function canTargetWithRangedAttack(
   // Check range
   if (distance > range) {
     return { canTarget: false }
+  }
+
+  // Fog on either endpoint blocks targeting (heavily obscured = can't see in or out)
+  if (fogCells) {
+    if (fogCells.has(`${attacker.x},${attacker.y}`)) return { canTarget: false, blockedBy: attacker }
+    if (fogCells.has(`${target.x},${target.y}`)) return { canTarget: false, blockedBy: target }
   }
 
   // Check line of sight

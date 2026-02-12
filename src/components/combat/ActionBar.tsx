@@ -7,6 +7,7 @@ import { SpellSlotDisplay } from './SpellSlotDisplay'
 import { ResourceTracker } from './ResourceTracker'
 import type { Character, Monster, Weapon, MonsterAction, Spell } from '@/types'
 import { getMeleeRange } from '@/engine/combat'
+import { canTargetWithRangedAttack } from '@/lib/lineOfSight'
 import {
   Footprints,
   Sword,
@@ -1153,7 +1154,7 @@ export function ActionBar() {
       }
       if (spell.projectiles) {
         startProjectileTargeting(spell)
-      } else {
+      } else if (!spell.areaOfEffect) {
         setIsSelectingTarget(true)
       }
     } else {
@@ -1345,7 +1346,26 @@ export function ActionBar() {
   const validTargets = getValidTargets(currentCombatant.id, meleeWeapon, monsterActions[0], rangedWeapon)
   const availableSpells = getAvailableSpells(currentCombatant.id)
   const hasSpells = availableSpells.length > 0
-  const spellTargets = combatants.filter((c) => c.id !== currentCombatant.id && c.currentHp > 0)
+  const spellTargets = (() => {
+    const enemies = combatants.filter((c) =>
+      c.id !== currentCombatant.id && c.currentHp > 0 && c.position.x >= 0
+    )
+    // When a spell is selected, filter by range + LOS (same as ranged weapon targeting)
+    if (selectedSpell) {
+      const spellRange = parseSpellRange(selectedSpell.range)
+      if (spellRange > 0) {
+        const fogCells = new Set<string>()
+        for (const zone of state.persistentZones) {
+          for (const cell of zone.affectedCells) fogCells.add(cell)
+        }
+        return enemies.filter((c) => {
+          const { canTarget } = canTargetWithRangedAttack(state.grid, currentCombatant.position, c.position, spellRange, fogCells)
+          return canTarget
+        })
+      }
+    }
+    return enemies
+  })()
 
   // Check for threatening enemies
   const threateningEnemies = getThreateningEnemies(currentCombatant.id)
@@ -1649,9 +1669,11 @@ export function ActionBar() {
       // Check if this is a multi-projectile spell
       if (spell.projectiles) {
         startProjectileTargeting(spell)
-      } else {
+      } else if (!spell.areaOfEffect) {
+        // Single-target spells use the target selector popup
         setIsSelectingTarget(true)
       }
+      // AoE spells skip the target selector — the grid cursor/preview handles placement
     } else {
       castSpell(currentCombatant.id, spell)
       setSelectedSpell(undefined)

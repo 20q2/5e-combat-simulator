@@ -394,10 +394,15 @@ export interface Spell {
     range: number       // Bounce range in feet (30 for Chromatic Orb)
     maxBounces: number  // Max bounces at base spell level
   }
-  // Creates a persistent zone on the battlefield (Fog Cloud → fog)
-  createsZone?: 'fog'
+  // Creates a persistent zone on the battlefield
+  createsZone?: ZoneType
   // Extra feet of AoE radius per spell slot level above base (Fog Cloud: +20ft/level)
   areaScalingPerSlotLevel?: number
+  // Zone save: creatures entering/ending turn in zone must save or gain condition
+  zoneSave?: {
+    ability: AbilityName
+    condition: Condition
+  }
 }
 
 // ============================================
@@ -539,13 +544,21 @@ export interface Position {
   y: number
 }
 
+export enum ZoneType {
+  Fog = 'fog',
+  Grease = 'grease',
+}
+
 export interface PersistentZone {
   id: string                    // Unique zone ID
   spellId: string               // e.g., 'fog-cloud'
+  zoneType: ZoneType            // Zone behavior type
   casterId: string              // Who created it (for concentration tracking)
   center: Position              // Center position on grid
   radius: number                // Effective radius in feet
   affectedCells: string[]       // Pre-computed cell keys: ["5,3", "5,4", ...]
+  durationRounds?: number       // Rounds remaining (undefined = concentration-based)
+  createdRound?: number         // Round when zone was created
 }
 
 // ============================================

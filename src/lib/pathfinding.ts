@@ -222,7 +222,8 @@ export function getMovementCost(
   from: Position,
   to: Position,
   diagonalCount: number,
-  movementContext?: MovementContext
+  movementContext?: MovementContext,
+  difficultZoneCells?: Set<string>
 ): { cost: number; newDiagonalCount: number } {
   const toCell = grid.cells[to.y]?.[to.x]
   const fromCell = grid.cells[from.y]?.[from.x]
@@ -270,8 +271,8 @@ export function getMovementCost(
     return { cost: baseCost * 2, newDiagonalCount }
   }
 
-  // Double cost for difficult terrain
-  if (toCell.terrain === 'difficult') {
+  // Double cost for difficult terrain (static or zone-based like Grease)
+  if (toCell.terrain === 'difficult' || difficultZoneCells?.has(`${to.x},${to.y}`)) {
     return { cost: baseCost * 2, newDiagonalCount }
   }
 
@@ -318,7 +319,8 @@ export function findPath(
   occupiedPositions: Set<string>,
   maxCost?: number,
   footprintSize: number = 1,
-  movementContext?: MovementContext
+  movementContext?: MovementContext,
+  difficultZoneCells?: Set<string>
 ): Position[] | null {
   // Quick check: if end footprint can't fit, no path possible
   const endPassability = checkFootprintPassability(grid, end, footprintSize, occupiedPositions)
@@ -403,7 +405,8 @@ export function findPath(
         { x: current.x, y: current.y },
         neighbor,
         currentDiagonalCount,
-        movementContext
+        movementContext,
+        difficultZoneCells
       )
 
       // Skip if impassable
@@ -459,14 +462,14 @@ function reconstructPath(endNode: PathNode): Position[] {
 /**
  * Calculate the total movement cost of a path
  */
-export function calculatePathCost(grid: Grid, path: Position[], movementContext?: MovementContext): number {
+export function calculatePathCost(grid: Grid, path: Position[], movementContext?: MovementContext, difficultZoneCells?: Set<string>): number {
   if (path.length < 2) return 0
 
   let totalCost = 0
   let diagonalCount = 0
 
   for (let i = 0; i < path.length - 1; i++) {
-    const { cost, newDiagonalCount } = getMovementCost(grid, path[i], path[i + 1], diagonalCount, movementContext)
+    const { cost, newDiagonalCount } = getMovementCost(grid, path[i], path[i + 1], diagonalCount, movementContext, difficultZoneCells)
     if (cost === Infinity) return Infinity
     totalCost += cost
     diagonalCount = newDiagonalCount
@@ -486,7 +489,8 @@ export function getReachablePositions(
   movementBudget: number,
   occupiedPositions: Set<string>,
   footprintSize: number = 1,
-  movementContext?: MovementContext
+  movementContext?: MovementContext,
+  difficultZoneCells?: Set<string>
 ): Map<string, number> {
   const reachable = new Map<string, number>()
 
@@ -520,7 +524,8 @@ export function getReachablePositions(
         current,
         neighbor,
         diagonalCount,
-        movementContext
+        movementContext,
+        difficultZoneCells
       )
 
       if (baseCost === Infinity) continue

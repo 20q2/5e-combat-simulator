@@ -20,6 +20,7 @@ import type {
   WeaponMastery,
   PersistentZone,
 } from '@/types'
+import { ZoneType } from '@/types'
 import { rollInitiative, rollDie, rollD20 } from '@/engine/dice'
 import { getAbilityModifier } from '@/types'
 import { resolveAttack, canAttackTarget, getSpellSaveDC, getSpellAttackBonus, rollCombatantSavingThrow, rollDeathSave, selectWeaponForTarget, isRangedAttack, type AttackResult } from '@/engine/combat'
@@ -232,6 +233,7 @@ interface CombatStore extends CombatState {
   performAttack: (attackerId: string, targetId: string, weapon?: Weapon, monsterAction?: MonsterAction, rangedWeapon?: Weapon, masteryOverride?: WeaponMastery, attackBonus?: number, skipPreAttackCheck?: boolean, overrideNaturalRoll?: number) => AttackResult | null
   performAttackReplacement: (attackerId: string, replacementId: string, targetPosition: Position) => boolean
   performOpportunityAttack: (attackerId: string, targetId: string, attackReplacementId?: string) => AttackResult | null
+  checkGreaseZoneSave: (combatantId: string, position: Position) => void
   useDash: () => void
   useDodge: () => void
   getValidTargets: (attackerId: string, weapon?: Weapon, monsterAction?: MonsterAction, rangedWeapon?: Weapon) => Combatant[]
@@ -590,7 +592,19 @@ const initialState: CombatState = {
 function getFogCells(zones: PersistentZone[]): Set<string> {
   const cells = new Set<string>()
   for (const zone of zones) {
-    for (const cell of zone.affectedCells) cells.add(cell)
+    if (zone.zoneType === ZoneType.Fog) {
+      for (const cell of zone.affectedCells) cells.add(cell)
+    }
+  }
+  return cells
+}
+
+function getGreaseCells(zones: PersistentZone[]): Set<string> {
+  const cells = new Set<string>()
+  for (const zone of zones) {
+    if (zone.zoneType === ZoneType.Grease) {
+      for (const cell of zone.affectedCells) cells.add(cell)
+    }
   }
   return cells
 }
@@ -889,8 +903,14 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
 
     const { turnOrder, currentTurnIndex, combatants } = get()
 
-    // Reset current combatant's turn state
+    // End-of-turn: check if current combatant is standing in a grease zone
     const currentId = turnOrder[currentTurnIndex]
+    const endingCombatant = combatants.find(c => c.id === currentId)
+    if (endingCombatant && endingCombatant.currentHp > 0) {
+      get().checkGreaseZoneSave(currentId, endingCombatant.position)
+    }
+
+    // Reset current combatant's turn state
     const resetFields = getTurnResetFields()
     const updatedCombatants = combatants.map((c) =>
       c.id === currentId ? { ...c, ...resetFields } : c
@@ -903,6 +923,34 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
     if (nextIndex >= turnOrder.length) {
       nextIndex = 0
       newRound += 1
+
+      // Expire duration-based zones (non-concentration)
+      const { persistentZones } = get()
+      const expiredZones: PersistentZone[] = []
+      const remainingZones: PersistentZone[] = []
+      for (const zone of persistentZones) {
+        if (zone.durationRounds !== undefined) {
+          const remaining = zone.durationRounds - 1
+          if (remaining <= 0) {
+            expiredZones.push(zone)
+          } else {
+            remainingZones.push({ ...zone, durationRounds: remaining })
+          }
+        } else {
+          remainingZones.push(zone)
+        }
+      }
+      if (expiredZones.length > 0) {
+        set({ persistentZones: remainingZones })
+        for (const zone of expiredZones) {
+          const caster = combatants.find(c => c.id === zone.casterId)
+          get().addLogEntry({
+            type: 'other',
+            actorName: caster?.name ?? 'Unknown',
+            message: `${caster?.name ?? 'A'}'s ${zone.spellId.replace(/-/g, ' ')} zone fades away.`,
+          })
+        }
+      }
     }
 
     // Get the next combatant and expire their conditions
@@ -1989,11 +2037,12 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
 
     // Find path using A* pathfinding with footprint awareness
     const footprint = getFootprintSize(size)
-    const path = findPath(grid, combatant.position, to, pathablePositions, undefined, footprint, movementContext)
+    const greaseCells = getGreaseCells(get().persistentZones)
+    const path = findPath(grid, combatant.position, to, pathablePositions, undefined, footprint, movementContext, greaseCells)
     if (!path) return
 
-    // Calculate actual path cost (accounts for terrain)
-    const pathCost = calculatePathCost(grid, path, movementContext)
+    // Calculate actual path cost (accounts for terrain + grease difficult terrain)
+    const pathCost = calculatePathCost(grid, path, movementContext, greaseCells)
 
     const remainingMovement = walkSpeed - combatant.movementUsed
 
@@ -2191,6 +2240,9 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
         message: `${combatant.name} takes ${hazardDamage} fire damage from hazardous terrain`,
       })
     }
+
+    // Check for grease zone entry — DEX save or fall prone
+    get().checkGreaseZoneSave(id, to)
   },
 
   isAnimating: () => {
@@ -2260,11 +2312,12 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
     const movementContext: MovementContext = { walkSpeed, swimSpeed }
 
     // Find path using A* pathfinding with footprint awareness
-    const path = findPath(grid, combatant.position, to, pathablePositions, undefined, footprint, movementContext)
+    const greaseCellsForPath = getGreaseCells(get().persistentZones)
+    const path = findPath(grid, combatant.position, to, pathablePositions, undefined, footprint, movementContext, greaseCellsForPath)
     if (!path) return false
 
     // Calculate actual path cost
-    const pathCost = calculatePathCost(grid, path, movementContext)
+    const pathCost = calculatePathCost(grid, path, movementContext, greaseCellsForPath)
 
     const remainingMovement = walkSpeed - combatant.movementUsed
 
@@ -2319,13 +2372,15 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
 
     // Use pathfinding-based reachability with footprint awareness
     // Pass pathablePositions so we can path through larger creatures with Nimbleness
+    const greaseCellsForReach = getGreaseCells(get().persistentZones)
     const reachableMap = getReachableFromPathfinding(
       grid,
       combatant.position,
       remainingMovement,
       pathablePositions,
       footprint,
-      movementContext
+      movementContext,
+      greaseCellsForReach
     )
 
     // Convert map to array of positions, filtering out cells we can't end in
@@ -3406,6 +3461,50 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
     set({ breathWeaponTargeting: targeting })
   },
 
+  checkGreaseZoneSave: (combatantId, position) => {
+    const { persistentZones, combatants } = get()
+    const greaseCells = getGreaseCells(persistentZones)
+    const posKey = `${position.x},${position.y}`
+    if (!greaseCells.has(posKey)) return
+
+    const combatant = combatants.find(c => c.id === combatantId)
+    if (!combatant || combatant.currentHp <= 0) return
+
+    // Already prone — no need to save again
+    if (combatant.conditions.some(c => c.condition === 'prone')) return
+
+    // Find the grease zone to get the caster for DC
+    const greaseZone = persistentZones.find(z => z.zoneType === ZoneType.Grease && z.affectedCells.includes(posKey))
+    if (!greaseZone) return
+
+    const caster = combatants.find(c => c.id === greaseZone.casterId)
+    const casterCharacter = caster?.type === 'character' ? caster.data as Character : undefined
+    const dc = casterCharacter ? getSpellSaveDC(casterCharacter) : 13
+
+    const saveResult = rollCombatantSavingThrow(combatant, 'dexterity', dc)
+    if (saveResult.success) {
+      get().addLogEntry({
+        type: 'spell', actorName: combatant.name, actorId: combatantId,
+        message: `${combatant.name} keeps footing on the grease (DEX save DC ${dc})`,
+        details: saveResult.roll.breakdown,
+      })
+    } else {
+      get().addLogEntry({
+        type: 'spell', actorName: combatant.name, actorId: combatantId,
+        message: `${combatant.name} slips on the grease and falls prone! (DEX save DC ${dc})`,
+        details: saveResult.roll.breakdown,
+      })
+      get().addCombatPopup(combatantId, 'condition', 'prone')
+      set((state) => ({
+        combatants: state.combatants.map(c =>
+          c.id === combatantId
+            ? { ...c, conditions: [...c.conditions, { condition: 'prone' as Condition, source: 'Grease' }] }
+            : c
+        ),
+      }))
+    }
+  },
+
   performOpportunityAttack: (attackerId, targetId, attackReplacementId) => {
     const { combatants } = get()
     const attacker = combatants.find((c) => c.id === attackerId)
@@ -3834,6 +3933,12 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
             if (saveResult.halfDamage > 0) {
               get().dealDamage(currentTargetId, saveResult.halfDamage, caster.name)
               get().addDamagePopup(currentTargetId, saveResult.halfDamage, saveResult.damageType, false)
+              get().addLogEntry({
+                type: 'damage', actorId: casterId, actorName: caster.name,
+                targetId: currentTargetId, targetName: target.name,
+                message: `${saveResult.halfDamage} ${saveResult.damageType} damage (half of ${saveResult.damage.total})`,
+                details: `${saveResult.damage.breakdown} → half = ${saveResult.halfDamage}`,
+              })
             }
           } else {
             get().addLogEntry({
@@ -4013,7 +4118,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
       }))
     }
 
-    // Handle createsZone spells (Fog Cloud): create persistent zone on the battlefield
+    // Handle createsZone spells: create persistent zone on the battlefield
     if (spell.createsZone && targetPosition && spell.areaOfEffect) {
       const effectiveRadius = spell.areaOfEffect.size +
         (castAtLevel && castAtLevel > spell.level && spell.areaScalingPerSlotLevel
@@ -4026,25 +4131,75 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
         target: targetPosition,
       })
 
+      // Duration in rounds: 1 minute = 10 rounds. Non-concentration zones expire by duration.
+      const durationRounds = !spell.concentration ? 10 : undefined
+
       const zone: PersistentZone = {
         id: `${spell.id}-${casterId}-${Date.now()}`,
         spellId: spell.id,
+        zoneType: spell.createsZone,
         casterId,
         center: targetPosition,
         radius: effectiveRadius,
         affectedCells: Array.from(affectedCells),
+        durationRounds,
+        createdRound: get().round,
       }
 
       set((state) => ({
         persistentZones: [...state.persistentZones, zone],
       }))
 
+      const zoneDesc = spell.createsZone === ZoneType.Fog
+        ? `A ${effectiveRadius}-foot radius sphere of fog appears.`
+        : spell.createsZone === ZoneType.Grease
+        ? `A ${effectiveRadius}-foot square of slippery grease appears.`
+        : `A ${effectiveRadius}-foot zone appears.`
+
       get().addLogEntry({
         type: 'other',
         actorId: casterId,
         actorName: caster.name,
-        message: `${caster.name} casts ${spell.name}! A ${effectiveRadius}-foot radius sphere of fog appears.`,
+        message: `${caster.name} casts ${spell.name}! ${zoneDesc}`,
       })
+
+      // Zone save on creation: creatures in the zone must save or gain condition
+      if (spell.zoneSave) {
+        const dc = getSpellSaveDC(character)
+        const affectedCellSet = affectedCells
+        const creaturesInZone = combatants.filter(c => {
+          if (c.currentHp <= 0) return false
+          return affectedCellSet.has(`${c.position.x},${c.position.y}`)
+        })
+
+        for (const target of creaturesInZone) {
+          const saveResult = rollCombatantSavingThrow(target, spell.zoneSave.ability, dc)
+          if (saveResult.success) {
+            get().addLogEntry({
+              type: 'spell', actorId: casterId, actorName: caster.name,
+              targetId: target.id, targetName: target.name,
+              message: `${target.name} saves against ${spell.name} (DC ${dc})`,
+              details: saveResult.roll.breakdown,
+            })
+            get().addCombatPopup(target.id, 'saved')
+          } else {
+            get().addLogEntry({
+              type: 'spell', actorId: casterId, actorName: caster.name,
+              targetId: target.id, targetName: target.name,
+              message: `${target.name} fails save against ${spell.name} (DC ${dc}) — ${spell.zoneSave.condition}!`,
+              details: saveResult.roll.breakdown,
+            })
+            get().addCombatPopup(target.id, 'condition', spell.zoneSave.condition)
+            set((state) => ({
+              combatants: state.combatants.map(c =>
+                c.id === target.id
+                  ? { ...c, conditions: [...c.conditions, { condition: spell.zoneSave!.condition, source: `${caster.name}'s ${spell.name}` }] }
+                  : c
+              ),
+            }))
+          }
+        }
+      }
     }
 
     // Handle grantsDash spells (Expeditious Retreat): immediately grant Dash movement
@@ -4672,7 +4827,8 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
 
       // Get AI action
       const aiFogCells = getFogCells(get().persistentZones)
-      const action = getNextAIAction(current, combatants, grid, aiFogCells)
+      const aiGreaseCells = getGreaseCells(get().persistentZones)
+      const action = getNextAIAction(current, combatants, grid, aiFogCells, aiGreaseCells)
 
       if (action.type === 'move' && action.targetPosition) {
         get().moveCombatant(current.id, action.targetPosition)
@@ -4689,7 +4845,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
         const updatedCurrent = updatedCombatants.find((c) => c.id === currentId)
         if (updatedCurrent && updatedCurrent.currentHp > 0) {
           const updatedGrid = get().grid
-          const nextAction = getNextAIAction(updatedCurrent, updatedCombatants, updatedGrid, getFogCells(get().persistentZones))
+          const nextAction = getNextAIAction(updatedCurrent, updatedCombatants, updatedGrid, getFogCells(get().persistentZones), getGreaseCells(get().persistentZones))
           if (nextAction.type === 'attack' && nextAction.targetId && nextAction.action) {
             get().performAttack(updatedCurrent.id, nextAction.targetId, undefined, nextAction.action)
           }

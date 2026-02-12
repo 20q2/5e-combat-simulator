@@ -1,3 +1,4 @@
+import { ZoneType } from '@/types'
 import type { Spell } from '@/types'
 
 export const spells: Spell[] = [
@@ -1174,8 +1175,30 @@ export const spells: Spell[] = [
     higherLevels: 'The fog\'s radius increases by 20 feet for each spell slot level above 1.',
     classes: ['druid', 'ranger', 'sorcerer', 'wizard'],
     areaOfEffect: { type: 'sphere', size: 20, origin: 'point' },
-    createsZone: 'fog',
+    createsZone: ZoneType.Fog,
     areaScalingPerSlotLevel: 20,
+  },
+  {
+    id: 'grease',
+    name: 'Grease',
+    level: 1,
+    school: 'conjuration',
+    castingTime: '1 action',
+    range: '60 feet',
+    components: { verbal: true, somatic: true, material: 'a bit of pork rind or butter' },
+    duration: '1 minute',
+    concentration: false,
+    ritual: false,
+    description: 'Nonflammable grease covers the ground in a 10-foot Square centered on a point within range and turns it into Difficult Terrain for the duration. When the grease appears, each creature standing in its area must succeed on a Dexterity saving throw or have the Prone condition. A creature that enters the area or ends its turn there must also succeed on that save or fall Prone.',
+    classes: ['sorcerer', 'wizard'],
+    savingThrow: 'dexterity',
+    conditionOnFailedSave: 'prone',
+    areaOfEffect: { type: 'cube', size: 10, origin: 'point' },
+    createsZone: ZoneType.Grease,
+    zoneSave: {
+      ability: 'dexterity',
+      condition: 'prone',
+    },
   },
 ]
 
