@@ -511,7 +511,8 @@ export function canAttackTarget(
   target: Combatant,
   grid: Grid,
   weapon?: Weapon,
-  monsterAction?: MonsterAction
+  monsterAction?: MonsterAction,
+  fogCells?: Set<string>
 ): CanAttackResult {
   // First check range
   if (!isInRange(attacker, target, weapon, monsterAction)) {
@@ -520,7 +521,7 @@ export function canAttackTarget(
 
   // For ranged attacks, check line of sight
   if (isRangedAttack(weapon, monsterAction)) {
-    const hasLOS = hasLineOfSight(grid, attacker.position, target.position)
+    const hasLOS = hasLineOfSight(grid, attacker.position, target.position, fogCells)
     if (!hasLOS) {
       return { canAttack: false, reason: 'no_line_of_sight' }
     }
@@ -551,7 +552,8 @@ export function selectWeaponForTarget(
   target: Combatant,
   grid: Grid,
   meleeWeapon?: Weapon,
-  rangedWeapon?: Weapon
+  rangedWeapon?: Weapon,
+  fogCells?: Set<string>
 ): Weapon | undefined {
   const distance = getDistance(attacker, target)
 
@@ -566,7 +568,7 @@ export function selectWeaponForTarget(
   // Check if ranged weapon can reach (and has line of sight) - includes long range
   if (rangedWeapon) {
     const longRange = rangedWeapon.range?.long ?? rangedWeapon.range?.normal ?? 30
-    if (distance <= longRange && hasLineOfSight(grid, attacker.position, target.position)) {
+    if (distance <= longRange && hasLineOfSight(grid, attacker.position, target.position, fogCells)) {
       return rangedWeapon
     }
   }

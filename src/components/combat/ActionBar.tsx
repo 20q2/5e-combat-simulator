@@ -1132,7 +1132,7 @@ export function ActionBar() {
     setIsSelectingSpell(false)
     setSelectedSlotLevel(undefined)
 
-    if (spell.damage || spell.attackType || spell.savingThrow) {
+    if (spell.damage || spell.attackType || spell.savingThrow || spell.areaOfEffect) {
       const spellRange = parseSpellRange(spell.range)
       if (spellRange > 0) {
         setRangeHighlight({
@@ -1621,7 +1621,7 @@ export function ActionBar() {
     setIsSelectingSpell(false)
     setSelectedSlotLevel(undefined)
 
-    if (spell.damage || spell.attackType || spell.savingThrow) {
+    if (spell.damage || spell.attackType || spell.savingThrow || spell.areaOfEffect) {
       // Set range highlight for the spell
       if (currentCombatant) {
         const spellRange = parseSpellRange(spell.range)

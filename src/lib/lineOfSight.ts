@@ -64,7 +64,8 @@ export function getLineBetween(from: Position, to: Position): Position[] {
 export function hasLineOfSight(
   grid: Grid,
   from: Position,
-  to: Position
+  to: Position,
+  fogCells?: Set<string>
 ): boolean {
   // Adjacent cells always have line of sight (melee range)
   const dx = Math.abs(to.x - from.x)
@@ -74,10 +75,13 @@ export function hasLineOfSight(
   // Get all cells along the line
   const lineCells = getLineBetween(from, to)
 
-  // Check each cell for line-of-sight blocking obstacles
+  // Check each cell for line-of-sight blocking obstacles or fog zones
   for (const pos of lineCells) {
     const cell = grid.cells[pos.y]?.[pos.x]
     if (cell && blocksLineOfSight(cell)) {
+      return false
+    }
+    if (fogCells?.has(`${pos.x},${pos.y}`)) {
       return false
     }
   }
@@ -93,7 +97,8 @@ export function canTargetWithRangedAttack(
   grid: Grid,
   attacker: Position,
   target: Position,
-  range: number
+  range: number,
+  fogCells?: Set<string>
 ): { canTarget: boolean; blockedBy?: Position } {
   // Calculate distance using D&D 5e 5-10 diagonal rule
   const distance = calculateMovementDistance(attacker, target)
@@ -109,6 +114,9 @@ export function canTargetWithRangedAttack(
   for (const pos of lineCells) {
     const cell = grid.cells[pos.y]?.[pos.x]
     if (cell && blocksLineOfSight(cell)) {
+      return { canTarget: false, blockedBy: pos }
+    }
+    if (fogCells?.has(`${pos.x},${pos.y}`)) {
       return { canTarget: false, blockedBy: pos }
     }
   }

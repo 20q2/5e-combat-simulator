@@ -394,6 +394,10 @@ export interface Spell {
     range: number       // Bounce range in feet (30 for Chromatic Orb)
     maxBounces: number  // Max bounces at base spell level
   }
+  // Creates a persistent zone on the battlefield (Fog Cloud → fog)
+  createsZone?: 'fog'
+  // Extra feet of AoE radius per spell slot level above base (Fog Cloud: +20ft/level)
+  areaScalingPerSlotLevel?: number
 }
 
 // ============================================
@@ -533,6 +537,15 @@ export interface MonsterAction {
 export interface Position {
   x: number
   y: number
+}
+
+export interface PersistentZone {
+  id: string                    // Unique zone ID
+  spellId: string               // e.g., 'fog-cloud'
+  casterId: string              // Who created it (for concentration tracking)
+  center: Position              // Center position on grid
+  radius: number                // Effective radius in feet
+  affectedCells: string[]       // Pre-computed cell keys: ["5,3", "5,4", ...]
 }
 
 // ============================================
@@ -882,6 +895,8 @@ export interface CombatState {
     masteryOverride?: WeaponMastery
     overrideNaturalRoll?: number
   }
+  // Persistent area effects on the battlefield (Fog Cloud, etc.)
+  persistentZones: PersistentZone[]
 }
 
 // ============================================

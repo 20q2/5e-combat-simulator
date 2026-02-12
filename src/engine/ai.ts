@@ -130,7 +130,8 @@ function getBestUsableAttack(
   monster: Monster,
   self: Combatant,
   target: Combatant,
-  grid: Grid
+  grid: Grid,
+  fogCells?: Set<string>
 ): MonsterAction | null {
   const attacks = monster.actions.filter((a) => a.attackBonus !== undefined || a.damage)
   if (attacks.length === 0) return null
@@ -154,7 +155,7 @@ function getBestUsableAttack(
     const normalRange = attack.range?.normal ?? 30
     if (distance <= normalRange) {
       // Check line of sight for ranged attacks
-      const hasLOS = hasLineOfSight(grid, self.position, target.position)
+      const hasLOS = hasLineOfSight(grid, self.position, target.position, fogCells)
       if (hasLOS) {
         return attack
       }
@@ -330,7 +331,8 @@ function getCunningActionToUse(combatant: Combatant, combatants: Combatant[], en
 export function decideMonsterAction(
   monster: Combatant,
   combatants: Combatant[],
-  grid: Grid
+  grid: Grid,
+  fogCells?: Set<string>
 ): AIDecision {
   const actions: AIAction[] = []
 
@@ -379,12 +381,12 @@ export function decideMonsterAction(
 
   // Find the best usable attack from current position (considers ranged options)
   const usableAttack = monsterData
-    ? getBestUsableAttack(monsterData, monster, bestTarget, grid)
+    ? getBestUsableAttack(monsterData, monster, bestTarget, grid, fogCells)
     : null
 
   // Check if the usable attack can actually hit from here
   const attackCheck = usableAttack
-    ? canAttackTarget(monster, bestTarget, grid, undefined, usableAttack)
+    ? canAttackTarget(monster, bestTarget, grid, undefined, usableAttack, fogCells)
     : { canAttack: false }
   const canAttackNow = attackCheck.canAttack
 
@@ -429,11 +431,11 @@ export function decideMonsterAction(
 
       // Get the best usable attack from the new position
       const attackAfterMove = monsterData
-        ? getBestUsableAttack(monsterData, simulatedMonster, bestTarget, grid)
+        ? getBestUsableAttack(monsterData, simulatedMonster, bestTarget, grid, fogCells)
         : null
 
       if (attackAfterMove && attacksRemaining > 0) {
-        const canAttackAfterMove = canAttackTarget(simulatedMonster, bestTarget, grid, undefined, attackAfterMove)
+        const canAttackAfterMove = canAttackTarget(simulatedMonster, bestTarget, grid, undefined, attackAfterMove, fogCells)
         if (canAttackAfterMove.canAttack) {
           actions.push({
             type: 'attack',
@@ -456,8 +458,9 @@ export function decideMonsterAction(
 export function getNextAIAction(
   monster: Combatant,
   combatants: Combatant[],
-  grid: Grid
+  grid: Grid,
+  fogCells?: Set<string>
 ): AIAction {
-  const decision = decideMonsterAction(monster, combatants, grid)
+  const decision = decideMonsterAction(monster, combatants, grid, fogCells)
   return decision.actions[0] ?? { type: 'end' }
 }

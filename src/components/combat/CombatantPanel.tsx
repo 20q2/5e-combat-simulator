@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -478,7 +478,7 @@ function parseSpellRange(range: string): number {
 }
 
 function TargetActionsPanel({ target, currentCombatant }: { target: Combatant; currentCombatant: Combatant }) {
-  const { performAttack, castSpell, selectCombatant, grid } = useCombatStore()
+  const { performAttack, castSpell, selectCombatant, grid, persistentZones } = useCombatStore()
 
   const isCharacter = currentCombatant.type === 'character'
   const character = isCharacter ? currentCombatant.data as Character : null
@@ -498,7 +498,14 @@ function TargetActionsPanel({ target, currentCombatant }: { target: Combatant; c
   const rangedWeapon = character?.equipment?.rangedWeapon
   const monsterAction = monster?.actions.find(a => a.attackBonus !== undefined)
 
-  const losCheck = canAttackTarget(currentCombatant, target, grid, meleeWeapon || rangedWeapon, monsterAction)
+  const fogCells = useMemo(() => {
+    const cells = new Set<string>()
+    for (const zone of persistentZones) {
+      for (const cell of zone.affectedCells) cells.add(cell)
+    }
+    return cells
+  }, [persistentZones])
+  const losCheck = canAttackTarget(currentCombatant, target, grid, meleeWeapon || rangedWeapon, monsterAction, fogCells)
   const hasLineOfSight = losCheck.reason !== 'no_line_of_sight'
 
   // Build action list matching the context menu

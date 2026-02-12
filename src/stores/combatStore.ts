@@ -18,6 +18,7 @@ import type {
   CombatPopupType,
   Condition,
   WeaponMastery,
+  PersistentZone,
 } from '@/types'
 import { rollInitiative, rollDie, rollD20 } from '@/engine/dice'
 import { getAbilityModifier } from '@/types'
@@ -25,6 +26,7 @@ import { resolveAttack, canAttackTarget, getSpellSaveDC, getSpellAttackBonus, ro
 import { rollAttack, rollDamage } from '@/engine/dice'
 import { getNextAIAction } from '@/engine/ai'
 import { getDistanceBetweenPositions } from '@/lib/distance'
+import { getSpellById } from '@/data/spells'
 // Movement calculations now handled by pathfinding module
 import { findPath, getReachablePositions as getReachableFromPathfinding, blocksMovement, calculatePathCost, type MovementContext } from '@/lib/pathfinding'
 import {
@@ -581,6 +583,16 @@ const initialState: CombatState = {
   pendingAttack: undefined,
   movementAnimation: undefined,
   pendingMovement: undefined,
+  persistentZones: [],
+}
+
+// Compute a Set of all fog-obscured cell keys from persistent zones
+function getFogCells(zones: PersistentZone[]): Set<string> {
+  const cells = new Set<string>()
+  for (const zone of zones) {
+    for (const cell of zone.affectedCells) cells.add(cell)
+  }
+  return cells
 }
 
 // Module-level map for deferred projectile callbacks (not stored in Zustand state)
@@ -969,6 +981,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
       turnOrder: [],
       selectedAction: undefined,
       targetingMode: undefined,
+      persistentZones: [],
     })
   },
 
@@ -2442,7 +2455,8 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
     // Auto-select weapon based on distance if character has both melee and ranged
     let selectedWeapon = weapon
     if (attacker.type === 'character' && (weapon || rangedWeapon)) {
-      selectedWeapon = selectWeaponForTarget(attacker, target, grid, weapon, rangedWeapon)
+      const fogCells = getFogCells(get().persistentZones)
+      selectedWeapon = selectWeaponForTarget(attacker, target, grid, weapon, rangedWeapon, fogCells)
     }
 
     // Determine if this is a ranged attack (for projectile animation)
@@ -2456,7 +2470,8 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
     }
 
     // Check range and line of sight
-    const attackCheck = canAttackTarget(attacker, target, grid, selectedWeapon, monsterAction)
+    const fogCellsForAttack = getFogCells(get().persistentZones)
+    const attackCheck = canAttackTarget(attacker, target, grid, selectedWeapon, monsterAction, fogCellsForAttack)
     if (!attackCheck.canAttack) {
       const message = attackCheck.reason === 'no_line_of_sight'
         ? `${attacker.name}'s ranged attack on ${target.name} fails - no line of sight!`
@@ -3568,12 +3583,13 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
       if (c.currentHp <= 0) return false
 
       // Check range and line of sight for melee weapon
-      const meleeCheck = canAttackTarget(attacker, c, grid, weapon, monsterAction)
+      const fog = getFogCells(get().persistentZones)
+      const meleeCheck = canAttackTarget(attacker, c, grid, weapon, monsterAction, fog)
       if (meleeCheck.canAttack) return true
 
       // If ranged weapon provided, also check if ranged can reach
       if (rangedWeapon) {
-        const rangedCheck = canAttackTarget(attacker, c, grid, rangedWeapon, undefined)
+        const rangedCheck = canAttackTarget(attacker, c, grid, rangedWeapon, undefined, fog)
         if (rangedCheck.canAttack) return true
       }
 
@@ -3706,7 +3722,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
     let targets: Combatant[] = []
     if (spell.areaOfEffect && (targetPosition || targetId)) {
       targets = findAoETargets(caster, spell, targetPosition, targetId, combatants)
-      if (targets.length === 0) {
+      if (targets.length === 0 && !spell.createsZone) {
         get().addLogEntry({
           type: 'spell',
           actorId: casterId,
@@ -3977,11 +3993,58 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
 
     // Handle concentration for ALL concentration spells (self-buffs, etc.)
     if (spell.concentration) {
+      // Clean up zones from previous concentration spell (if any)
+      const currentConc = get().combatants.find(c => c.id === casterId)?.concentratingOn
+      if (currentConc?.createsZone) {
+        set((state) => ({
+          persistentZones: state.persistentZones.filter(z => z.casterId !== casterId),
+        }))
+        get().addLogEntry({
+          type: 'other',
+          actorId: casterId,
+          actorName: caster.name,
+          message: `${caster.name}'s ${currentConc.name} ends as concentration shifts.`,
+        })
+      }
       set((state) => ({
         combatants: state.combatants.map((c) =>
           c.id === casterId ? { ...c, concentratingOn: spell } : c
         ),
       }))
+    }
+
+    // Handle createsZone spells (Fog Cloud): create persistent zone on the battlefield
+    if (spell.createsZone && targetPosition && spell.areaOfEffect) {
+      const effectiveRadius = spell.areaOfEffect.size +
+        (castAtLevel && castAtLevel > spell.level && spell.areaScalingPerSlotLevel
+          ? (castAtLevel - spell.level) * spell.areaScalingPerSlotLevel : 0)
+
+      const affectedCells = getAoEAffectedCells({
+        type: spell.areaOfEffect.type,
+        size: effectiveRadius,
+        origin: caster.position,
+        target: targetPosition,
+      })
+
+      const zone: PersistentZone = {
+        id: `${spell.id}-${casterId}-${Date.now()}`,
+        spellId: spell.id,
+        casterId,
+        center: targetPosition,
+        radius: effectiveRadius,
+        affectedCells: Array.from(affectedCells),
+      }
+
+      set((state) => ({
+        persistentZones: [...state.persistentZones, zone],
+      }))
+
+      get().addLogEntry({
+        type: 'other',
+        actorId: casterId,
+        actorName: caster.name,
+        message: `${caster.name} casts ${spell.name}! A ${effectiveRadius}-foot radius sphere of fog appears.`,
+      })
     }
 
     // Handle grantsDash spells (Expeditious Retreat): immediately grant Dash movement
@@ -4039,7 +4102,8 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
     if (!combatant || combatant.type !== 'character') return []
 
     const character = combatant.data as Character
-    return character.knownSpells ?? []
+    // Refresh spell definitions from master list so saved characters get updated spell properties
+    return (character.knownSpells ?? []).map(s => getSpellById(s.id) ?? s)
   },
 
   makeDeathSave: (combatantId) => {
@@ -4607,7 +4671,8 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
       await new Promise((resolve) => setTimeout(resolve, 500))
 
       // Get AI action
-      const action = getNextAIAction(current, combatants, grid)
+      const aiFogCells = getFogCells(get().persistentZones)
+      const action = getNextAIAction(current, combatants, grid, aiFogCells)
 
       if (action.type === 'move' && action.targetPosition) {
         get().moveCombatant(current.id, action.targetPosition)
@@ -4624,7 +4689,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
         const updatedCurrent = updatedCombatants.find((c) => c.id === currentId)
         if (updatedCurrent && updatedCurrent.currentHp > 0) {
           const updatedGrid = get().grid
-          const nextAction = getNextAIAction(updatedCurrent, updatedCombatants, updatedGrid)
+          const nextAction = getNextAIAction(updatedCurrent, updatedCombatants, updatedGrid, getFogCells(get().persistentZones))
           if (nextAction.type === 'attack' && nextAction.targetId && nextAction.action) {
             get().performAttack(updatedCurrent.id, nextAction.targetId, undefined, nextAction.action)
           }

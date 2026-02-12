@@ -111,6 +111,7 @@ interface GridCellProps {
   isInLongRange: boolean
   isBlockedByLOS: boolean
   isInAoEPreview: boolean
+  isInFogZone: boolean
   distance?: number
   wallBorderStyle?: React.CSSProperties // For wall outline rendering
   onDragOver: (e: React.DragEvent) => void
@@ -154,6 +155,7 @@ function GridCell({
   isInLongRange,
   isBlockedByLOS,
   isInAoEPreview,
+  isInFogZone,
   distance,
   wallBorderStyle,
   onDragOver,
@@ -191,6 +193,8 @@ function GridCell({
         isBlockedByLOS && 'bg-slate-800/50 border-slate-600/50',
         // AoE preview highlighting (overrides weapon range)
         isInAoEPreview && 'bg-orange-500/50 border-orange-400 ring-1 ring-orange-400/50',
+        // Persistent fog zone
+        isInFogZone && !isInAoEPreview && 'bg-slate-300/40 border-slate-400/50',
         // Terrain backgrounds
         hasDifficultTerrain && 'bg-amber-900/40',
         hasHazardTerrain && 'bg-red-900/50 animate-pulse',
@@ -266,6 +270,11 @@ function GridCell({
         <span className="absolute inset-0 flex items-center justify-center text-blue-400/50 text-lg pointer-events-none">
           ≈
         </span>
+      )}
+
+      {/* Fog zone overlay */}
+      {isInFogZone && (
+        <div className="absolute inset-0 bg-gradient-to-br from-white/20 to-slate-400/30 pointer-events-none z-10" />
       )}
 
       {/* Stairs indicator */}
@@ -361,10 +370,20 @@ export function CombatGrid() {
     breathWeaponTargeting,
     setBreathWeaponTargeting,
     performAttackReplacement,
+    persistentZones,
   } = useCombatStore()
 
   // Drive the movement animation
   useMovementAnimation()
+
+  // Compute fog cell set from persistent zones (for rendering + LOS highlighting)
+  const fogCellSet = useMemo(() => {
+    const cells = new Set<string>()
+    for (const zone of persistentZones) {
+      for (const cell of zone.affectedCells) cells.add(cell)
+    }
+    return cells
+  }, [persistentZones])
 
   // Get the actual background image URL from the filename
   const backgroundImageUrl = getMapBackgroundImage(mapBackgroundImage)
@@ -530,7 +549,7 @@ export function CombatGrid() {
     const combatantId = draggingCombatantId || currentTurnId
     if (!combatantId) return []
 
-    if (!isCurrentTurn({ turnOrder, currentTurnIndex, combatants, grid, round: 0, phase, log: [], selectedCombatantId, damagePopups: [], activeProjectiles: [] }, combatantId)) return []
+    if (!isCurrentTurn({ turnOrder, currentTurnIndex, combatants, grid, round: 0, phase, log: [], selectedCombatantId, damagePopups: [], activeProjectiles: [], persistentZones: [] }, combatantId)) return []
 
     return getReachablePositions(combatantId)
   }, [draggingCombatantId, selectedCombatantId, phase, selectedAction, turnOrder, currentTurnIndex, currentTurnId, getReachablePositions, combatants, grid])
@@ -680,7 +699,7 @@ export function CombatGrid() {
           const isLongRange = distance > range
           // For ranged/spell attacks, check line of sight
           if (type === 'ranged' || type === 'spell') {
-            const hasLOS = hasLineOfSight(grid, origin, { x, y })
+            const hasLOS = hasLineOfSight(grid, origin, { x, y }, fogCellSet)
             if (hasLOS) {
               if (isLongRange) {
                 longRangeCells.add(`${x},${y}`)
@@ -699,7 +718,7 @@ export function CombatGrid() {
     }
 
     return { cells: cellsInRange, type, blockedCells, longRangeCells }
-  }, [rangeHighlight, grid])
+  }, [rangeHighlight, grid, fogCellSet])
 
   // Calculate AoE preview cells based on hovered position
   const aoeAffectedCells = useMemo(() => {
@@ -1160,6 +1179,7 @@ export function CombatGrid() {
                 isInLongRange={isInLongRange}
                 isBlockedByLOS={isBlockedByLOS}
                 isInAoEPreview={isInAoEPreview}
+                isInFogZone={fogCellSet.has(cellKey)}
                 distance={distance}
                 wallBorderStyle={isWallCell ? getWallBorderStyle(x, y) : undefined}
                 onDragOver={(e) => handleCellDragOver(e, x, y)}
