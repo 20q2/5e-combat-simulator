@@ -338,14 +338,16 @@ export const spells: Spell[] = [
     duration: 'Instantaneous',
     concentration: false,
     ritual: false,
-    description: 'You hurl an orb of energy at a target within range. Choose Acid, Cold, Fire, Lightning, Poison, or Thunder for the type of orb you create, and then make a ranged spell attack against the target. On a hit, the target takes 3d8 damage of the chosen type.',
-    higherLevels: 'The damage increases by 1d8 for each spell slot level above 1.',
+    description: 'You hurl an orb of energy at a target within range. Choose Acid, Cold, Fire, Lightning, Poison, or Thunder for the type of orb you create, and then make a ranged spell attack against the target. On a hit, the target takes 3d8 damage of the chosen type. If you roll the same number on two or more of the d8s, the orb leaps to a different target within 30 feet.',
+    higherLevels: 'The damage increases by 1d8 for each spell slot level above 1. The orb can leap a maximum number of times equal to the spell slot level used.',
     classes: ['sorcerer', 'wizard'],
     damage: {
-      type: 'acid', // Default type; actual type chosen at cast time
+      type: 'acid', // Default type; overridden by damageTypeChoice at cast time
       dice: '3d8',
     },
     attackType: 'ranged',
+    damageTypeChoice: ['acid', 'cold', 'fire', 'lightning', 'poison', 'thunder'],
+    bounce: { range: 30, maxBounces: 1 },
   },
   {
     id: 'magic-missile',
@@ -550,27 +552,6 @@ export const spells: Spell[] = [
     },
     attackType: 'melee',
   },
-  {
-    id: 'chromatic-orb',
-    name: 'Chromatic Orb',
-    level: 1,
-    school: 'evocation',
-    castingTime: '1 action',
-    range: '90 feet',
-    components: { verbal: true, somatic: true, material: 'a diamond worth at least 50 gp' },
-    duration: 'Instantaneous',
-    concentration: false,
-    ritual: false,
-    description: 'You hurl a 4-inch-diameter sphere of energy at a creature that you can see within range. You choose acid, cold, fire, lightning, poison, or thunder for the type of orb you create, and then make a ranged spell attack against the target. On a hit, the creature takes 3d8 damage of the type you chose.',
-    higherLevels: 'When you cast this spell using a spell slot of 2nd level or higher, the damage increases by 1d8 for each slot level above 1st.',
-    classes: ['sorcerer', 'wizard'],
-    damage: {
-      type: 'fire',
-      dice: '3d8',
-    },
-    attackType: 'ranged',
-  },
-
   // RANGER 1ST LEVEL SPELLS
   {
     id: 'hunters-mark',

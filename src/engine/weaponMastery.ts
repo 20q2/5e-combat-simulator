@@ -488,3 +488,66 @@ export function getMasteryDescription(mastery: WeaponMastery): string {
       return ''
   }
 }
+
+// ============================================
+// Mastery State Changes (for store dedup)
+// ============================================
+
+export interface MasteryStateChanges {
+  targetPositionUpdate?: Position
+  targetConditionsToAdd?: { condition: string; duration: number }[]
+  targetVexUpdate?: { attackerId: string; expiresOnRound: number }
+  combatPopups?: { targetId: string; type: 'condition' | 'saved' | 'save_failed'; text?: string }[]
+}
+
+/**
+ * Convert a MasteryEffectResult into the state changes the store needs to apply.
+ * Pure function — no store interaction.
+ */
+export function getMasteryStateChanges(
+  masteryResult: MasteryEffectResult,
+  attackerId: string,
+  targetId: string,
+  round: number,
+): MasteryStateChanges {
+  const changes: MasteryStateChanges = {}
+
+  if (!masteryResult.applied) return changes
+
+  switch (masteryResult.mastery) {
+    case 'push':
+      if (masteryResult.pushResult) {
+        changes.targetPositionUpdate = masteryResult.pushResult.newPosition
+      }
+      break
+
+    case 'sap':
+      changes.targetConditionsToAdd = [{ condition: 'sapped', duration: 1 }]
+      changes.combatPopups = [{ targetId, type: 'condition', text: 'Sapped' }]
+      break
+
+    case 'topple':
+      if (masteryResult.toppleResult) {
+        if (!masteryResult.toppleResult.savePassed) {
+          changes.targetConditionsToAdd = [{ condition: 'prone', duration: -1 }]
+          changes.combatPopups = [
+            { targetId, type: 'save_failed' },
+            { targetId, type: 'condition', text: 'Prone' },
+          ]
+        } else {
+          changes.combatPopups = [{ targetId, type: 'saved' }]
+        }
+      }
+      break
+
+    case 'vex':
+      changes.targetVexUpdate = { attackerId, expiresOnRound: round + 1 }
+      break
+
+    case 'slow':
+      // Slow is tracked via speed reduction — handled by combat calculations automatically
+      break
+  }
+
+  return changes
+}

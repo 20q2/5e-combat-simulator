@@ -43,7 +43,9 @@
       "Bash(./node_modules/.bin/tsc:*)",
       "Bash(node_modules.bintsc:*)",
       "Bash(npx:*)",
-      "Bash(git log:*)"
+      "Bash(git log:*)",
+      "Bash(node_modules/.bin/tsc:*)",
+      "Bash(echo:*)"
     ]
   }
 }

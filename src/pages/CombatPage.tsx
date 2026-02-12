@@ -13,6 +13,8 @@ import { InitiativeSwapPrompt } from '@/components/combat/InitiativeSwapPrompt'
 import { SavageAttackerPrompt } from '@/components/combat/SavageAttackerPrompt'
 import { IndomitablePrompt } from '@/components/combat/IndomitablePrompt'
 import { HeroicInspirationPrompt } from '@/components/combat/HeroicInspirationPrompt'
+import { DamageTypePrompt } from '@/components/combat/DamageTypePrompt'
+import { BounceTargetPrompt } from '@/components/combat/BounceTargetPrompt'
 import { useCombatStore } from '@/stores/combatStore'
 import { useCharacterStore } from '@/stores/characterStore'
 import { getMonsterById } from '@/data'
@@ -301,6 +303,12 @@ export function CombatPage() {
 
       {/* Heroic Inspiration Reroll Prompt (Musician feat) */}
       <HeroicInspirationPrompt />
+
+      {/* Chromatic Orb damage type choice */}
+      <DamageTypePrompt />
+
+      {/* Chromatic Orb bounce target selection */}
+      <BounceTargetPrompt />
     </div>
   )
 }

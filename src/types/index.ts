@@ -377,6 +377,13 @@ export interface Spell {
   onFailedSaveDescription?: string
   // Replace base die type when target is below max HP (Toll the Dead: 'd8' → 'd12')
   damagedTargetDieUpgrade?: string
+  // Caster picks damage type at cast time (e.g., Chromatic Orb)
+  damageTypeChoice?: DamageType[]
+  // Bounce mechanic: orb bounces to new target if any two damage dice match
+  bounce?: {
+    range: number       // Bounce range in feet (30 for Chromatic Orb)
+    maxBounces: number  // Max bounces at base spell level
+  }
 }
 
 // ============================================
@@ -792,6 +799,22 @@ export interface CombatState {
     roll2: { total: number; breakdown: string }
     damageType: DamageType
     isCritical: boolean
+  }
+  // Chromatic Orb damage type choice prompt
+  pendingDamageTypeChoice?: {
+    casterId: string
+    spell: Spell
+    targetId: string
+    options: DamageType[]
+  }
+  // Chromatic Orb bounce target selection prompt
+  pendingBounceTarget?: {
+    casterId: string
+    spell: Spell
+    damageType: DamageType
+    previousTargetId: string
+    alreadyTargetedIds: string[]
+    bouncesRemaining: number
   }
   // Breath weapon targeting state (for AoE attack replacements)
   breathWeaponTargeting?: {

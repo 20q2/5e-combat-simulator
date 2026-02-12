@@ -21,15 +21,14 @@ import type {
 } from '@/types'
 import { rollInitiative, rollDie, rollD20 } from '@/engine/dice'
 import { getAbilityModifier } from '@/types'
-import { resolveAttack, canAttackTarget, getSpellSaveDC, getSpellAttackBonus, rollCombatantSavingThrow, rollDeathSave, selectWeaponForTarget, isRangedAttack, getScaledCantripDice, type AttackResult } from '@/engine/combat'
+import { resolveAttack, canAttackTarget, getSpellSaveDC, getSpellAttackBonus, rollCombatantSavingThrow, rollDeathSave, selectWeaponForTarget, isRangedAttack, type AttackResult } from '@/engine/combat'
 import { rollAttack, rollDamage } from '@/engine/dice'
 import { getNextAIAction } from '@/engine/ai'
+import { getDistanceBetweenPositions } from '@/lib/distance'
 // Movement calculations now handled by pathfinding module
 import { findPath, getReachablePositions as getReachableFromPathfinding, blocksMovement, calculatePathCost, type MovementContext } from '@/lib/pathfinding'
 import {
   initializeRacialAbilityUses,
-  checkRelentlessEndurance,
-  applyRelentlessEndurance,
   useRacialAbility as decrementRacialAbilityUse,
   applyDamageResistance,
   rollBreathWeaponDamage,
@@ -52,18 +51,38 @@ import {
   useClassFeature,
   canUseCunningAction,
   getMaxAttacksPerAction,
-  canUseIndomitable,
   getIndomitableFeature,
   getIndomitableBonus,
   hasStudiedAttacks,
   hasRemarkableAthlete,
-  hasHeroicWarrior,
-  hasSurvivor,
 } from '@/engine/classAbilities'
 import {
   applyOnHitMasteryEffect,
   applyGrazeOnMiss,
+  getMasteryStateChanges,
+  type MasteryEffectResult,
 } from '@/engine/weaponMastery'
+import {
+  calculateDamageApplication,
+  checkCombatEnd,
+  isDead,
+} from '@/engine/damageResolution'
+import { getAvailableReactionSpells } from '@/engine/reactions'
+import {
+  getTurnResetFields,
+  calculateConditionExpiry,
+  calculateStartOfTurnEffects,
+  shouldSkipTurn,
+} from '@/engine/turnManager'
+import {
+  validateSpellCasting,
+  validateSpellSlot,
+  findAoETargets,
+  resolveSpellAttack,
+  resolveSpellSave,
+  resolveProjectiles,
+  getEffectiveDamageDice,
+} from '@/engine/spellCasting'
 import {
   initializeSuperiorityDice,
   checkRelentless,
@@ -273,8 +292,175 @@ interface CombatStore extends CombatState {
   useBattleMedic: (healerId: string, targetId: string) => void
   getBattleMedicTargets: (healerId: string) => Combatant[]
 
+  // Chromatic Orb damage type choice
+  resolveDamageTypeChoice: (damageType: DamageType) => void
+  skipDamageTypeChoice: () => void
+  // Chromatic Orb bounce target selection
+  resolveBounceTarget: (targetId: string) => void
+  skipBounceTarget: () => void
+
   // Reset
   resetCombat: () => void
+}
+
+/** Check if any two values in the array are the same (for Chromatic Orb bounce) */
+function hasDuplicateRolls(rolls: number[]): boolean {
+  const seen = new Set<number>()
+  for (const roll of rolls) {
+    if (seen.has(roll)) return true
+    seen.add(roll)
+  }
+  return false
+}
+
+/**
+ * Resolve a spell attack with a specific damage type (used by Chromatic Orb flow).
+ * Handles: attack roll → damage → bounce check → set pendingBounceTarget if applicable.
+ */
+function resolveSpellAttackWithType(
+  get: () => CombatStore,
+  set: (partial: Partial<CombatState & CombatStore> | ((state: CombatState & CombatStore) => Partial<CombatState & CombatStore>)) => void,
+  casterId: string,
+  caster: Combatant,
+  target: Combatant,
+  spell: Spell,
+  damageType: DamageType,
+  alreadyTargetedIds: string[],
+  bouncesRemaining: number,
+) {
+  const character = caster.data as Character
+  const spellAttackBonus = getSpellAttackBonus(character)
+  const attackRoll = rollAttack(spellAttackBonus)
+  const targetAC = target.type === 'character'
+    ? (target.data as Character).ac
+    : (target.data as Monster).ac
+
+  const currentTargetId = target.id
+
+  // Ranged spell → projectile animation with deferred callback
+  const deferWithProjectile = (fromPos: Position, fn: () => void) => {
+    if (spell.attackType === 'ranged') {
+      get().launchProjectile({ ...fromPos }, { ...target.position }, fn)
+    } else {
+      fn()
+    }
+  }
+
+  // Determine projectile origin: caster for first attack, previous target for bounces
+  const fromPos = alreadyTargetedIds.length > 1
+    ? get().combatants.find(c => c.id === alreadyTargetedIds[alreadyTargetedIds.length - 2])?.position ?? caster.position
+    : caster.position
+
+  if (attackRoll.isNatural1) {
+    get().addLogEntry({
+      type: 'attack',
+      actorId: casterId,
+      actorName: caster.name,
+      targetId: currentTargetId,
+      targetName: target.name,
+      message: `${caster.name} misses ${target.name} with ${spell.name} (natural 1)`,
+      details: attackRoll.breakdown,
+    })
+    deferWithProjectile(fromPos, () => {
+      get().addCombatPopup(currentTargetId, 'miss')
+    })
+    return
+  }
+
+  if (attackRoll.isNatural20 || attackRoll.total >= targetAC) {
+    const isCrit = attackRoll.isNatural20
+    const damageDice = spell.damage?.dice ?? '3d8'
+    const damage = rollDamage(damageDice, isCrit)
+
+    get().addLogEntry({
+      type: 'attack',
+      actorId: casterId,
+      actorName: caster.name,
+      targetId: currentTargetId,
+      targetName: target.name,
+      message: isCrit
+        ? `${caster.name} CRITICALLY HITS ${target.name} with ${spell.name}!`
+        : `${caster.name} hits ${target.name} with ${spell.name}`,
+      details: `${attackRoll.breakdown} vs AC ${targetAC}`,
+    })
+
+    deferWithProjectile(fromPos, () => {
+      get().dealDamage(currentTargetId, damage.total, caster.name)
+      get().addDamagePopup(currentTargetId, damage.total, damageType, isCrit)
+      if (isCrit) {
+        get().addCombatPopup(currentTargetId, 'critical')
+      }
+      get().addLogEntry({
+        type: 'damage',
+        actorId: casterId,
+        actorName: caster.name,
+        targetId: currentTargetId,
+        targetName: target.name,
+        message: `${damage.total} ${damageType} damage`,
+        details: damage.breakdown,
+      })
+
+      // Check for bounce: any two d8s rolled the same number?
+      if (bouncesRemaining > 0 && spell.bounce && hasDuplicateRolls(damage.rolls)) {
+        const bounceRange = spell.bounce.range
+        const currentTarget = get().combatants.find(c => c.id === currentTargetId)
+        if (!currentTarget) return
+
+        const isPlayerCaster = caster.type === 'character'
+        const bounceTargets = get().combatants.filter(c => {
+          if (c.currentHp <= 0) return false
+          if (alreadyTargetedIds.includes(c.id)) return false
+          if (c.id === casterId) return false
+          // Only hit enemies
+          if (isPlayerCaster && c.type === 'character') return false
+          if (!isPlayerCaster && c.type === 'monster') return false
+          const dist = getDistanceBetweenPositions(currentTarget.position, c.position)
+          return dist <= bounceRange
+        })
+
+        if (bounceTargets.length > 0) {
+          get().addLogEntry({
+            type: 'spell',
+            actorId: casterId,
+            actorName: caster.name,
+            message: `The orb's dice matched [${damage.rolls.join(', ')}]! ${spell.name} can bounce to a new target!`,
+          })
+
+          set({
+            pendingBounceTarget: {
+              casterId,
+              spell,
+              damageType,
+              previousTargetId: currentTargetId,
+              alreadyTargetedIds,
+              bouncesRemaining: bouncesRemaining - 1,
+            },
+          })
+        } else {
+          get().addLogEntry({
+            type: 'spell',
+            actorId: casterId,
+            actorName: caster.name,
+            message: `The orb's dice matched [${damage.rolls.join(', ')}] but no valid targets are in range for a bounce.`,
+          })
+        }
+      }
+    })
+  } else {
+    // Regular miss
+    get().addLogEntry({
+      type: 'attack',
+      actorId: casterId,
+      actorName: caster.name,
+      targetId: currentTargetId,
+      targetName: target.name,
+      message: `${caster.name} misses ${target.name} with ${spell.name}`,
+      details: `${attackRoll.breakdown} vs AC ${targetAC}`,
+    })
+    deferWithProjectile(fromPos, () => {
+      get().addCombatPopup(currentTargetId, 'miss')
+    })
+  }
 }
 
 function createEmptyGrid(width: number, height: number): Grid {
@@ -309,63 +495,64 @@ function generateId(): string {
   return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
 }
 
-// Get reaction spells available for a combatant based on trigger type
-// Helper to check if combat has ended (all monsters dead = victory, all characters dead = defeat)
-function checkCombatEnd(combatants: Combatant[]): 'victory' | 'defeat' | null {
-  const characters = combatants.filter(c => c.type === 'character')
-  const monsters = combatants.filter(c => c.type === 'monster')
-
-  // Check if all monsters are dead (HP <= 0)
-  const allMonstersDead = monsters.length > 0 && monsters.every(m => m.currentHp <= 0)
-
-  // Check if all characters are dead (3 death save failures)
-  const allCharactersDead = characters.length > 0 && characters.every(c =>
-    c.deathSaves.failures >= 3
-  )
-
-  if (allMonstersDead) return 'victory'
-  if (allCharactersDead) return 'defeat'
-  return null
-}
+// checkCombatEnd, isDead, getAvailableReactionSpells moved to engine modules
 
 /**
- * Check if a combatant is dead (not just unconscious)
- * Monsters die at 0 HP, characters die at 3 death save failures
+ * Apply mastery state changes from getMasteryStateChanges() to the store.
+ * Shared helper to avoid duplicating the switch block across performAttack/resolveTrigger.
  */
-export function isDead(combatant: Combatant): boolean {
-  if (combatant.type === 'monster') {
-    return combatant.currentHp <= 0
-  }
-  // Characters are dead only with 3 death save failures
-  return combatant.deathSaves.failures >= 3
-}
+function applyMasteryStateChanges(
+  masteryResult: MasteryEffectResult,
+  attackerId: string,
+  attackerName: string,
+  targetId: string,
+  round: number,
+  set: (fn: (state: CombatState) => Partial<CombatState>) => void,
+  getStore: () => CombatStore,
+) {
+  if (!masteryResult.applied) return
 
-function getAvailableReactionSpells(
-  combatant: Combatant,
-  trigger: 'on_hit' | 'on_magic_missile' | 'enemy_casts_spell' | 'take_damage'
-): Spell[] {
-  if (combatant.type !== 'character') return []
-  if (combatant.hasReacted) return []
-
-  const character = combatant.data as Character
-  const knownSpells = character.knownSpells || []
-  const preparedSpells = character.preparedSpells || []
-  const allSpells = [...knownSpells, ...preparedSpells]
-
-  // Filter for reaction spells matching the trigger
-  return allSpells.filter(spell => {
-    if (!spell.reaction) return false
-    if (spell.reaction.trigger !== trigger) return false
-
-    // Check if character has spell slots available (for leveled spells)
-    if (spell.level > 0 && character.spellSlots) {
-      const slotLevel = spell.level as 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9
-      const slots = character.spellSlots[slotLevel]
-      if (!slots || slots.current <= 0) return false
-    }
-
-    return true
+  getStore().addLogEntry({
+    type: 'other',
+    actorId: attackerId,
+    actorName: attackerName,
+    message: masteryResult.description,
+    details: `Weapon mastery: ${masteryResult.mastery}`,
   })
+
+  const changes = getMasteryStateChanges(masteryResult, attackerId, targetId, round)
+
+  if (changes.targetPositionUpdate) {
+    set((state) => ({
+      combatants: state.combatants.map((c) =>
+        c.id === targetId ? { ...c, position: changes.targetPositionUpdate! } : c
+      ),
+    }))
+  }
+
+  if (changes.targetConditionsToAdd && changes.targetConditionsToAdd.length > 0) {
+    set((state) => ({
+      combatants: state.combatants.map((c) =>
+        c.id === targetId
+          ? { ...c, conditions: [...c.conditions, ...changes.targetConditionsToAdd!.map(cond => ({ condition: cond.condition as Condition, duration: cond.duration }))] }
+          : c
+      ),
+    }))
+  }
+
+  if (changes.targetVexUpdate) {
+    set((state) => ({
+      combatants: state.combatants.map((c) =>
+        c.id === targetId ? { ...c, vexedBy: changes.targetVexUpdate } : c
+      ),
+    }))
+  }
+
+  if (changes.combatPopups) {
+    for (const popup of changes.combatPopups) {
+      getStore().addCombatPopup(popup.targetId, popup.type as CombatPopupType, popup.text)
+    }
+  }
 }
 
 const initialState: CombatState = {
@@ -687,29 +874,9 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
 
     // Reset current combatant's turn state
     const currentId = turnOrder[currentTurnIndex]
+    const resetFields = getTurnResetFields()
     const updatedCombatants = combatants.map((c) =>
-      c.id === currentId
-        ? {
-            ...c,
-            hasActed: false,
-            hasBonusActed: false,
-            movementUsed: 0,
-            usedSneakAttackThisTurn: false,
-            attacksMadeThisTurn: 0,
-            // Reset weapon mastery per-turn flags
-            usedCleaveThisTurn: false,
-            usedNickThisTurn: false,
-            // Reset maneuver tracking (in case turn ended mid-attack)
-            usedManeuverThisAttack: false,
-            // Reset bonus action maneuver tracking
-            feintTarget: undefined,
-            feintBonusDamage: undefined,
-            lungingAttackBonus: undefined,
-            // Reset origin feat per-turn flags
-            usedSavageAttackerThisTurn: false,
-            usedTavernBrawlerPushThisTurn: false,
-          }
-        : c
+      c.id === currentId ? { ...c, ...resetFields } : c
     )
 
     let nextIndex = currentTurnIndex + 1
@@ -719,93 +886,60 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
     if (nextIndex >= turnOrder.length) {
       nextIndex = 0
       newRound += 1
-
-      // Round divider is shown automatically in CombatLog via round grouping
     }
 
     // Get the next combatant and expire their conditions
     const nextCombatantId = turnOrder[nextIndex]
-    const combatantsWithExpiredConditions = updatedCombatants.map((c) => {
-      if (c.id !== nextCombatantId) return c
+    const nextCombatantBefore = updatedCombatants.find((c) => c.id === nextCombatantId)
 
-      // Decrement condition durations and remove expired ones
-      // Duration -1 or undefined means indefinite (e.g., unconscious), don't decrement those
-      const expiredConditions: string[] = []
-      const newConditions = c.conditions
-        .map((cond) => {
-          if (cond.duration === undefined || cond.duration === -1) return cond // Indefinite condition
-          const newDuration = cond.duration - 1
-          if (newDuration <= 0) {
-            expiredConditions.push(cond.condition)
-            return null
-          }
-          return { ...cond, duration: newDuration }
-        })
-        .filter((cond): cond is NonNullable<typeof cond> => cond !== null)
+    let finalCombatants = updatedCombatants
+    if (nextCombatantBefore) {
+      // Calculate condition expiry
+      const conditionResult = calculateConditionExpiry(nextCombatantBefore)
 
       // Log expired conditions
-      if (expiredConditions.length > 0) {
-        expiredConditions.forEach((condition) => {
+      if (conditionResult.expiredConditionNames.length > 0) {
+        conditionResult.expiredConditionNames.forEach((condition) => {
           get().addLogEntry({
             type: 'other',
-            actorId: c.id,
-            actorName: c.name,
-            message: `${c.name}'s ${condition} effect expires`,
+            actorId: nextCombatantBefore.id,
+            actorName: nextCombatantBefore.name,
+            message: `${nextCombatantBefore.name}'s ${condition} effect expires`,
           })
         })
       }
 
-      // Clear evasive footwork bonus when evasive condition expires
-      const evasiveExpired = expiredConditions.includes('evasive')
-
-      return {
-        ...c,
-        conditions: newConditions,
-        ...(evasiveExpired ? { evasiveFootworkBonus: undefined } : {}),
+      // Apply condition expiry
+      const withExpiredConditions: Combatant = {
+        ...nextCombatantBefore,
+        conditions: conditionResult.updatedConditions,
+        ...(conditionResult.evasiveExpired ? { evasiveFootworkBonus: undefined } : {}),
       }
-    })
 
-    // Heroic Warrior: Champion Fighter level 10 — grant Heroic Inspiration at start of turn if missing
-    const combatantsAfterHeroicWarrior = combatantsWithExpiredConditions.map((c) => {
-      if (c.id !== nextCombatantId) return c
-      if (c.heroicInspiration) return c // Already has it
-      if (!hasHeroicWarrior(c)) return c // Doesn't have the feature
+      // Calculate start-of-turn effects (Heroic Warrior, Heroic Rally)
+      const effects = calculateStartOfTurnEffects(withExpiredConditions)
 
-      get().addLogEntry({
-        type: 'other',
-        actorId: c.id,
-        actorName: c.name,
-        message: `Heroic Warrior: ${c.name} gains Heroic Inspiration`,
-      })
+      // Apply effects and log them
+      let updatedCombatant = withExpiredConditions
+      for (const effect of effects) {
+        get().addLogEntry({
+          type: effect.logType,
+          actorId: effect.combatantId,
+          actorName: effect.combatantName,
+          message: effect.message,
+        })
+        if (effect.grantHeroicInspiration) {
+          updatedCombatant = { ...updatedCombatant, heroicInspiration: true }
+        }
+        if (effect.newHp !== undefined) {
+          updatedCombatant = { ...updatedCombatant, currentHp: effect.newHp }
+        }
+      }
 
-      return { ...c, heroicInspiration: true }
-    })
-
-    // Survivor - Heroic Rally: Champion Fighter level 18 — heal 5 + CON mod at start of turn when bloodied
-    const finalCombatants = combatantsAfterHeroicWarrior.map((c) => {
-      if (c.id !== nextCombatantId) return c
-      if (c.currentHp <= 0) return c // Must have at least 1 HP
-      if (!hasSurvivor(c)) return c
-
-      // Check if bloodied (HP <= half max)
-      if (c.currentHp > Math.floor(c.maxHp / 2)) return c
-
-      const character = c.type === 'character' ? c.data as Character : null
-      const monster = c.type === 'monster' ? c.data as Monster : null
-      const conScore = character?.abilityScores.constitution ?? monster?.abilityScores.constitution ?? 10
-      const conMod = getAbilityModifier(conScore)
-      const healing = 5 + conMod
-      const newHp = Math.min(c.currentHp + healing, c.maxHp)
-
-      get().addLogEntry({
-        type: 'heal',
-        actorId: c.id,
-        actorName: c.name,
-        message: `Heroic Rally: ${c.name} regains ${newHp - c.currentHp} HP (${c.currentHp} → ${newHp})`,
-      })
-
-      return { ...c, currentHp: newHp }
-    })
+      finalCombatants = updatedCombatants.map((c) =>
+        c.id === nextCombatantId ? updatedCombatant : c
+      )
+    }
 
     set({
       combatants: finalCombatants,
@@ -815,17 +949,10 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
       targetingMode: undefined,
     })
 
-    // Auto-skip dead combatants (monsters at 0 HP or characters who have died)
+    // Auto-skip dead combatants
     const nextCombatant = finalCombatants.find((c) => c.id === turnOrder[nextIndex])
-    if (nextCombatant) {
-      const isDead = nextCombatant.currentHp <= 0 && (
-        nextCombatant.type === 'monster' || // Monsters are dead at 0 HP
-        nextCombatant.deathSaves.failures >= 3 // Characters are dead at 3 failures
-      )
-      if (isDead) {
-        // Recursively skip to next turn
-        get().nextTurn()
-      }
+    if (nextCombatant && shouldSkipTurn(nextCombatant)) {
+      get().nextTurn()
     }
   },
 
@@ -1730,78 +1857,8 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
 
       if (updatedReactor && updatedTarget) {
         const masteryResult = applyOnHitMasteryEffect(updatedReactor, updatedTarget, weapon, grid, currentCombatants, round)
-
-        if (masteryResult && masteryResult.applied) {
-          get().addLogEntry({
-            type: 'other',
-            actorId: reactor.id,
-            actorName: reactor.name,
-            message: masteryResult.description,
-            details: `Weapon mastery: ${masteryResult.mastery}`,
-          })
-
-          // Apply specific effects based on mastery type
-          switch (masteryResult.mastery) {
-            case 'push':
-              if (masteryResult.pushResult) {
-                set((state) => ({
-                  combatants: state.combatants.map((c) =>
-                    c.id === target.id
-                      ? { ...c, position: masteryResult.pushResult!.newPosition }
-                      : c
-                  ),
-                }))
-              }
-              break
-
-            case 'sap':
-              set((state) => ({
-                combatants: state.combatants.map((c) =>
-                  c.id === target.id
-                    ? {
-                        ...c,
-                        conditions: [...c.conditions, { condition: 'sapped' as const, duration: 1 }],
-                      }
-                    : c
-                ),
-              }))
-              get().addCombatPopup(target.id, 'condition', 'Sapped')
-              break
-
-            case 'topple':
-              if (masteryResult.toppleResult) {
-                if (!masteryResult.toppleResult.savePassed) {
-                  get().addCombatPopup(target.id, 'save_failed')
-                  set((state) => ({
-                    combatants: state.combatants.map((c) =>
-                      c.id === target.id
-                        ? {
-                            ...c,
-                            conditions: [...c.conditions, { condition: 'prone' as const, duration: -1 }],
-                          }
-                        : c
-                    ),
-                  }))
-                  get().addCombatPopup(target.id, 'condition', 'Prone')
-                } else {
-                  get().addCombatPopup(target.id, 'saved')
-                }
-              }
-              break
-
-            case 'vex':
-              set((state) => ({
-                combatants: state.combatants.map((c) =>
-                  c.id === target.id
-                    ? {
-                        ...c,
-                        vexedBy: { attackerId: reactor.id, expiresOnRound: round + 1 },
-                      }
-                    : c
-                ),
-              }))
-              break
-          }
+        if (masteryResult) {
+          applyMasteryStateChanges(masteryResult, reactor.id, reactor.name, target.id, round, set, get)
         }
       }
     }
@@ -1860,78 +1917,8 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
 
       if (updatedReactor && updatedTarget) {
         const masteryResult = applyOnHitMasteryEffect(updatedReactor, updatedTarget, weapon, grid, currentCombatants, round)
-
-        if (masteryResult && masteryResult.applied) {
-          get().addLogEntry({
-            type: 'other',
-            actorId: reactor.id,
-            actorName: reactor.name,
-            message: masteryResult.description,
-            details: `Weapon mastery: ${masteryResult.mastery}`,
-          })
-
-          // Apply specific effects based on mastery type
-          switch (masteryResult.mastery) {
-            case 'push':
-              if (masteryResult.pushResult) {
-                set((state) => ({
-                  combatants: state.combatants.map((c) =>
-                    c.id === target.id
-                      ? { ...c, position: masteryResult.pushResult!.newPosition }
-                      : c
-                  ),
-                }))
-              }
-              break
-
-            case 'sap':
-              set((state) => ({
-                combatants: state.combatants.map((c) =>
-                  c.id === target.id
-                    ? {
-                        ...c,
-                        conditions: [...c.conditions, { condition: 'sapped' as const, duration: 1 }],
-                      }
-                    : c
-                ),
-              }))
-              get().addCombatPopup(target.id, 'condition', 'Sapped')
-              break
-
-            case 'topple':
-              if (masteryResult.toppleResult) {
-                if (!masteryResult.toppleResult.savePassed) {
-                  get().addCombatPopup(target.id, 'save_failed')
-                  set((state) => ({
-                    combatants: state.combatants.map((c) =>
-                      c.id === target.id
-                        ? {
-                            ...c,
-                            conditions: [...c.conditions, { condition: 'prone' as const, duration: -1 }],
-                          }
-                        : c
-                    ),
-                  }))
-                  get().addCombatPopup(target.id, 'condition', 'Prone')
-                } else {
-                  get().addCombatPopup(target.id, 'saved')
-                }
-              }
-              break
-
-            case 'vex':
-              set((state) => ({
-                combatants: state.combatants.map((c) =>
-                  c.id === target.id
-                    ? {
-                        ...c,
-                        vexedBy: { attackerId: reactor.id, expiresOnRound: round + 1 },
-                      }
-                    : c
-                ),
-              }))
-              break
-          }
+        if (masteryResult) {
+          applyMasteryStateChanges(masteryResult, reactor.id, reactor.name, target.id, round, set, get)
         }
       }
     }
@@ -2331,132 +2318,30 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
   },
 
   dealDamage: (targetId, amount, _source) => {
-    // Collect log entries that should appear AFTER the caller's damage log.
-    // We use queueMicrotask so these logs are deferred until after the current
-    // synchronous code (where callers log the damage amount) finishes.
-    const deferredLogs: Omit<CombatLogEntry, 'id' | 'timestamp' | 'round'>[] = []
+    const target = get().combatants.find((c) => c.id === targetId)
+    if (!target) return
 
-    set((state) => {
-      const target = state.combatants.find((c) => c.id === targetId)
-      if (!target) return state
+    const result = calculateDamageApplication(target, amount)
 
-      let newHp = Math.max(0, target.currentHp - amount)
-      let updatedRacialAbilityUses = target.racialAbilityUses
-
-      // Check for Relentless Endurance when dropping to 0 HP (characters only)
-      const wasConscious = target.currentHp > 0
-      if (newHp === 0 && wasConscious && target.type === 'character') {
-        const relentlessCheck = checkRelentlessEndurance(target, target.racialAbilityUses)
-        if (relentlessCheck.canUse && relentlessCheck.ability) {
-          // Use Relentless Endurance
-          newHp = applyRelentlessEndurance(relentlessCheck.ability)
-          const result = decrementRacialAbilityUse(
-            target,
-            relentlessCheck.ability.id,
-            target.racialAbilityUses
-          )
-          updatedRacialAbilityUses = result.newUses
-
-          deferredLogs.push({
-            type: 'other',
-            actorId: targetId,
-            actorName: target.name,
-            message: `${target.name} uses Relentless Endurance and drops to ${newHp} HP instead of falling unconscious!`,
-          })
+    set((state) => ({
+      combatants: state.combatants.map((c) =>
+        c.id !== targetId ? c : {
+          ...c,
+          currentHp: result.newHp,
+          racialAbilityUses: result.updatedRacialAbilityUses,
+          conditions: result.newConditions,
+          ...(result.deathSaveFailureAdded && {
+            deathSaves: { ...c.deathSaves, failures: result.newDeathSaveFailures },
+          }),
         }
-      }
+      ),
+    }))
 
-      // Track if creature died this damage application
-      let creatureDied = false
-
-      // Check for falling unconscious (characters) or dying (monsters)
-      if (newHp === 0 && wasConscious) {
-        if (target.type === 'monster') {
-          // Monsters die immediately at 0 HP
-          deferredLogs.push({
-            type: 'death',
-            actorId: targetId,
-            actorName: target.name,
-            message: `${target.name} has been slain!`,
-          })
-          creatureDied = true
-        } else {
-          // Characters fall unconscious
-          deferredLogs.push({
-            type: 'death',
-            actorId: targetId,
-            actorName: target.name,
-            message: `${target.name} falls unconscious!`,
-          })
-        }
-      }
-
-      // If already unconscious and takes damage, add death save failure
-      if (target.currentHp === 0 && !target.isStable && target.type === 'character') {
-        const newFailures = target.deathSaves.failures + 1
-        const characterDied = newFailures >= 3
-        if (characterDied) {
-          deferredLogs.push({
-            type: 'death',
-            actorId: targetId,
-            actorName: target.name,
-            message: `${target.name} has died from damage while unconscious!`,
-          })
-        } else {
-          deferredLogs.push({
-            type: 'other',
-            actorId: targetId,
-            actorName: target.name,
-            message: `${target.name} takes damage while unconscious - death save failure! (${newFailures}/3)`,
-          })
-        }
-        return {
-          combatants: state.combatants.map((c) =>
-            c.id === targetId
-              ? {
-                  ...c,
-                  deathSaves: { ...c.deathSaves, failures: newFailures },
-                  // Add prone condition when character dies (becomes corpse)
-                  conditions: characterDied
-                    ? [...c.conditions.filter(cond => cond.condition !== 'prone'), { condition: 'prone' as const, duration: -1 }]
-                    : c.conditions,
-                }
-              : c
-          ),
-        }
-      }
-
-      // Build conditions array for the updated combatant
-      let newConditions = target.conditions
-      if (newHp === 0 && wasConscious) {
-        if (target.type === 'character') {
-          // Characters fall unconscious (not dead yet)
-          newConditions = [...newConditions, { condition: 'unconscious' as const, duration: -1 }]
-        } else if (creatureDied) {
-          // Monsters die and become corpses (prone)
-          newConditions = [...newConditions.filter(c => c.condition !== 'prone'), { condition: 'prone' as const, duration: -1 }]
-        }
-      }
-
-      return {
-        combatants: state.combatants.map((c) =>
-          c.id === targetId
-            ? {
-                ...c,
-                currentHp: newHp,
-                racialAbilityUses: updatedRacialAbilityUses,
-                conditions: newConditions,
-              }
-            : c
-        ),
-      }
-    })
-
-    // Check for victory/defeat after damage is dealt
+    // Check for victory/defeat after damage is applied
     const combatResult = checkCombatEnd(get().combatants)
     if (combatResult) {
       set({ phase: combatResult })
-      deferredLogs.push({
+      result.deferredLogEntries.push({
         type: combatResult === 'victory' ? 'initiative' : 'death',
         actorName: 'System',
         message: combatResult === 'victory' ? 'Victory! All enemies defeated!' : 'Defeat... All heroes have fallen.',
@@ -2465,9 +2350,9 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
 
     // Defer death/unconscious/victory logs to after the caller's synchronous code
     // finishes, so damage log entries appear first in the combat log
-    if (deferredLogs.length > 0) {
+    if (result.deferredLogEntries.length > 0) {
       queueMicrotask(() => {
-        for (const log of deferredLogs) {
+        for (const log of result.deferredLogEntries) {
           get().addLogEntry(log)
         }
       })
@@ -3099,88 +2984,8 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
         if (selectedWeapon) {
           const { round, combatants: currentCombatants } = get()
           const masteryResult = applyOnHitMasteryEffect(attacker, target, selectedWeapon, grid, currentCombatants, round, masteryOverride)
-
-          if (masteryResult && masteryResult.applied) {
-            // Log the mastery effect
-            get().addLogEntry({
-              type: 'other',
-              actorId: attackerId,
-              actorName: attacker.name,
-              message: masteryResult.description,
-              details: `Weapon mastery: ${masteryResult.mastery}`,
-            })
-
-            // Apply specific effects based on mastery type
-            switch (masteryResult.mastery) {
-              case 'push':
-                if (masteryResult.pushResult) {
-                  // Update target position
-                  set((state) => ({
-                    combatants: state.combatants.map((c) =>
-                      c.id === targetId
-                        ? { ...c, position: masteryResult.pushResult!.newPosition }
-                        : c
-                    ),
-                  }))
-                }
-                break
-
-              case 'sap':
-                // Add sapped condition to target (disadvantage on next attack)
-                set((state) => ({
-                  combatants: state.combatants.map((c) =>
-                    c.id === targetId
-                      ? {
-                          ...c,
-                          conditions: [...c.conditions, { condition: 'sapped' as const, duration: 1 }],
-                        }
-                      : c
-                  ),
-                }))
-                get().addCombatPopup(targetId, 'condition', 'Sapped')
-                break
-
-              case 'slow':
-                // Slow is tracked via speed reduction - handled by combat calculations
-                // For now just log it; speed reduction is applied automatically in movement
-                break
-
-              case 'topple':
-                if (masteryResult.toppleResult) {
-                  if (!masteryResult.toppleResult.savePassed) {
-                    // Target failed save, add prone condition
-                    get().addCombatPopup(targetId, 'save_failed')
-                    set((state) => ({
-                      combatants: state.combatants.map((c) =>
-                        c.id === targetId
-                          ? {
-                              ...c,
-                              conditions: [...c.conditions, { condition: 'prone' as const, duration: -1 }],
-                            }
-                          : c
-                      ),
-                    }))
-                    get().addCombatPopup(targetId, 'condition', 'Prone')
-                  } else {
-                    get().addCombatPopup(targetId, 'saved')
-                  }
-                }
-                break
-
-              case 'vex':
-                // Set vexedBy on target so attacker has advantage on next attack
-                set((state) => ({
-                  combatants: state.combatants.map((c) =>
-                    c.id === targetId
-                      ? {
-                          ...c,
-                          vexedBy: { attackerId, expiresOnRound: round + 1 },
-                        }
-                      : c
-                  ),
-                }))
-                break
-            }
+          if (masteryResult) {
+            applyMasteryStateChanges(masteryResult, attackerId, attacker.name, targetId, round, set, get)
           }
         }
 
@@ -3768,47 +3573,36 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
   castSpell: (casterId, spell, targetId, targetPosition, projectileAssignments) => {
     const { combatants } = get()
     const caster = combatants.find((c) => c.id === casterId)
-
     if (!caster) return false
-    if (caster.type !== 'character') return false // Only characters can cast spells for now
 
-    // Check action economy based on casting time
-    const isBonusActionSpell = spell.castingTime.toLowerCase().includes('bonus action')
-    const isReactionSpell = spell.castingTime.toLowerCase().includes('reaction')
-
-    // Reaction spells can't be cast proactively (need a trigger)
-    if (isReactionSpell) return false
-
-    // Check if the appropriate action is available
-    if (isBonusActionSpell) {
-      if (caster.hasBonusActed) return false
-    } else {
-      if (caster.hasActed) return false
-    }
+    // Validate action economy
+    const castValidation = validateSpellCasting(caster, spell)
+    if (!castValidation.canCast) return false
+    const { isBonusAction: isBonusActionSpell } = castValidation
 
     const character = caster.data as Character
 
-    // Check and consume spell slot for leveled spells (not cantrips)
+    // Check and consume spell slot for leveled spells
     if (spell.level > 0) {
-      // Check if Magic Initiate free use is available for this spell
-      const hasMagicInitiateFreeUse = caster.magicInitiateFreeUses[spell.id] === true
+      const slotValidation = validateSpellSlot(caster, spell)
+      if (!slotValidation.canCast) {
+        get().addLogEntry({
+          type: 'spell',
+          actorId: casterId,
+          actorName: caster.name,
+          message: `${caster.name} cannot cast ${spell.name} - ${slotValidation.reason}!`,
+        })
+        return false
+      }
 
-      if (hasMagicInitiateFreeUse) {
-        // Use the free Magic Initiate cast
+      if (slotValidation.useMagicInitiateFreeUse) {
         set((state) => ({
           combatants: state.combatants.map((c) =>
             c.id === casterId
-              ? {
-                  ...c,
-                  magicInitiateFreeUses: {
-                    ...c.magicInitiateFreeUses,
-                    [spell.id]: false,
-                  },
-                }
+              ? { ...c, magicInitiateFreeUses: { ...c.magicInitiateFreeUses, [spell.id]: false } }
               : c
           ),
         }))
-
         get().addLogEntry({
           type: 'spell',
           actorId: casterId,
@@ -3816,37 +3610,12 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
           message: `${caster.name} uses Magic Initiate free cast of ${spell.name}!`,
         })
       } else {
-        // No free use available, check spell slots
-        const spellSlots = character.spellSlots
-        if (!spellSlots) {
-          get().addLogEntry({
-            type: 'spell',
-            actorId: casterId,
-            actorName: caster.name,
-            message: `${caster.name} cannot cast ${spell.name} - no spell slots!`,
-          })
-          return false
-        }
-
+        // Consume a spell slot
+        const spellSlots = character.spellSlots!
         const slotLevel = spell.level as keyof typeof spellSlots
-        const slot = spellSlots[slotLevel]
-        if (!slot || slot.current <= 0) {
-          get().addLogEntry({
-            type: 'spell',
-            actorId: casterId,
-            actorName: caster.name,
-            message: `${caster.name} cannot cast ${spell.name} - no level ${spell.level} spell slots remaining!`,
-          })
-          return false
-        }
+        const slot = spellSlots[slotLevel]!
+        const updatedSpellSlots = { ...spellSlots, [slotLevel]: { ...slot, current: slot.current - 1 } }
 
-        // Decrement the spell slot
-        const updatedSpellSlots = {
-          ...spellSlots,
-          [slotLevel]: { ...slot, current: slot.current - 1 },
-        }
-
-        // Update character's spell slots in combatants
         set((state) => ({
           combatants: state.combatants.map((c) =>
             c.id === casterId && c.type === 'character'
@@ -3854,7 +3623,6 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
               : c
           ),
         }))
-
         get().addLogEntry({
           type: 'spell',
           actorId: casterId,
@@ -3872,124 +3640,69 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
       message: `${caster.name} casts ${spell.name}!`,
     })
 
-    // Calculate scaled cantrip damage dice based on character level
-    const casterLevel = character.level
-    const scaledDamageDice = spell.damage ? getScaledCantripDice(spell, casterLevel) : undefined
+    // Calculate scaled damage dice
+    const scaledDamageDice = getEffectiveDamageDice(spell, character.level)
+
+    // Intercept spells that require damage type choice (Chromatic Orb, etc.)
+    if (spell.damageTypeChoice && spell.damageTypeChoice.length > 0 && targetId) {
+      if (isBonusActionSpell) { get().useBonusAction() } else { get().useAction() }
+      set({
+        pendingDamageTypeChoice: { casterId, spell, targetId, options: spell.damageTypeChoice },
+        selectedAction: undefined,
+      })
+      return true
+    }
 
     // Handle multi-projectile spells (Magic Missile, Scorching Ray, etc.)
     if (spell.projectiles && projectileAssignments && projectileAssignments.length > 0) {
-      const damageType = spell.damage?.type || 'force'
-      const damagePerProjectile = spell.projectiles.damagePerProjectile
+      const projectileResults = resolveProjectiles(spell, projectileAssignments, combatants)
 
-      // Process each target assignment
-      for (const assignment of projectileAssignments) {
-        const target = combatants.find((c) => c.id === assignment.targetId)
-        if (!target || target.currentHp <= 0) continue
-
-        // Roll damage for each projectile and deal it
-        let totalDamage = 0
-        const projectileDamages: number[] = []
-
-        for (let i = 0; i < assignment.count; i++) {
-          const damageResult = rollDamage(damagePerProjectile, false)
-          projectileDamages.push(damageResult.total)
-          totalDamage += damageResult.total
-        }
-
-        // Log the projectile hits
-        const projectileWord = assignment.count === 1 ? 'projectile' : 'projectiles'
-        const damageBreakdown = projectileDamages.join(' + ')
-
+      for (const result of projectileResults) {
+        const projectileWord = result.count === 1 ? 'projectile' : 'projectiles'
         if (spell.autoHit) {
           get().addLogEntry({
             type: 'spell',
             actorId: casterId,
             actorName: caster.name,
-            targetId: assignment.targetId,
-            targetName: target.name,
-            message: `${assignment.count} ${projectileWord} hit ${target.name}`,
+            targetId: result.targetId,
+            targetName: result.targetName,
+            message: `${result.count} ${projectileWord} hit ${result.targetName}`,
             details: `Auto-hit`,
           })
         }
 
-        // Deal the combined damage
-        get().dealDamage(assignment.targetId, totalDamage, caster.name)
-        get().addDamagePopup(assignment.targetId, totalDamage, damageType, false)
-
+        get().dealDamage(result.targetId, result.totalDamage, caster.name)
+        get().addDamagePopup(result.targetId, result.totalDamage, result.damageType, false)
         get().addLogEntry({
           type: 'damage',
           actorId: casterId,
           actorName: caster.name,
-          targetId: assignment.targetId,
-          targetName: target.name,
-          message: `${totalDamage} ${damageType} damage (${damageBreakdown})`,
-          details: `${assignment.count}x ${damagePerProjectile}`,
+          targetId: result.targetId,
+          targetName: result.targetName,
+          message: `${result.totalDamage} ${result.damageType} damage (${result.perProjectileDamages.join(' + ')})`,
+          details: `${result.count}x ${spell.projectiles!.damagePerProjectile}`,
         })
       }
 
-      // Mark the appropriate action type as used
-      const isBonusActionSpell = spell.castingTime.toLowerCase().includes('bonus action')
-      if (isBonusActionSpell) {
-        get().useBonusAction()
-      } else {
-        get().useAction()
-      }
-
+      if (isBonusActionSpell) { get().useBonusAction() } else { get().useAction() }
       return true
     }
 
-    // Determine targets based on whether spell has AoE
+    // Determine targets (AoE or single target)
     let targets: Combatant[] = []
-
     if (spell.areaOfEffect && (targetPosition || targetId)) {
-      // Get target position - prefer directly passed position, fall back to combatant position
-      let aoeTargetPosition = targetPosition
-      if (!aoeTargetPosition && targetId) {
-        const targetCombatant = combatants.find((c) => c.id === targetId)
-        aoeTargetPosition = targetCombatant?.position
-      }
-
-      if (aoeTargetPosition) {
-        // AoE spell - find all combatants in the affected area
-        const aoeConfig = {
-          type: spell.areaOfEffect.type,
-          size: spell.areaOfEffect.size,
-          origin: caster.position,
-          target: aoeTargetPosition,
-          originType: spell.areaOfEffect.origin,
-        }
-        const affectedCells = getAoEAffectedCells(aoeConfig)
-
-        // Find all living enemy combatants in the affected cells
-        // For now, AoE spells hit enemies (monsters for player, characters for monsters)
-        const isPlayerCaster = caster.type === 'character'
-        targets = combatants.filter((c) => {
-          if (c.currentHp <= 0) return false
-          if (c.id === casterId) return false // Don't hit self
-          // Check if combatant is in affected area
-          const cellKey = `${c.position.x},${c.position.y}`
-          if (!affectedCells.has(cellKey)) return false
-          // For player casters, only hit monsters; for monster casters, only hit characters
-          if (isPlayerCaster && c.type === 'character') return false
-          if (!isPlayerCaster && c.type === 'monster') return false
-          return true
+      targets = findAoETargets(caster, spell, targetPosition, targetId, combatants)
+      if (targets.length === 0) {
+        get().addLogEntry({
+          type: 'spell',
+          actorId: casterId,
+          actorName: caster.name,
+          message: `${spell.name} hits no targets in the area.`,
         })
-
-        if (targets.length === 0) {
-          get().addLogEntry({
-            type: 'spell',
-            actorId: casterId,
-            actorName: caster.name,
-            message: `${spell.name} hits no targets in the area.`,
-          })
-        }
       }
     } else if (targetId) {
-      // Single target spell
       const target = combatants.find((c) => c.id === targetId)
-      if (target) {
-        targets = [target]
-      }
+      if (target) targets = [target]
     }
 
     // Handle damage spells
@@ -3997,9 +3710,9 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
       for (const target of targets) {
         const currentTargetId = target.id
 
-        // Spell attack or saving throw?
         if (spell.attackType) {
-          // Determine if ranged spell attack for projectile animation
+          // Spell attack roll — use engine function
+          const attackResult = resolveSpellAttack(character, target, spell, scaledDamageDice!)
           const isRangedSpell = spell.attackType === 'ranged'
           const deferIfRangedSpell = (fn: () => void) => {
             if (isRangedSpell) {
@@ -4009,57 +3722,35 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
             }
           }
 
-          // Spell attack roll
-          const spellAttackBonus = getSpellAttackBonus(character)
-          const attackRoll = rollAttack(spellAttackBonus)
-          const targetAC = target.type === 'character'
-            ? (target.data as Character).ac
-            : (target.data as Monster).ac
-
-          if (attackRoll.isNatural1) {
+          if (attackResult.naturalOne) {
             get().addLogEntry({
-              type: 'attack',
-              actorId: casterId,
-              actorName: caster.name,
-              targetId: currentTargetId,
-              targetName: target.name,
+              type: 'attack', actorId: casterId, actorName: caster.name,
+              targetId: currentTargetId, targetName: target.name,
               message: `${caster.name} misses ${target.name} with ${spell.name} (natural 1)`,
-              details: attackRoll.breakdown,
+              details: attackResult.attackRoll.breakdown,
             })
-            deferIfRangedSpell(() => {
-              get().addCombatPopup(currentTargetId, 'miss')
-            })
-          } else if (attackRoll.isNatural20 || attackRoll.total >= targetAC) {
-            const isCrit = attackRoll.isNatural20
-            const damage = rollDamage(scaledDamageDice!, isCrit)
-
+            deferIfRangedSpell(() => { get().addCombatPopup(currentTargetId, 'miss') })
+          } else if (attackResult.hit) {
             get().addLogEntry({
-              type: 'attack',
-              actorId: casterId,
-              actorName: caster.name,
-              targetId: currentTargetId,
-              targetName: target.name,
-              message: isCrit
+              type: 'attack', actorId: casterId, actorName: caster.name,
+              targetId: currentTargetId, targetName: target.name,
+              message: attackResult.critical
                 ? `${caster.name} CRITICALLY HITS ${target.name} with ${spell.name}!`
                 : `${caster.name} hits ${target.name} with ${spell.name}`,
-              details: `${attackRoll.breakdown} vs AC ${targetAC}`,
+              details: `${attackResult.attackRoll.breakdown} vs AC ${attackResult.targetAC}`,
             })
 
-            const spellDamageType = spell.damage!.type
             deferIfRangedSpell(() => {
-              get().dealDamage(currentTargetId, damage.total, caster.name)
-              get().addDamagePopup(currentTargetId, damage.total, spellDamageType, isCrit)
-              if (isCrit) {
+              get().dealDamage(currentTargetId, attackResult.damage!.total, caster.name)
+              get().addDamagePopup(currentTargetId, attackResult.damage!.total, attackResult.damageType, attackResult.critical)
+              if (attackResult.critical) {
                 get().addCombatPopup(currentTargetId, 'critical')
               }
               get().addLogEntry({
-                type: 'damage',
-                actorId: casterId,
-                actorName: caster.name,
-                targetId: currentTargetId,
-                targetName: target.name,
-                message: `${damage.total} ${spellDamageType} damage`,
-                details: damage.breakdown,
+                type: 'damage', actorId: casterId, actorName: caster.name,
+                targetId: currentTargetId, targetName: target.name,
+                message: `${attackResult.damage!.total} ${attackResult.damageType} damage`,
+                details: attackResult.damage!.breakdown,
               })
 
               // Apply data-driven on-hit effects
@@ -4082,151 +3773,106 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
               }
               if (spell.onHitDescription) {
                 get().addLogEntry({
-                  type: 'condition',
-                  actorId: casterId,
-                  actorName: caster.name,
-                  targetId: currentTargetId,
-                  targetName: target.name,
+                  type: 'condition', actorId: casterId, actorName: caster.name,
+                  targetId: currentTargetId, targetName: target.name,
                   message: `${target.name} ${spell.onHitDescription}`,
                 })
               }
             })
           } else {
             get().addLogEntry({
-              type: 'attack',
-              actorId: casterId,
-              actorName: caster.name,
-              targetId: currentTargetId,
-              targetName: target.name,
+              type: 'attack', actorId: casterId, actorName: caster.name,
+              targetId: currentTargetId, targetName: target.name,
               message: `${caster.name} misses ${target.name} with ${spell.name}`,
-              details: `${attackRoll.breakdown} vs AC ${targetAC}`,
+              details: `${attackResult.attackRoll.breakdown} vs AC ${attackResult.targetAC}`,
             })
-            deferIfRangedSpell(() => {
-              get().addCombatPopup(currentTargetId, 'miss')
-            })
+            deferIfRangedSpell(() => { get().addCombatPopup(currentTargetId, 'miss') })
           }
         } else if (spell.savingThrow) {
-          // Saving throw spell
-          const dc = getSpellSaveDC(character)
-          const saveResult = rollCombatantSavingThrow(target, spell.savingThrow, dc)
+          // Saving throw spell — use engine function
+          const saveResult = resolveSpellSave(character, target, spell, scaledDamageDice!)
 
-          // Upgrade die type when target is damaged (e.g., Toll the Dead d8→d12)
-          let effectiveDice = scaledDamageDice!
-          if (spell.damagedTargetDieUpgrade && target.currentHp < target.maxHp) {
-            const baseDie = effectiveDice.match(/d\d+/)?.[0]
-            if (baseDie) {
-              effectiveDice = effectiveDice.replace(new RegExp(baseDie, 'g'), spell.damagedTargetDieUpgrade)
-            }
-          }
-
-          if (saveResult.success) {
-            // Usually half damage on save for damaging spells
-            const damage = rollDamage(effectiveDice, false)
-            const halfDamage = Math.floor(damage.total / 2)
-
+          if (saveResult.saved) {
             get().addLogEntry({
-              type: 'spell',
-              actorId: casterId,
-              actorName: caster.name,
-              targetId: currentTargetId,
-              targetName: target.name,
-              message: `${target.name} saves against ${spell.name} (DC ${dc})`,
-              details: `${saveResult.roll.breakdown} - half damage`,
+              type: 'spell', actorId: casterId, actorName: caster.name,
+              targetId: currentTargetId, targetName: target.name,
+              message: `${target.name} saves against ${spell.name} (DC ${saveResult.dc})`,
+              details: `${saveResult.saveRoll.breakdown} - half damage`,
             })
-
-            // Show saved popup
             get().addCombatPopup(currentTargetId, 'saved')
 
-            if (halfDamage > 0) {
-              get().dealDamage(currentTargetId, halfDamage, caster.name)
-              get().addDamagePopup(currentTargetId, halfDamage, spell.damage.type, false)
+            if (saveResult.halfDamage > 0) {
+              get().dealDamage(currentTargetId, saveResult.halfDamage, caster.name)
+              get().addDamagePopup(currentTargetId, saveResult.halfDamage, saveResult.damageType, false)
             }
           } else {
-            // Roll damage for the full hit
-            const damage = rollDamage(effectiveDice, false)
-
-            // Log the failed save
             get().addLogEntry({
-              type: 'spell',
-              actorId: casterId,
-              actorName: caster.name,
-              targetId: currentTargetId,
-              targetName: target.name,
-              message: `${target.name} fails save against ${spell.name} (DC ${dc})`,
-              details: saveResult.roll.breakdown,
+              type: 'spell', actorId: casterId, actorName: caster.name,
+              targetId: currentTargetId, targetName: target.name,
+              message: `${target.name} fails save against ${spell.name} (DC ${saveResult.dc})`,
+              details: saveResult.saveRoll.breakdown,
             })
 
-            // Check if target can use Indomitable (Fighter level 9+)
-            if (target.type === 'character' && canUseIndomitable(target, target.classFeatureUses)) {
-              // Set pending Indomitable prompt
+            // Check for Indomitable reroll
+            if (saveResult.canUseIndomitable) {
               set({
                 pendingIndomitable: {
                   combatantId: target.id,
                   ability: spell.savingThrow,
-                  dc,
-                  originalRoll: saveResult.roll.total,
-                  originalNatural: saveResult.roll.naturalRoll,
+                  dc: saveResult.dc,
+                  originalRoll: saveResult.saveRoll.total,
+                  originalNatural: saveResult.saveRoll.naturalRoll,
                   modifier: saveResult.modifier,
                   context: {
                     type: 'spell_damage',
                     sourceId: casterId,
                     sourceName: `${caster.name}'s ${spell.name}`,
-                    damage: damage.total,
+                    damage: saveResult.damage.total,
                     halfDamageOnSave: true,
-                    damageType: spell.damage.type,
+                    damageType: saveResult.damageType,
                   },
                 },
               })
-              // Return early - the Indomitable resolution handler will apply damage
               return true
             }
 
-            // Check if target can use Heroic Inspiration (Musician feat)
-            if (target.type === 'character' && canUseHeroicInspiration(target)) {
-              // Set pending Heroic Inspiration prompt
+            // Check for Heroic Inspiration reroll
+            if (saveResult.canUseHeroicInspiration) {
               set({
                 pendingHeroicInspiration: {
                   combatantId: target.id,
                   type: 'save',
-                  originalRoll: saveResult.roll.naturalRoll,
-                  originalTotal: saveResult.roll.total,
+                  originalRoll: saveResult.saveRoll.naturalRoll,
+                  originalTotal: saveResult.saveRoll.total,
                   modifier: saveResult.modifier,
-                  targetValue: dc,
+                  targetValue: saveResult.dc,
                   context: {
                     ability: spell.savingThrow,
                     sourceName: `${caster.name}'s ${spell.name}`,
-                    damage: damage.total,
+                    damage: saveResult.damage.total,
                     halfDamageOnSave: true,
-                    damageType: spell.damage.type,
+                    damageType: saveResult.damageType,
                   },
                 },
               })
-              // Return early - the Heroic Inspiration resolution handler will apply damage
               return true
             }
 
-            // No reroll options available - apply damage immediately
+            // No reroll options — apply damage immediately
             get().addCombatPopup(currentTargetId, 'save_failed')
-            get().dealDamage(currentTargetId, damage.total, caster.name)
-            get().addDamagePopup(currentTargetId, damage.total, spell.damage.type, false)
+            get().dealDamage(currentTargetId, saveResult.damage.total, caster.name)
+            get().addDamagePopup(currentTargetId, saveResult.damage.total, saveResult.damageType, false)
             get().addLogEntry({
-              type: 'damage',
-              actorId: casterId,
-              actorName: caster.name,
-              targetId: currentTargetId,
-              targetName: target.name,
-              message: `${damage.total} ${spell.damage.type} damage`,
-              details: damage.breakdown,
+              type: 'damage', actorId: casterId, actorName: caster.name,
+              targetId: currentTargetId, targetName: target.name,
+              message: `${saveResult.damage.total} ${saveResult.damageType} damage`,
+              details: saveResult.damage.breakdown,
             })
 
-            // Apply data-driven on-failed-save effects
             if (spell.onFailedSaveDescription) {
               get().addLogEntry({
-                type: 'condition',
-                actorId: casterId,
-                actorName: caster.name,
-                targetId: currentTargetId,
-                targetName: target.name,
+                type: 'condition', actorId: casterId, actorName: caster.name,
+                targetId: currentTargetId, targetName: target.name,
                 message: `${target.name} ${spell.onFailedSaveDescription}`,
               })
             }
@@ -4242,27 +3888,20 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
             }
           }
         } else if (spell.autoHit) {
-          // Auto-hit spells (like Magic Missile) - no attack roll or saving throw
+          // Auto-hit spells (like Magic Missile single target)
           const damage = rollDamage(scaledDamageDice!, false)
 
           get().addLogEntry({
-            type: 'spell',
-            actorId: casterId,
-            actorName: caster.name,
-            targetId: currentTargetId,
-            targetName: target.name,
+            type: 'spell', actorId: casterId, actorName: caster.name,
+            targetId: currentTargetId, targetName: target.name,
             message: `${caster.name} hits ${target.name} with ${spell.name}`,
             details: 'Auto-hit',
           })
-
           get().dealDamage(currentTargetId, damage.total, caster.name)
           get().addDamagePopup(currentTargetId, damage.total, spell.damage.type, false)
           get().addLogEntry({
-            type: 'damage',
-            actorId: casterId,
-            actorName: caster.name,
-            targetId: currentTargetId,
-            targetName: target.name,
+            type: 'damage', actorId: casterId, actorName: caster.name,
+            targetId: currentTargetId, targetName: target.name,
             message: `${damage.total} ${spell.damage.type} damage`,
             details: damage.breakdown,
           })
@@ -4275,75 +3914,51 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
       const dc = getSpellSaveDC(character)
 
       for (const target of targets) {
-        // Data-driven save advantage (e.g., Charm Person in combat)
         const saveAdvantage = spell.saveAdvantageInCombat ? 'advantage' as const : 'normal' as const
-
         const saveResult = rollCombatantSavingThrow(target, spell.savingThrow, dc, saveAdvantage)
 
         if (saveResult.success) {
           get().addLogEntry({
-            type: 'spell',
-            actorId: casterId,
-            actorName: caster.name,
-            targetId: target.id,
-            targetName: target.name,
+            type: 'spell', actorId: casterId, actorName: caster.name,
+            targetId: target.id, targetName: target.name,
             message: `${target.name} saves against ${spell.name} (DC ${dc})`,
             details: saveResult.roll.breakdown,
           })
           get().addCombatPopup(target.id, 'saved')
         } else {
           get().addLogEntry({
-            type: 'spell',
-            actorId: casterId,
-            actorName: caster.name,
-            targetId: target.id,
-            targetName: target.name,
+            type: 'spell', actorId: casterId, actorName: caster.name,
+            targetId: target.id, targetName: target.name,
             message: `${target.name} fails save against ${spell.name} (DC ${dc})`,
             details: saveResult.roll.breakdown,
           })
           get().addCombatPopup(target.id, 'save_failed')
 
-          // Apply data-driven condition
           if (spell.conditionOnFailedSave) {
             set((state) => ({
               combatants: state.combatants.map((c) =>
                 c.id === target.id
-                  ? {
-                      ...c,
-                      conditions: [
-                        ...c.conditions,
-                        { condition: spell.conditionOnFailedSave!, source: `${caster.name}'s ${spell.name}` },
-                      ],
-                    }
+                  ? { ...c, conditions: [...c.conditions, { condition: spell.conditionOnFailedSave!, source: `${caster.name}'s ${spell.name}` }] }
                   : c
               ),
             }))
             get().addLogEntry({
-              type: 'condition',
-              actorId: casterId,
-              actorName: caster.name,
-              targetId: target.id,
-              targetName: target.name,
+              type: 'condition', actorId: casterId, actorName: caster.name,
+              targetId: target.id, targetName: target.name,
               message: `${target.name} is ${spell.conditionOnFailedSave}!`,
             })
             get().addCombatPopup(target.id, 'condition', spell.conditionOnFailedSave)
           }
-
-          // Apply data-driven descriptive effect
           if (spell.onFailedSaveDescription) {
             get().addLogEntry({
-              type: 'condition',
-              actorId: casterId,
-              actorName: caster.name,
-              targetId: target.id,
-              targetName: target.name,
+              type: 'condition', actorId: casterId, actorName: caster.name,
+              targetId: target.id, targetName: target.name,
               message: `${target.name} ${spell.onFailedSaveDescription}`,
             })
           }
         }
       }
 
-      // Set concentration if spell requires it
       if (spell.concentration) {
         set((state) => ({
           combatants: state.combatants.map((c) =>
@@ -4353,13 +3968,8 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
       }
     }
 
-    // Mark the appropriate action type as used (isBonusActionSpell defined at start of function)
-    if (isBonusActionSpell) {
-      get().useBonusAction()
-    } else {
-      get().useAction()
-    }
-
+    // Consume action
+    if (isBonusActionSpell) { get().useBonusAction() } else { get().useAction() }
     set({ selectedAction: undefined })
     return true
   },
@@ -5290,6 +4900,83 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
 
     // Show heal popup
     get().addHealPopup(targetId, actualHealing)
+  },
+
+  resolveDamageTypeChoice: (chosenDamageType) => {
+    const { pendingDamageTypeChoice, combatants } = get()
+    if (!pendingDamageTypeChoice) return
+
+    const { casterId, spell, targetId } = pendingDamageTypeChoice
+    const caster = combatants.find(c => c.id === casterId)
+    const target = combatants.find(c => c.id === targetId)
+    if (!caster || !target) {
+      set({ pendingDamageTypeChoice: undefined })
+      return
+    }
+
+    set({ pendingDamageTypeChoice: undefined })
+
+    get().addLogEntry({
+      type: 'spell',
+      actorId: casterId,
+      actorName: caster.name,
+      message: `${caster.name} chooses ${chosenDamageType} damage for ${spell.name}`,
+    })
+
+    // Resolve the spell attack with the chosen damage type
+    resolveSpellAttackWithType(get, set, casterId, caster, target, spell, chosenDamageType, [targetId], spell.bounce?.maxBounces ?? 0)
+  },
+
+  skipDamageTypeChoice: () => {
+    const { pendingDamageTypeChoice } = get()
+    if (!pendingDamageTypeChoice) return
+    // Default to first option
+    get().resolveDamageTypeChoice(pendingDamageTypeChoice.options[0])
+  },
+
+  resolveBounceTarget: (targetId) => {
+    const { pendingBounceTarget, combatants } = get()
+    if (!pendingBounceTarget) return
+
+    const { casterId, spell, damageType, alreadyTargetedIds, bouncesRemaining } = pendingBounceTarget
+    const caster = combatants.find(c => c.id === casterId)
+    const target = combatants.find(c => c.id === targetId)
+    if (!caster || !target) {
+      set({ pendingBounceTarget: undefined })
+      return
+    }
+
+    set({ pendingBounceTarget: undefined })
+
+    get().addLogEntry({
+      type: 'spell',
+      actorId: casterId,
+      actorName: caster.name,
+      targetId,
+      targetName: target.name,
+      message: `${caster.name} bounces ${spell.name} at ${target.name}!`,
+    })
+
+    resolveSpellAttackWithType(
+      get, set, casterId, caster, target, spell, damageType,
+      [...alreadyTargetedIds, targetId],
+      bouncesRemaining
+    )
+  },
+
+  skipBounceTarget: () => {
+    const { pendingBounceTarget } = get()
+    if (!pendingBounceTarget) return
+
+    const casterName = get().combatants.find(c => c.id === pendingBounceTarget.casterId)?.name ?? 'Unknown'
+    get().addLogEntry({
+      type: 'spell',
+      actorId: pendingBounceTarget.casterId,
+      actorName: casterName,
+      message: `The ${pendingBounceTarget.spell.name} orb fizzles out without bouncing.`,
+    })
+
+    set({ pendingBounceTarget: undefined })
   },
 
   resetCombat: () => {
