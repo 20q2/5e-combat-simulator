@@ -507,6 +507,16 @@ export const armors: Armor[] = [
     weight: 13,
     cost: 4500,
   },
+  {
+    id: 'mage-armor',
+    name: 'Mage Armor',
+    category: 'special',
+    baseAC: 13,
+    dexBonus: true,
+    stealthDisadvantage: false,
+    weight: 0,
+    cost: 0,
+  },
 
   // MEDIUM ARMOR
   {

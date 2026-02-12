@@ -204,7 +204,7 @@ export function CharacterPreview() {
           <div className="grid grid-cols-6 gap-1">
             {Object.entries(finalAbilityScores).map(([ability, score]) => {
               const mod = getAbilityModifier(score)
-              const hasBonus = draft.abilityBonusPlus2 === ability || draft.abilityBonusPlus1 === ability
+              const hasBonus = draft.abilityBonusPlus2 === ability || draft.abilityBonusPlus1 === ability || draft.abilityBonusPlus1Trio.includes(ability as keyof typeof draft.baseAbilityScores)
               return (
                 <div
                   key={ability}

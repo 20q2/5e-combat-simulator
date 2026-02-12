@@ -184,6 +184,12 @@ export const conditionIcons: Record<ExtendedCondition, ConditionIconInfo> = {
     bgColor: 'bg-emerald-900',
     label: 'Evasive',
   },
+  expeditious_retreat: {
+    icon: Zap,
+    color: 'text-cyan-300',
+    bgColor: 'bg-cyan-900',
+    label: 'Expeditious Retreat',
+  },
 }
 
 export function getConditionIcon(condition: string): ConditionIconInfo | undefined {

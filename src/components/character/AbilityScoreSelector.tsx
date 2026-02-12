@@ -2,7 +2,6 @@ import { useState } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
-import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import {
   Select,
@@ -11,7 +10,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import type { AbilityScores, AbilityName } from '@/types'
+import type { AbilityScores } from '@/types'
 import { getAbilityModifier } from '@/types'
 import {
   useCharacterStore,
@@ -93,10 +92,6 @@ export function AbilityScoreSelector() {
     setAbilityScoreMethod,
     setBaseAbilityScore,
     setBaseAbilityScores,
-    setAbilityBonusPlus2,
-    setAbilityBonusPlus1,
-    setAbilityBonusMode,
-    setAbilityBonusPlus1Trio,
   } = useCharacterStore()
 
   const {
@@ -196,6 +191,102 @@ export function AbilityScoreSelector() {
     return STANDARD_ARRAY.filter((v) => !used.includes(v) || v === currentValue)
   }
 
+  // ---- Background bonus helpers ----
+  const setBonusFields = (fields: Partial<typeof draft>) => {
+    useCharacterStore.setState(state => ({
+      draft: { ...state.draft, ...fields },
+    }))
+  }
+
+  const handlePlus2Click = (ability: keyof AbilityScores) => {
+    if (abilityBonusPlus2 === ability) {
+      // Uncheck +2
+      setBonusFields({ abilityBonusPlus2: null })
+    } else {
+      // Set +2 — switch to standard mode
+      setBonusFields({
+        abilityBonusMode: 'standard',
+        abilityBonusPlus2: ability,
+        abilityBonusPlus1: abilityBonusPlus1 === ability ? null : abilityBonusPlus1,
+        abilityBonusPlus1Trio: [],
+      })
+    }
+  }
+
+  const handlePlus1Click = (ability: keyof AbilityScores) => {
+    if (abilityBonusPlus2) {
+      // Standard mode (have a +2)
+      if (ability === abilityBonusPlus2) {
+        // Swap +2 → +1: remove +2, switch to trio mode
+        const newTrio: (keyof AbilityScores)[] = [ability]
+        if (abilityBonusPlus1 && abilityBonusPlus1 !== ability) {
+          newTrio.push(abilityBonusPlus1)
+        }
+        setBonusFields({
+          abilityBonusMode: 'three-plus-one',
+          abilityBonusPlus2: null,
+          abilityBonusPlus1: null,
+          abilityBonusPlus1Trio: newTrio,
+        })
+        return
+      }
+      setBonusFields({
+        abilityBonusPlus1: abilityBonusPlus1 === ability ? null : ability,
+      })
+    } else {
+      // No +2 → three-plus-one mode
+      const currentTrio = abilityBonusMode === 'three-plus-one' ? abilityBonusPlus1Trio : []
+      const isSelected = currentTrio.includes(ability)
+      const newTrio = isSelected
+        ? currentTrio.filter(a => a !== ability)
+        : currentTrio.length < 3
+          ? [...currentTrio, ability]
+          : currentTrio
+      setBonusFields({
+        abilityBonusMode: 'three-plus-one',
+        abilityBonusPlus1: null,
+        abilityBonusPlus1Trio: newTrio,
+      })
+    }
+  }
+
+  const renderBonusPills = (ability: keyof AbilityScores) => {
+    const isPlus2 = abilityBonusPlus2 === ability
+    const isPlus1 = abilityBonusPlus2
+      ? abilityBonusPlus1 === ability
+      : abilityBonusPlus1Trio.includes(ability)
+    const plus1Muted = !isPlus1 && !abilityBonusPlus2 && abilityBonusPlus1Trio.length >= 3
+
+    return (
+      <div className="flex justify-center gap-1.5 mt-2">
+        <button
+          onClick={() => handlePlus2Click(ability)}
+          className={cn(
+            'px-2 py-0.5 text-xs rounded-full border transition-all cursor-pointer',
+            isPlus2
+              ? 'bg-amber-500/25 text-amber-300 border-amber-500/50 font-semibold'
+              : 'bg-white/5 text-muted-foreground/50 border-white/10 hover:bg-white/10 hover:text-muted-foreground'
+          )}
+        >
+          +2
+        </button>
+        <button
+          onClick={() => handlePlus1Click(ability)}
+          className={cn(
+            'px-2 py-0.5 text-xs rounded-full border transition-all',
+            isPlus1
+              ? 'bg-amber-500/25 text-amber-300 border-amber-500/50 font-semibold cursor-pointer'
+              : plus1Muted
+                ? 'bg-white/[0.02] text-muted-foreground/20 border-white/5 cursor-not-allowed'
+                : 'bg-white/5 text-muted-foreground/50 border-white/10 hover:bg-white/10 hover:text-muted-foreground cursor-pointer'
+          )}
+        >
+          +1
+        </button>
+      </div>
+    )
+  }
+
   return (
     <Card>
       <CardHeader>
@@ -223,6 +314,11 @@ export function AbilityScoreSelector() {
               Manual
             </TabsTrigger>
           </TabsList>
+
+          <div className="flex items-center gap-1.5 mt-3 mb-1 text-xs text-amber-400/70">
+            <Gift className="w-3 h-3" />
+            <span>Background — pick one +2 and one +1, or three +1s</span>
+          </div>
 
           {/* Point Buy */}
           <TabsContent value="point-buy" className="space-y-4">
@@ -271,6 +367,7 @@ export function AbilityScoreSelector() {
                     <div className="text-xs text-muted-foreground mt-1">
                       Cost: {cost}
                     </div>
+                    {renderBonusPills(ability)}
                   </div>
                 )
               })}
@@ -316,6 +413,7 @@ export function AbilityScoreSelector() {
                         ({formatModifier(mod)})
                       </div>
                     )}
+                    {renderBonusPills(ability)}
                   </div>
                 )
               })}
@@ -350,6 +448,7 @@ export function AbilityScoreSelector() {
                     <div className="text-xs text-muted-foreground mt-1">
                       ({formatModifier(mod)})
                     </div>
+                    {renderBonusPills(ability)}
                   </div>
                 )
               })}
@@ -357,145 +456,6 @@ export function AbilityScoreSelector() {
           </TabsContent>
         </Tabs>
 
-        {/* Ability Score Bonuses */}
-        <div className="mt-6 pt-4 border-t">
-          <h4 className="font-medium mb-2 flex items-center gap-2">
-            <Gift className="w-4 h-4 text-amber-400" />
-            Ability Score Bonuses (Background)
-          </h4>
-
-          {/* Mode Toggle - Button Group */}
-          <div className="inline-flex rounded-lg border border-border overflow-hidden mb-4">
-            <button
-              onClick={() => setAbilityBonusMode('standard')}
-              className={cn(
-                'px-4 py-2 text-sm transition-all cursor-pointer',
-                abilityBonusMode === 'standard'
-                  ? 'bg-primary text-primary-foreground'
-                  : 'bg-background hover:bg-muted'
-              )}
-            >
-              Two Stats
-            </button>
-            <button
-              onClick={() => setAbilityBonusMode('three-plus-one')}
-              className={cn(
-                'px-4 py-2 text-sm transition-all border-l border-border cursor-pointer',
-                abilityBonusMode === 'three-plus-one'
-                  ? 'bg-primary text-primary-foreground'
-                  : 'bg-background hover:bg-muted'
-              )}
-            >
-              Three Stats
-            </button>
-          </div>
-
-          {abilityBonusMode === 'standard' ? (
-            <>
-              <p className="text-sm text-muted-foreground mb-4">
-                Choose one ability to increase by +2 and another to increase by +1
-              </p>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label className="text-sm mb-2 block">+2 Bonus</Label>
-                  <Select
-                    value={abilityBonusPlus2 ?? ''}
-                    onValueChange={(v) => setAbilityBonusPlus2(v as AbilityName || null)}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select ability" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {ABILITY_NAMES.map((ability) => (
-                        <SelectItem
-                          key={ability}
-                          value={ability}
-                          disabled={ability === abilityBonusPlus1}
-                        >
-                          {ABILITY_LABELS[ability]} ({baseAbilityScores[ability]} → {baseAbilityScores[ability] + 2})
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label className="text-sm mb-2 block">+1 Bonus</Label>
-                  <Select
-                    value={abilityBonusPlus1 ?? ''}
-                    onValueChange={(v) => setAbilityBonusPlus1(v as AbilityName || null)}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select ability" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {ABILITY_NAMES.map((ability) => (
-                        <SelectItem
-                          key={ability}
-                          value={ability}
-                          disabled={ability === abilityBonusPlus2}
-                        >
-                          {ABILITY_LABELS[ability]} ({baseAbilityScores[ability]} → {baseAbilityScores[ability] + 1})
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-            </>
-          ) : (
-            <>
-              <p className="text-sm text-muted-foreground mb-4">
-                Choose three different abilities to increase by +1 each
-              </p>
-              <div className="grid grid-cols-3 gap-4">
-                {[0, 1, 2].map((index) => {
-                  const selectedAbility = abilityBonusPlus1Trio[index] ?? null
-                  const otherSelected = abilityBonusPlus1Trio.filter((_, i) => i !== index)
-
-                  const handleSelect = (value: string) => {
-                    const newTrio = [...abilityBonusPlus1Trio]
-                    if (value === '') {
-                      // Remove this selection
-                      newTrio.splice(index, 1)
-                    } else if (index < newTrio.length) {
-                      // Replace existing
-                      newTrio[index] = value as AbilityName
-                    } else {
-                      // Add new
-                      newTrio.push(value as AbilityName)
-                    }
-                    setAbilityBonusPlus1Trio(newTrio)
-                  }
-
-                  return (
-                    <div key={index}>
-                      <Label className="text-sm mb-2 block">+1 Bonus #{index + 1}</Label>
-                      <Select
-                        value={selectedAbility ?? ''}
-                        onValueChange={handleSelect}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select ability" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {ABILITY_NAMES.map((ability) => (
-                            <SelectItem
-                              key={ability}
-                              value={ability}
-                              disabled={otherSelected.includes(ability)}
-                            >
-                              {ABILITY_LABELS[ability]} ({baseAbilityScores[ability]} → {baseAbilityScores[ability] + 1})
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  )
-                })}
-              </div>
-            </>
-          )}
-        </div>
       </CardContent>
     </Card>
   )

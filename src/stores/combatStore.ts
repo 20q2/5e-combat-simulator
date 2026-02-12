@@ -1188,6 +1188,35 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
         details: `AC ${pendingReaction.context.targetAC} → ${newAC}`,
       })
 
+      // Consume a spell slot (Shield is level 1)
+      if (reactor.type === 'character') {
+        const character = reactor.data as Character
+        const spellSlots = character.spellSlots
+        if (spellSlots) {
+          // Find the lowest available slot level that can cast Shield
+          const slotLevel = ([1, 2, 3, 4, 5, 6, 7, 8, 9] as const).find(
+            lvl => spellSlots[lvl] && spellSlots[lvl]!.current > 0
+          )
+          if (slotLevel) {
+            const slot = spellSlots[slotLevel]!
+            const updatedSpellSlots = { ...spellSlots, [slotLevel]: { ...slot, current: slot.current - 1 } }
+            set((state) => ({
+              combatants: state.combatants.map(c =>
+                c.id === pendingReaction.reactingCombatantId && c.type === 'character'
+                  ? { ...c, data: { ...(c.data as Character), spellSlots: updatedSpellSlots } }
+                  : c
+              ),
+            }))
+            get().addLogEntry({
+              type: 'spell',
+              actorId: pendingReaction.reactingCombatantId,
+              actorName: reactor.name,
+              message: `${reactor.name} uses a level ${slotLevel} spell slot (${slot.current - 1}/${slot.max} remaining)`,
+            })
+          }
+        }
+      }
+
       // Mark reaction as used
       set((state) => ({
         combatants: state.combatants.map(c =>
@@ -4188,7 +4217,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
 
     // Handle concentration for ALL concentration spells (self-buffs, etc.)
     if (spell.concentration) {
-      // Clean up zones from previous concentration spell (if any)
+      // Clean up effects from previous concentration spell (if any)
       const currentConc = get().combatants.find(c => c.id === casterId)?.concentratingOn
       if (currentConc?.createsZone) {
         set((state) => ({
@@ -4201,9 +4230,37 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
           message: `${caster.name}'s ${currentConc.name} ends as concentration shifts.`,
         })
       }
+      // Remove self-buff condition from previous concentration spell
+      if (currentConc?.conditionOnSelf) {
+        const condToRemove = currentConc.conditionOnSelf
+        set((state) => ({
+          combatants: state.combatants.map((c) =>
+            c.id === casterId
+              ? { ...c, conditions: c.conditions.filter(ac => ac.condition !== condToRemove) }
+              : c
+          ),
+        }))
+      }
       set((state) => ({
         combatants: state.combatants.map((c) =>
           c.id === casterId ? { ...c, concentratingOn: spell } : c
+        ),
+      }))
+    }
+
+    // Apply self-buff condition from spell (e.g., Expeditious Retreat)
+    if (spell.conditionOnSelf) {
+      set((state) => ({
+        combatants: state.combatants.map((c) =>
+          c.id === casterId
+            ? {
+                ...c,
+                conditions: [...c.conditions, {
+                  condition: spell.conditionOnSelf!,
+                  source: spell.name,
+                }],
+              }
+            : c
         ),
       }))
     }
@@ -4700,7 +4757,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
     const combatant = combatants.find((c) => c.id === currentId)
 
     if (!combatant || combatant.hasBonusActed) return
-    if (!combatant.concentratingOn?.grantsDash) return
+    if (!combatant.conditions.some(c => c.condition === 'expeditious_retreat')) return
 
     const speed = combatant.type === 'character'
       ? (combatant.data as Character).speed
@@ -4710,7 +4767,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
       type: 'other',
       actorId: currentId,
       actorName: combatant.name,
-      message: `${combatant.name} uses ${combatant.concentratingOn.name} to Dash (+${speed} ft)!`,
+      message: `${combatant.name} uses Expeditious Retreat to Dash (+${speed} ft)!`,
     })
 
     set((state) => ({

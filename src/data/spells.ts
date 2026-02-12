@@ -359,6 +359,7 @@ export const spells: Spell[] = [
     description: 'You take the Dash action, and until the spell ends, you can take that action again as a Bonus Action.',
     classes: ['sorcerer', 'warlock', 'wizard'],
     grantsDash: true,
+    conditionOnSelf: 'expeditious_retreat',
   },
   {
     id: 'chromatic-orb',

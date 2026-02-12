@@ -84,7 +84,7 @@ export function ASISelector({ classId }: { classId: string }) {
   // Handle ability selection
   const handleAbilitySelect = (
     index: number,
-    abilityType: 'plus2' | 'plus1-first' | 'plus1-second',
+    abilityType: 'plus2' | 'plus1-first' | 'plus1-second' | 'plus1-third',
     ability: AbilityName | ''
   ) => {
     const currentSelection = classAsiSelections[index] || {
@@ -97,21 +97,13 @@ export function ASISelector({ classId }: { classId: string }) {
 
     if (abilityType === 'plus2') {
       newSelection.plus2Ability = ability || undefined
-    } else if (abilityType === 'plus1-first') {
-      const newPlus1 = [...currentSelection.plus1Abilities]
-      if (ability) {
-        newPlus1[0] = ability
-      } else {
-        newPlus1.splice(0, 1)
-      }
-      newSelection.plus1Abilities = newPlus1
     } else {
-      // plus1-second
+      const slotIndex = abilityType === 'plus1-first' ? 0 : abilityType === 'plus1-second' ? 1 : 2
       const newPlus1 = [...currentSelection.plus1Abilities]
       if (ability) {
-        newPlus1[1] = ability
+        newPlus1[slotIndex] = ability
       } else {
-        newPlus1.splice(1, 1)
+        newPlus1.splice(slotIndex, 1)
       }
       newSelection.plus1Abilities = newPlus1
     }
@@ -133,7 +125,7 @@ export function ASISelector({ classId }: { classId: string }) {
         </CardTitle>
         <CardDescription>
           At certain levels, your class grants you the ability to increase your ability scores.
-          Choose +2 to one ability and +1 to another, or +1 to two different abilities.
+          Choose +2 to one ability and +1 to another, or +1 to three different abilities.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
@@ -173,7 +165,7 @@ export function ASISelector({ classId }: { classId: string }) {
                         : 'bg-background hover:bg-muted'
                     )}
                   >
-                    +1 / +1
+                    +1 / +1 / +1
                   </button>
                 </div>
               </div>
@@ -239,64 +231,44 @@ export function ASISelector({ classId }: { classId: string }) {
                   </div>
                 </div>
               ) : (
-                <div className="grid grid-cols-2 gap-4">
-                  {/* First +1 Selection */}
-                  <div>
-                    <Label className="text-sm mb-2 block text-sky-400">+1 Bonus #1</Label>
-                    <Select
-                      value={selection.plus1Abilities[0] ?? ''}
-                      onValueChange={(v) => handleAbilitySelect(index, 'plus1-first', v as AbilityName | '')}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select ability" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {ABILITY_NAMES.map((ability) => {
-                          const exceeds = wouldExceedCap(currentScores, ability, 1)
-                          const isSelectedForSecond = selection.plus1Abilities[1] === ability
-                          return (
-                            <SelectItem
-                              key={ability}
-                              value={ability}
-                              disabled={isSelectedForSecond || exceeds}
-                            >
-                              {ABILITY_LABELS[ability]} ({currentScores[ability]} → {Math.min(20, currentScores[ability] + 1)})
-                              {exceeds && ' [Max 20]'}
-                            </SelectItem>
-                          )
-                        })}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  {/* Second +1 Selection */}
-                  <div>
-                    <Label className="text-sm mb-2 block text-sky-400">+1 Bonus #2</Label>
-                    <Select
-                      value={selection.plus1Abilities[1] ?? ''}
-                      onValueChange={(v) => handleAbilitySelect(index, 'plus1-second', v as AbilityName | '')}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select ability" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {ABILITY_NAMES.map((ability) => {
-                          const exceeds = wouldExceedCap(currentScores, ability, 1)
-                          const isSelectedForFirst = selection.plus1Abilities[0] === ability
-                          return (
-                            <SelectItem
-                              key={ability}
-                              value={ability}
-                              disabled={isSelectedForFirst || exceeds}
-                            >
-                              {ABILITY_LABELS[ability]} ({currentScores[ability]} → {Math.min(20, currentScores[ability] + 1)})
-                              {exceeds && ' [Max 20]'}
-                            </SelectItem>
-                          )
-                        })}
-                      </SelectContent>
-                    </Select>
-                  </div>
+                <div className="grid grid-cols-3 gap-4">
+                  {([
+                    { slot: 0, type: 'plus1-first' as const, label: '+1 Bonus #1' },
+                    { slot: 1, type: 'plus1-second' as const, label: '+1 Bonus #2' },
+                    { slot: 2, type: 'plus1-third' as const, label: '+1 Bonus #3' },
+                  ]).map(({ slot, type, label }) => {
+                    const otherSlots = [0, 1, 2].filter(s => s !== slot)
+                    const otherSelected = otherSlots.map(s => selection.plus1Abilities[s]).filter(Boolean)
+                    return (
+                      <div key={slot}>
+                        <Label className="text-sm mb-2 block text-sky-400">{label}</Label>
+                        <Select
+                          value={selection.plus1Abilities[slot] ?? ''}
+                          onValueChange={(v) => handleAbilitySelect(index, type, v as AbilityName | '')}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select ability" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {ABILITY_NAMES.map((ability) => {
+                              const exceeds = wouldExceedCap(currentScores, ability, 1)
+                              const isOtherSelected = otherSelected.includes(ability)
+                              return (
+                                <SelectItem
+                                  key={ability}
+                                  value={ability}
+                                  disabled={isOtherSelected || exceeds}
+                                >
+                                  {ABILITY_LABELS[ability]} ({currentScores[ability]} → {Math.min(20, currentScores[ability] + 1)})
+                                  {exceeds && ' [Max 20]'}
+                                </SelectItem>
+                              )
+                            })}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )
+                  })}
                 </div>
               )}
             </div>

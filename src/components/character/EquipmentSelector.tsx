@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { cn } from '@/lib/utils'
@@ -6,7 +6,7 @@ import { getAllWeapons, getAllArmors, getClassById, getWeaponById, getArmorById 
 import { useCharacterStore, calculateAC, calculateFinalAbilityScores } from '@/stores/characterStore'
 import { getAbilityModifier } from '@/types'
 import type { Weapon, Armor } from '@/types'
-import { Swords, Shield, Target, Shirt, HardHat, ShieldPlus } from 'lucide-react'
+import { Swords, Shield, Target, Shirt, HardHat, ShieldPlus, Sparkles } from 'lucide-react'
 import { WeaponMasterySelector } from './WeaponMasterySelector'
 
 // Parse dice notation and return average
@@ -188,20 +188,36 @@ export function EquipmentSelector() {
     })
   }, [allWeaponProficiencies, weapons])
 
-  // Separate armors by category (excluding shields)
+  // Check if any class entry has Mage Armor selected as a spell
+  const hasMageArmorSpell = useMemo(() => {
+    return draft.classEntries.some(
+      (e) => e.selectedSpellIds.includes('mage-armor')
+    )
+  }, [draft.classEntries])
+
+  // Clear Mage Armor selection if the spell is removed
+  useEffect(() => {
+    if (draft.armorId === 'mage-armor' && !hasMageArmorSpell) {
+      setArmor(null)
+    }
+  }, [hasMageArmorSpell, draft.armorId, setArmor])
+
+  // Separate armors by category (excluding shields and conditionally including Mage Armor)
   const armorsByCategory = useMemo(() => {
-    const nonShields = armors.filter((a) => a.category !== 'shield')
+    const nonShields = armors.filter((a) => a.category !== 'shield' && (a.id !== 'mage-armor' || hasMageArmorSpell))
     return {
       light: nonShields.filter((a) => a.category === 'light'),
       medium: nonShields.filter((a) => a.category === 'medium'),
       heavy: nonShields.filter((a) => a.category === 'heavy'),
+      special: nonShields.filter((a) => a.category === 'special'),
     }
-  }, [armors])
+  }, [armors, hasMageArmorSpell])
 
   const shield = armors.find((a) => a.category === 'shield')
 
   // Check armor proficiency
   const canUseArmor = (armor: Armor): boolean => {
+    if (armor.id === 'mage-armor') return true // Mage Armor is a spell, no proficiency needed
     if (allArmorProficiencies.length === 0) return true
     return allArmorProficiencies.includes(armor.category)
   }
@@ -508,6 +524,27 @@ export function EquipmentSelector() {
                 ))}
               </div>
             </div>
+
+            {/* Special Armor */}
+            {armorsByCategory.special.length > 0 && (
+              <div>
+                <h4 className="font-medium text-sm mb-2 flex items-center gap-1.5">
+                  <Sparkles className="w-4 h-4 text-violet-400" />
+                  Special
+                </h4>
+                <div className="space-y-2">
+                  {armorsByCategory.special.map((armor) => (
+                    <ArmorCard
+                      key={armor.id}
+                      armor={armor}
+                      selected={draft.armorId === armor.id}
+                      onSelect={() => setArmor(armor.id)}
+                      canUse={canUseArmor(armor)}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>

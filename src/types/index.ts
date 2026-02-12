@@ -59,6 +59,8 @@ export type Condition =
   | 'goaded'  // Disadvantage on attacks vs targets other than goader (from Goading Attack)
   | 'distracted'  // Next attack by a different attacker has advantage (from Distracting Strike)
   | 'evasive'  // AC bonus from Evasive Footwork (bonus stored on combatant)
+  // Self-buff spell conditions
+  | 'expeditious_retreat'  // Bonus action Dash while concentrating on Expeditious Retreat
 
 // ============================================
 // Character Types
@@ -273,7 +275,7 @@ export interface Weapon {
 export interface Armor {
   id: string
   name: string
-  category: 'light' | 'medium' | 'heavy' | 'shield'
+  category: 'light' | 'medium' | 'heavy' | 'shield' | 'special'
   baseAC: number
   dexBonus: boolean
   maxDexBonus?: number
@@ -383,6 +385,8 @@ export interface Spell {
   damagedTargetDieUpgrade?: string
   // Grants Dash on cast and bonus-action Dash while concentrating (Expeditious Retreat)
   grantsDash?: boolean
+  // Condition applied to caster on cast (self-buff spells like Expeditious Retreat)
+  conditionOnSelf?: Condition
   // Grants temporary HP to caster on cast (False Life: '2d4+4')
   grantsTempHp?: string
   // Flat bonus per upcast level for grantsTempHp (False Life: +5 per level above 1)

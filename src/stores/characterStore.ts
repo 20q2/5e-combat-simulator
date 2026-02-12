@@ -781,8 +781,8 @@ export function calculateFinalAbilityScores(
         result[asiSelection.plus1Abilities[0]] = Math.min(20, result[asiSelection.plus1Abilities[0]] + 1)
       }
     } else {
-      // +1 to two different abilities
-      for (const ability of asiSelection.plus1Abilities.slice(0, 2)) {
+      // +1 to three different abilities
+      for (const ability of asiSelection.plus1Abilities.slice(0, 3)) {
         result[ability] = Math.min(20, result[ability] + 1)
       }
     }

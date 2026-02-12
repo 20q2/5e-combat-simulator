@@ -1191,6 +1191,7 @@ export function ActionBar() {
   const [isSelectingBattleMedicTarget, setIsSelectingBattleMedicTarget] = useState(false)
   const [showBonusManeuvers, setShowBonusManeuvers] = useState(false)
   const [isSelectingFeintTarget, setIsSelectingFeintTarget] = useState(false)
+  const [showDashPopover, setShowDashPopover] = useState(false)
   const lastSelectedWeaponIdRef = useRef<string | undefined>(undefined)
 
   const currentCombatant = getCurrentCombatant(state)
@@ -1208,6 +1209,7 @@ export function ActionBar() {
       setSelectedSpell(undefined)
       setSelectedSlotLevel(undefined)
     }
+    setShowDashPopover(false)
   }, [selectedAction, setRangeHighlight])
 
   // Auto-execute AI turns
@@ -1519,7 +1521,7 @@ export function ActionBar() {
   const canCunningHide = hasCunningActionFeature && canUseCunningAction(currentCombatant, 'hide')
 
   // Check for Expeditious Retreat bonus action Dash
-  const canExpeditiousDash = isCharacter && !currentCombatant.hasBonusActed && !!currentCombatant.concentratingOn?.grantsDash
+  const canExpeditiousDash = isCharacter && !currentCombatant.hasBonusActed && currentCombatant.conditions.some(c => c.condition === 'expeditious_retreat')
 
   // Check for Battle Medic (Healer origin feat)
   const hasBattleMedicFeat = isCharacter && canUseBattleMedic(currentCombatant)
@@ -2050,14 +2052,78 @@ export function ActionBar() {
 
                   <div className="w-px h-10 bg-slate-700" />
 
-                  <ActionButton
-                    icon={<Wind className="w-5 h-5" />}
-                    label="Dash"
-                    onClick={useDash}
-                    disabled={currentCombatant.hasActed || currentCombatant.attacksMadeThisTurn > 0}
-                    tooltip={currentCombatant.attacksMadeThisTurn > 0 ? "Can't change action mid-Attack" : "Double your movement speed"}
-                    actionType="action"
-                  />
+                  {/* Dash button — shows popover for Action vs Bonus Action when ER is active */}
+                  <div className="relative">
+                    <ActionButton
+                      icon={<Wind className="w-5 h-5" />}
+                      label="Dash"
+                      onClick={() => {
+                        if (canExpeditiousDash) {
+                          setShowDashPopover(!showDashPopover)
+                        } else {
+                          useDash()
+                        }
+                      }}
+                      disabled={
+                        canExpeditiousDash
+                          ? (currentCombatant.hasActed && currentCombatant.hasBonusActed) || currentCombatant.attacksMadeThisTurn > 0
+                          : currentCombatant.hasActed || currentCombatant.attacksMadeThisTurn > 0
+                      }
+                      active={showDashPopover}
+                      tooltip={
+                        currentCombatant.attacksMadeThisTurn > 0
+                          ? "Can't change action mid-Attack"
+                          : canExpeditiousDash
+                            ? 'Dash as Action or Bonus Action (Expeditious Retreat)'
+                            : 'Double your movement speed'
+                      }
+                      actionType={canExpeditiousDash ? 'bonus' : 'action'}
+                    />
+                    {showDashPopover && canExpeditiousDash && (
+                      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-56 bg-slate-900/85 backdrop-blur-md border-2 border-cyan-600 rounded-lg shadow-2xl p-3 z-50">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-sm font-semibold text-cyan-300">Dash</span>
+                          <button onClick={() => setShowDashPopover(false)} className="p-0.5 hover:bg-slate-700 rounded">
+                            <X className="w-3.5 h-3.5 text-slate-400" />
+                          </button>
+                        </div>
+                        <div className="space-y-1.5">
+                          <button
+                            onClick={() => { useDash(); setShowDashPopover(false) }}
+                            disabled={currentCombatant.hasActed || currentCombatant.attacksMadeThisTurn > 0}
+                            className={cn(
+                              'w-full text-left px-3 py-2 rounded-lg text-sm transition-colors border',
+                              currentCombatant.hasActed || currentCombatant.attacksMadeThisTurn > 0
+                                ? 'text-slate-500 bg-slate-800/50 border-slate-700 cursor-not-allowed'
+                                : 'text-emerald-300 bg-emerald-900/30 border-emerald-700 hover:bg-emerald-900/50 hover:border-emerald-500'
+                            )}
+                          >
+                            <div className="flex items-center gap-2">
+                              <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                              <span className="font-medium">Action</span>
+                            </div>
+                            <div className="text-xs text-slate-400 ml-4">Uses your action</div>
+                          </button>
+                          <button
+                            onClick={() => { useExpeditiousRetreatDash(); setShowDashPopover(false) }}
+                            disabled={currentCombatant.hasBonusActed}
+                            className={cn(
+                              'w-full text-left px-3 py-2 rounded-lg text-sm transition-colors border',
+                              currentCombatant.hasBonusActed
+                                ? 'text-slate-500 bg-slate-800/50 border-slate-700 cursor-not-allowed'
+                                : 'text-amber-300 bg-amber-900/30 border-amber-700 hover:bg-amber-900/50 hover:border-amber-500'
+                            )}
+                          >
+                            <div className="flex items-center gap-2">
+                              <span className="w-2 h-2 rounded-full bg-amber-400" />
+                              <span className="font-medium">Bonus Action</span>
+                            </div>
+                            <div className="text-xs text-slate-400 ml-4">Via Expeditious Retreat</div>
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
 
                   <ActionButton
                     icon={<Shield className="w-5 h-5" />}
@@ -2180,19 +2246,6 @@ export function ActionBar() {
                         actionType="bonus"
                       />
                     </>
-                  )}
-
-                  {/* Expeditious Retreat Dash (while concentrating) */}
-                  {canExpeditiousDash && (
-                    <ActionButton
-                      icon={<Wind className="w-5 h-5" />}
-                      label="Dash"
-                      onClick={useExpeditiousRetreatDash}
-                      disabled={currentCombatant.hasBonusActed}
-                      variant="movement"
-                      tooltip={`Bonus Action: Dash via ${currentCombatant.concentratingOn?.name}`}
-                      actionType="bonus"
-                    />
                   )}
 
                   {/* Bonus Action Maneuvers (Battle Master) */}
