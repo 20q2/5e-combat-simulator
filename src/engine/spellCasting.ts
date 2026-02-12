@@ -91,39 +91,40 @@ export function validateSpellCasting(caster: Combatant, spell: Spell): SpellCast
  * Validate spell slot availability for leveled spells.
  * Cantrips (level 0) always pass. Returns whether Magic Initiate free use is available.
  */
-export function validateSpellSlot(caster: Combatant, spell: Spell): SpellSlotValidation {
+export function validateSpellSlot(caster: Combatant, spell: Spell, castAtLevel?: number): SpellSlotValidation {
   // Cantrips don't need slots
   if (spell.level === 0) {
     return { canCast: true, useMagicInitiateFreeUse: false }
   }
 
-  // Check Magic Initiate free use
-  if (caster.magicInitiateFreeUses[spell.id] === true) {
+  // Check Magic Initiate free use (only at base level)
+  if (!castAtLevel && caster.magicInitiateFreeUses[spell.id] === true) {
     return { canCast: true, useMagicInitiateFreeUse: true }
   }
 
-  // Check spell slots
+  // Check spell slots at the effective level (upcast or base)
+  const effectiveLevel = (castAtLevel && castAtLevel >= spell.level) ? castAtLevel : spell.level
   const character = caster.data as Character
   const spellSlots = character.spellSlots
   if (!spellSlots) {
     return { canCast: false, useMagicInitiateFreeUse: false, reason: 'No spell slots' }
   }
 
-  const slotLevel = spell.level as keyof typeof spellSlots
+  const slotLevel = effectiveLevel as keyof typeof spellSlots
   const slot = spellSlots[slotLevel]
   if (!slot || slot.current <= 0) {
     return {
       canCast: false,
       useMagicInitiateFreeUse: false,
-      slotLevel: spell.level,
-      reason: `No level ${spell.level} spell slots remaining`,
+      slotLevel: effectiveLevel,
+      reason: `No level ${effectiveLevel} spell slots remaining`,
     }
   }
 
   return {
     canCast: true,
     useMagicInitiateFreeUse: false,
-    slotLevel: spell.level,
+    slotLevel: effectiveLevel,
     slotsRemaining: slot.current,
   }
 }
@@ -285,9 +286,23 @@ export function resolveProjectiles(
 }
 
 /**
- * Get the effective (scaled) damage dice for a spell, accounting for cantrip scaling.
+ * Get the effective (scaled) damage dice for a spell, accounting for cantrip scaling and upcasting.
  */
-export function getEffectiveDamageDice(spell: Spell, casterLevel: number): string | undefined {
+export function getEffectiveDamageDice(spell: Spell, casterLevel: number, castAtLevel?: number): string | undefined {
   if (!spell.damage) return undefined
-  return getScaledCantripDice(spell, casterLevel)
+  const baseDice = getScaledCantripDice(spell, casterLevel)
+  // Upcast scaling for leveled spells
+  if (castAtLevel && castAtLevel > spell.level && spell.upcastDice) {
+    const levelsAbove = castAtLevel - spell.level
+    const perLevels = spell.upcastDice.perLevels ?? 1
+    const bonusTimes = Math.floor(levelsAbove / perLevels)
+    if (bonusTimes > 0) {
+      const match = spell.upcastDice.dicePerLevel.match(/^(\d+)d(\d+)$/)
+      if (match) {
+        const extraCount = parseInt(match[1]) * bonusTimes
+        return `${baseDice}+${extraCount}d${match[2]}`
+      }
+    }
+  }
+  return baseDice
 }

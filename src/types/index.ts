@@ -330,6 +330,10 @@ export interface Spell {
   ritual: boolean
   description: string
   higherLevels?: string
+  upcastDice?: {
+    dicePerLevel: string    // e.g., '1d8' — extra dice per slot level above base
+    perLevels?: number      // e.g., 2 for Spiritual Weapon (1d8 per 2 levels above base). Default: 1
+  }
   classes: string[]
   damage?: {
     type: DamageType
@@ -377,6 +381,12 @@ export interface Spell {
   onFailedSaveDescription?: string
   // Replace base die type when target is below max HP (Toll the Dead: 'd8' → 'd12')
   damagedTargetDieUpgrade?: string
+  // Grants Dash on cast and bonus-action Dash while concentrating (Expeditious Retreat)
+  grantsDash?: boolean
+  // Grants temporary HP to caster on cast (False Life: '2d4+4')
+  grantsTempHp?: string
+  // Flat bonus per upcast level for grantsTempHp (False Life: +5 per level above 1)
+  grantsTempHpUpcastBonus?: number
   // Caster picks damage type at cast time (e.g., Chromatic Orb)
   damageTypeChoice?: DamageType[]
   // Bounce mechanic: orb bounces to new target if any two damage dice match
@@ -754,6 +764,7 @@ export interface CombatState {
     spell: Spell
     totalProjectiles: number
     assignments: Record<string, number>  // targetId -> count
+    castAtLevel?: number
   }
   // Pending reaction prompt (Shield, opportunity attacks, etc.)
   pendingReaction?: {
@@ -806,6 +817,7 @@ export interface CombatState {
     spell: Spell
     targetId: string
     options: DamageType[]
+    castAtLevel?: number
   }
   // Chromatic Orb bounce target selection prompt
   pendingBounceTarget?: {
@@ -815,6 +827,7 @@ export interface CombatState {
     previousTargetId: string
     alreadyTargetedIds: string[]
     bouncesRemaining: number
+    castAtLevel?: number
   }
   // Breath weapon targeting state (for AoE attack replacements)
   breathWeaponTargeting?: {

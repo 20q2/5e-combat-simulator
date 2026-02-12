@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, type ReactNode } from 'react'
+import React, { useState, useEffect, useRef, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { cn, formatCR } from '@/lib/utils'
 import { useCombatStore, getCurrentCombatant } from '@/stores/combatStore'
@@ -1046,6 +1046,7 @@ export function ActionBar() {
     useCunningDash,
     useCunningDisengage,
     useCunningHide,
+    useExpeditiousRetreatDash,
     projectileTargeting,
     startProjectileTargeting,
     cancelProjectileTargeting,
@@ -1091,9 +1092,15 @@ export function ActionBar() {
   }, [selectedAction, setRangeHighlight])
 
   // Auto-execute AI turns
+  // Note: Only depend on phase and currentTurnIndex (the actual signals).
+  // isAITurn/executeAITurn are stable store functions called inside the effect.
+  // Including them or isExecutingAI in deps caused the timeout to be cancelled
+  // on unrelated store updates before the AI could act.
+  const isExecutingAIRef = useRef(isExecutingAI)
+  isExecutingAIRef.current = isExecutingAI
   useEffect(() => {
     if (phase !== 'combat') return
-    if (isExecutingAI) return
+    if (isExecutingAIRef.current) return
     if (!isAITurn()) return
 
     const timeoutId = setTimeout(() => {
@@ -1104,7 +1111,7 @@ export function ActionBar() {
     }, 100)
 
     return () => clearTimeout(timeoutId)
-  }, [phase, currentTurnIndex, isAITurn, executeAITurn, isExecutingAI])
+  }, [phase, currentTurnIndex])
 
   // Handle spell preselection from CombatantPanel
   // (must be before early returns to maintain consistent hook order)
@@ -1372,6 +1379,9 @@ export function ActionBar() {
   const canCunningDash = hasCunningActionFeature && canUseCunningAction(currentCombatant, 'dash')
   const canCunningDisengage = hasCunningActionFeature && canUseCunningAction(currentCombatant, 'disengage')
   const canCunningHide = hasCunningActionFeature && canUseCunningAction(currentCombatant, 'hide')
+
+  // Check for Expeditious Retreat bonus action Dash
+  const canExpeditiousDash = isCharacter && !currentCombatant.hasBonusActed && !!currentCombatant.concentratingOn?.grantsDash
 
   // Check for Battle Medic (Healer origin feat)
   const hasBattleMedicFeat = isCharacter && canUseBattleMedic(currentCombatant)
@@ -2031,6 +2041,19 @@ export function ActionBar() {
                     </>
                   )}
 
+                  {/* Expeditious Retreat Dash (while concentrating) */}
+                  {canExpeditiousDash && (
+                    <ActionButton
+                      icon={<Wind className="w-5 h-5" />}
+                      label="Dash"
+                      onClick={useExpeditiousRetreatDash}
+                      disabled={currentCombatant.hasBonusActed}
+                      variant="movement"
+                      tooltip={`Bonus Action: Dash via ${currentCombatant.concentratingOn?.name}`}
+                      actionType="bonus"
+                    />
+                  )}
+
                   {/* Bonus Action Maneuvers (Battle Master) */}
                   {bonusActionManeuvers.length > 0 && (
                     <div className="relative">
@@ -2138,7 +2161,8 @@ export function ActionBar() {
                   canCunningDash ||
                   canCunningDisengage ||
                   canCunningHide ||
-                  canUseBonusManeuver
+                  canUseBonusManeuver ||
+                  canExpeditiousDash
                 )
                 const hasActionsRemaining = hasUnusedAction || hasUnusedBonusAction
 

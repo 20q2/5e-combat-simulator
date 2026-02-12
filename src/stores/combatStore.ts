@@ -191,7 +191,7 @@ interface CombatStore extends CombatState {
   setSelectedSpell: (spell: Spell | undefined) => void
 
   // Projectile targeting
-  startProjectileTargeting: (spell: Spell) => void
+  startProjectileTargeting: (spell: Spell, castAtLevel?: number) => void
   assignProjectile: (targetId: string) => void
   unassignProjectile: (targetId: string) => void
   confirmProjectileTargeting: () => void
@@ -233,7 +233,7 @@ interface CombatStore extends CombatState {
   useDash: () => void
   useDodge: () => void
   getValidTargets: (attackerId: string, weapon?: Weapon, monsterAction?: MonsterAction, rangedWeapon?: Weapon) => Combatant[]
-  castSpell: (casterId: string, spell: Spell, targetId?: string, targetPosition?: Position, projectileAssignments?: { targetId: string; count: number }[]) => boolean
+  castSpell: (casterId: string, spell: Spell, targetId?: string, targetPosition?: Position, projectileAssignments?: { targetId: string; count: number }[], castAtLevel?: number) => boolean
   getAvailableSpells: (combatantId: string) => Spell[]
   makeDeathSave: (combatantId: string) => void
   stabilize: (combatantId: string) => void
@@ -292,6 +292,9 @@ interface CombatStore extends CombatState {
   useBattleMedic: (healerId: string, targetId: string) => void
   getBattleMedicTargets: (healerId: string) => Combatant[]
 
+  // Expeditious Retreat bonus action Dash
+  useExpeditiousRetreatDash: () => void
+
   // Chromatic Orb damage type choice
   resolveDamageTypeChoice: (damageType: DamageType) => void
   skipDamageTypeChoice: () => void
@@ -327,6 +330,7 @@ function resolveSpellAttackWithType(
   damageType: DamageType,
   alreadyTargetedIds: string[],
   bouncesRemaining: number,
+  castAtLevel?: number,
 ) {
   const character = caster.data as Character
   const spellAttackBonus = getSpellAttackBonus(character)
@@ -369,7 +373,8 @@ function resolveSpellAttackWithType(
 
   if (attackRoll.isNatural20 || attackRoll.total >= targetAC) {
     const isCrit = attackRoll.isNatural20
-    const damageDice = spell.damage?.dice ?? '3d8'
+    const character = caster.data as Character
+    const damageDice = getEffectiveDamageDice(spell, character.level, castAtLevel) ?? spell.damage?.dice ?? '3d8'
     const damage = rollDamage(damageDice, isCrit)
 
     get().addLogEntry({
@@ -1000,15 +1005,21 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
   },
 
   // Projectile targeting
-  startProjectileTargeting: (spell) => {
+  startProjectileTargeting: (spell, castAtLevel) => {
     if (!spell.projectiles) return
+    // Compute scaled projectile count for upcasting
+    let totalProjectiles = spell.projectiles.count
+    if (castAtLevel && castAtLevel > spell.level && spell.projectiles.scalingPerSlotLevel) {
+      totalProjectiles += (castAtLevel - spell.level) * spell.projectiles.scalingPerSlotLevel
+    }
     set({
       selectedSpell: spell,
       selectedAction: 'spell',
       projectileTargeting: {
         spell,
-        totalProjectiles: spell.projectiles.count,
+        totalProjectiles,
         assignments: {},
+        castAtLevel,
       },
     })
   },
@@ -1067,7 +1078,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
     if (assignments.length > 0) {
       const currentCombatant = getCurrentCombatant(get())
       if (currentCombatant) {
-        get().castSpell(currentCombatant.id, projectileTargeting.spell, undefined, undefined, assignments)
+        get().castSpell(currentCombatant.id, projectileTargeting.spell, undefined, undefined, assignments, projectileTargeting.castAtLevel)
       }
     }
 
@@ -3570,7 +3581,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
     })
   },
 
-  castSpell: (casterId, spell, targetId, targetPosition, projectileAssignments) => {
+  castSpell: (casterId, spell, targetId, targetPosition, projectileAssignments, castAtLevel) => {
     const { combatants } = get()
     const caster = combatants.find((c) => c.id === casterId)
     if (!caster) return false
@@ -3584,7 +3595,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
 
     // Check and consume spell slot for leveled spells
     if (spell.level > 0) {
-      const slotValidation = validateSpellSlot(caster, spell)
+      const slotValidation = validateSpellSlot(caster, spell, castAtLevel)
       if (!slotValidation.canCast) {
         get().addLogEntry({
           type: 'spell',
@@ -3610,9 +3621,10 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
           message: `${caster.name} uses Magic Initiate free cast of ${spell.name}!`,
         })
       } else {
-        // Consume a spell slot
+        // Consume a spell slot at the effective level (upcast or base)
         const spellSlots = character.spellSlots!
-        const slotLevel = spell.level as keyof typeof spellSlots
+        const effectiveSlotLevel = (castAtLevel && castAtLevel >= spell.level) ? castAtLevel : spell.level
+        const slotLevel = effectiveSlotLevel as keyof typeof spellSlots
         const slot = spellSlots[slotLevel]!
         const updatedSpellSlots = { ...spellSlots, [slotLevel]: { ...slot, current: slot.current - 1 } }
 
@@ -3623,31 +3635,33 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
               : c
           ),
         }))
+        const upcastNote = (castAtLevel && castAtLevel > spell.level) ? ' (upcast)' : ''
         get().addLogEntry({
           type: 'spell',
           actorId: casterId,
           actorName: caster.name,
-          message: `${caster.name} uses a level ${spell.level} spell slot (${slot.current - 1}/${slot.max} remaining)`,
+          message: `${caster.name} uses a level ${effectiveSlotLevel} spell slot${upcastNote} (${slot.current - 1}/${slot.max} remaining)`,
         })
       }
     }
 
     // Log spell cast
+    const upcastLabel = (castAtLevel && castAtLevel > spell.level) ? ` at level ${castAtLevel}` : ''
     get().addLogEntry({
       type: 'spell',
       actorId: casterId,
       actorName: caster.name,
-      message: `${caster.name} casts ${spell.name}!`,
+      message: `${caster.name} casts ${spell.name}${upcastLabel}!`,
     })
 
-    // Calculate scaled damage dice
-    const scaledDamageDice = getEffectiveDamageDice(spell, character.level)
+    // Calculate scaled damage dice (with upcast bonus)
+    const scaledDamageDice = getEffectiveDamageDice(spell, character.level, castAtLevel)
 
     // Intercept spells that require damage type choice (Chromatic Orb, etc.)
     if (spell.damageTypeChoice && spell.damageTypeChoice.length > 0 && targetId) {
       if (isBonusActionSpell) { get().useBonusAction() } else { get().useAction() }
       set({
-        pendingDamageTypeChoice: { casterId, spell, targetId, options: spell.damageTypeChoice },
+        pendingDamageTypeChoice: { casterId, spell, targetId, options: spell.damageTypeChoice, castAtLevel },
         selectedAction: undefined,
       })
       return true
@@ -3959,13 +3973,57 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
         }
       }
 
-      if (spell.concentration) {
-        set((state) => ({
-          combatants: state.combatants.map((c) =>
-            c.id === casterId ? { ...c, concentratingOn: spell } : c
-          ),
-        }))
+    }
+
+    // Handle concentration for ALL concentration spells (self-buffs, etc.)
+    if (spell.concentration) {
+      set((state) => ({
+        combatants: state.combatants.map((c) =>
+          c.id === casterId ? { ...c, concentratingOn: spell } : c
+        ),
+      }))
+    }
+
+    // Handle grantsDash spells (Expeditious Retreat): immediately grant Dash movement
+    if (spell.grantsDash) {
+      const speed = character.speed
+      set((state) => ({
+        combatants: state.combatants.map((c) =>
+          c.id === casterId
+            ? { ...c, movementUsed: c.movementUsed - speed }
+            : c
+        ),
+      }))
+      get().addLogEntry({
+        type: 'other',
+        actorId: casterId,
+        actorName: caster.name,
+        message: `${caster.name} dashes with ${spell.name} (+${speed} ft movement)!`,
+      })
+    }
+
+    // Handle grantsTempHp spells (False Life): roll dice and grant temp HP to caster
+    if (spell.grantsTempHp) {
+      const tempHpRoll = rollDamage(spell.grantsTempHp)
+      let totalTempHp = tempHpRoll.total
+      // Add flat upcast bonus
+      if (castAtLevel && castAtLevel > spell.level && spell.grantsTempHpUpcastBonus) {
+        totalTempHp += spell.grantsTempHpUpcastBonus * (castAtLevel - spell.level)
       }
+      // Temp HP doesn't stack — take the higher value
+      set((state) => ({
+        combatants: state.combatants.map((c) =>
+          c.id === casterId
+            ? { ...c, temporaryHp: Math.max(c.temporaryHp, totalTempHp) }
+            : c
+        ),
+      }))
+      get().addLogEntry({
+        type: 'heal',
+        actorId: casterId,
+        actorName: caster.name,
+        message: `${caster.name} casts ${spell.name} and gains ${totalTempHp} temporary HP! (rolled ${tempHpRoll.breakdown})`,
+      })
     }
 
     // Consume action
@@ -4326,6 +4384,36 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
     }))
   },
 
+  // Expeditious Retreat: bonus action Dash while concentrating
+  useExpeditiousRetreatDash: () => {
+    const { turnOrder, currentTurnIndex, combatants } = get()
+    const currentId = turnOrder[currentTurnIndex]
+    const combatant = combatants.find((c) => c.id === currentId)
+
+    if (!combatant || combatant.hasBonusActed) return
+    if (!combatant.concentratingOn?.grantsDash) return
+
+    const speed = combatant.type === 'character'
+      ? (combatant.data as Character).speed
+      : (combatant.data as Monster).speed.walk
+
+    get().addLogEntry({
+      type: 'other',
+      actorId: currentId,
+      actorName: combatant.name,
+      message: `${combatant.name} uses ${combatant.concentratingOn.name} to Dash (+${speed} ft)!`,
+    })
+
+    set((state) => ({
+      combatants: state.combatants.map((c) =>
+        c.id === currentId
+          ? { ...c, hasBonusActed: true, movementUsed: c.movementUsed - speed }
+          : c
+      ),
+      selectedAction: undefined,
+    }))
+  },
+
   // Battle Master maneuvers
   useSuperiority: (combatantId) => {
     const { combatants } = get()
@@ -4500,70 +4588,80 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
   },
 
   executeAITurn: async () => {
-    const { turnOrder, currentTurnIndex, combatants, grid, phase } = get()
-    if (phase !== 'combat') return
+    // Loop to handle consecutive AI turns — endTurn() changes currentTurnIndex
+    // before .finally() clears isExecutingAI, so the useEffect that triggers
+    // this function would miss the next AI turn without this loop.
+    while (true) {
+      const { turnOrder, currentTurnIndex, combatants, grid, phase } = get()
+      if (phase !== 'combat') return
 
-    const currentId = turnOrder[currentTurnIndex]
-    const current = combatants.find((c) => c.id === currentId)
+      const currentId = turnOrder[currentTurnIndex]
+      const current = combatants.find((c) => c.id === currentId)
 
-    if (!current || current.type !== 'character' || current.currentHp <= 0) {
-      // This is a monster turn - execute AI
-      if (current && current.type === 'monster' && current.currentHp > 0) {
-        // Add small delay for visual feedback
-        await new Promise((resolve) => setTimeout(resolve, 500))
-
-        // Get AI action
-        const action = getNextAIAction(current, combatants, grid)
-
-        if (action.type === 'move' && action.targetPosition) {
-          get().moveCombatant(current.id, action.targetPosition)
-
-          // Wait for movement animation to fully complete before proceeding
-          while (get().movementAnimation || get().pendingMovement) {
-            await new Promise((resolve) => setTimeout(resolve, 50))
-          }
-          // Small extra delay for visual clarity
-          await new Promise((resolve) => setTimeout(resolve, 200))
-
-          // Get next action after move (monster may have died from opportunity attack)
-          const updatedCombatants = get().combatants
-          const updatedCurrent = updatedCombatants.find((c) => c.id === currentId)
-          if (updatedCurrent && updatedCurrent.currentHp > 0) {
-            const updatedGrid = get().grid
-            const nextAction = getNextAIAction(updatedCurrent, updatedCombatants, updatedGrid)
-            if (nextAction.type === 'attack' && nextAction.targetId && nextAction.action) {
-              get().performAttack(updatedCurrent.id, nextAction.targetId, undefined, nextAction.action)
-            }
-          }
-        } else if (action.type === 'attack' && action.targetId && action.action) {
-          get().performAttack(current.id, action.targetId, undefined, action.action)
-        }
-
-        // Wait for any active projectiles to complete before ending turn
-        while (get().activeProjectiles.length > 0) {
-          await new Promise((resolve) => setTimeout(resolve, 50))
-        }
-
-        // Wait for any pending triggers (Shield, Parry, maneuvers) to resolve
-        while (get().pendingTrigger !== undefined) {
-          await new Promise((resolve) => setTimeout(resolve, 50))
-        }
-
-        // Wait for any pending heroic inspiration decisions to resolve
-        while (get().pendingHeroicInspiration !== undefined) {
-          await new Promise((resolve) => setTimeout(resolve, 50))
-        }
-
-        // Check if there's a pending reaction - if so, don't end turn yet
-        // The reaction handlers (useReactionSpell/skipReaction) will end the turn
-        const hasPendingReaction = get().pendingReaction !== undefined
-        if (!hasPendingReaction) {
-          // End the monster's turn
-          await new Promise((resolve) => setTimeout(resolve, 500))
-          get().endTurn()
-        }
-        // If there's a pending reaction, the turn will be ended by the reaction handler
+      // Stop looping if it's not a living monster's turn
+      if (!current || current.type !== 'monster' || current.currentHp <= 0) {
+        return
       }
+
+      // Add small delay for visual feedback
+      await new Promise((resolve) => setTimeout(resolve, 500))
+
+      // Get AI action
+      const action = getNextAIAction(current, combatants, grid)
+
+      if (action.type === 'move' && action.targetPosition) {
+        get().moveCombatant(current.id, action.targetPosition)
+
+        // Wait for movement animation to fully complete before proceeding
+        while (get().movementAnimation || get().pendingMovement) {
+          await new Promise((resolve) => setTimeout(resolve, 50))
+        }
+        // Small extra delay for visual clarity
+        await new Promise((resolve) => setTimeout(resolve, 200))
+
+        // Get next action after move (monster may have died from opportunity attack)
+        const updatedCombatants = get().combatants
+        const updatedCurrent = updatedCombatants.find((c) => c.id === currentId)
+        if (updatedCurrent && updatedCurrent.currentHp > 0) {
+          const updatedGrid = get().grid
+          const nextAction = getNextAIAction(updatedCurrent, updatedCombatants, updatedGrid)
+          if (nextAction.type === 'attack' && nextAction.targetId && nextAction.action) {
+            get().performAttack(updatedCurrent.id, nextAction.targetId, undefined, nextAction.action)
+          }
+        }
+      } else if (action.type === 'attack' && action.targetId && action.action) {
+        get().performAttack(current.id, action.targetId, undefined, action.action)
+      }
+
+      // Wait for any active projectiles to complete before ending turn
+      while (get().activeProjectiles.length > 0) {
+        await new Promise((resolve) => setTimeout(resolve, 50))
+      }
+
+      // Wait for any pending triggers (Shield, Parry, maneuvers) to resolve
+      while (get().pendingTrigger !== undefined) {
+        await new Promise((resolve) => setTimeout(resolve, 50))
+      }
+
+      // Wait for any pending heroic inspiration decisions to resolve
+      while (get().pendingHeroicInspiration !== undefined) {
+        await new Promise((resolve) => setTimeout(resolve, 50))
+      }
+
+      // Check if there's a pending reaction - if so, don't end turn yet
+      // The reaction handlers (useReactionSpell/skipReaction) will end the turn
+      const hasPendingReaction = get().pendingReaction !== undefined
+      if (hasPendingReaction) {
+        // The reaction handler will call endTurn(), and if the next turn is
+        // also AI, the useEffect will re-trigger executeAITurn
+        return
+      }
+
+      // End the monster's turn
+      await new Promise((resolve) => setTimeout(resolve, 500))
+      get().endTurn()
+
+      // Loop continues — will check if the next combatant is also a monster
     }
   },
 

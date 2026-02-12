@@ -613,7 +613,7 @@ function TargetActionsPanel({ target, currentCombatant }: { target: Combatant; c
   return (
     <div className="pt-3 border-t border-slate-700">
       <div className="text-xs text-muted-foreground mb-2">Target Actions</div>
-      <div className="flex flex-col gap-1.5">
+      <div className="grid grid-cols-2 gap-1.5">
         {actions.map(action => {
           const Icon = action.icon
           return (
@@ -621,14 +621,14 @@ function TargetActionsPanel({ target, currentCombatant }: { target: Combatant; c
               key={action.id}
               variant="destructive"
               size="sm"
-              className="w-full justify-start gap-2"
+              className="justify-start gap-1.5 text-xs px-2"
               disabled={action.disabled}
               onClick={action.onClick}
             >
-              <Icon className="w-4 h-4" />
-              <span>{action.label}</span>
+              <Icon className="w-3.5 h-3.5 shrink-0" />
+              <span className="truncate">{action.label}</span>
               {!action.disabled && attacksRemaining > 1 && action.id.startsWith('attack') && (
-                <span className="ml-auto text-xs opacity-75">({attacksRemaining} left)</span>
+                <span className="ml-auto text-[10px] opacity-75 shrink-0">({attacksRemaining})</span>
               )}
             </Button>
           )

@@ -328,6 +328,38 @@ export const spells: Spell[] = [
     saveAdvantageInCombat: true,
   },
   {
+    id: 'color-spray',
+    name: 'Color Spray',
+    level: 1,
+    school: 'illusion',
+    castingTime: '1 action',
+    range: 'Self (15-foot cone)',
+    components: { verbal: true, somatic: true, material: 'a pinch of colorful sand' },
+    duration: 'Instantaneous',
+    concentration: false,
+    ritual: false,
+    description: 'You launch a dazzling array of flashing, colorful light. Each creature in a 15-foot Cone originating from you must succeed on a Constitution saving throw or have the Blinded condition until the end of your next turn.',
+    classes: ['bard', 'sorcerer', 'wizard'],
+    savingThrow: 'constitution',
+    areaOfEffect: { type: 'cone', size: 15, origin: 'self' },
+    conditionOnFailedSave: 'blinded',
+  },
+  {
+    id: 'expeditious-retreat',
+    name: 'Expeditious Retreat',
+    level: 1,
+    school: 'transmutation',
+    castingTime: '1 bonus action',
+    range: 'Self',
+    components: { verbal: true, somatic: true },
+    duration: 'Concentration, up to 10 minutes',
+    concentration: true,
+    ritual: false,
+    description: 'You take the Dash action, and until the spell ends, you can take that action again as a Bonus Action.',
+    classes: ['sorcerer', 'warlock', 'wizard'],
+    grantsDash: true,
+  },
+  {
     id: 'chromatic-orb',
     name: 'Chromatic Orb',
     level: 1,
@@ -340,6 +372,7 @@ export const spells: Spell[] = [
     ritual: false,
     description: 'You hurl an orb of energy at a target within range. Choose Acid, Cold, Fire, Lightning, Poison, or Thunder for the type of orb you create, and then make a ranged spell attack against the target. On a hit, the target takes 3d8 damage of the chosen type. If you roll the same number on two or more of the d8s, the orb leaps to a different target within 30 feet.',
     higherLevels: 'The damage increases by 1d8 for each spell slot level above 1. The orb can leap a maximum number of times equal to the spell slot level used.',
+    upcastDice: { dicePerLevel: '1d8' },
     classes: ['sorcerer', 'wizard'],
     damage: {
       type: 'acid', // Default type; overridden by damageTypeChoice at cast time
@@ -387,6 +420,7 @@ export const spells: Spell[] = [
     ritual: false,
     description: 'As you hold your hands with thumbs touching and fingers spread, a thin sheet of flames shoots forth from your outstretched fingertips. Each creature in a 15-foot cone must make a Dexterity saving throw. A creature takes 3d6 fire damage on a failed save, or half as much damage on a successful one.',
     higherLevels: 'When you cast this spell using a spell slot of 2nd level or higher, the damage increases by 1d6 for each slot level above 1st.',
+    upcastDice: { dicePerLevel: '1d6' },
     classes: ['sorcerer', 'wizard'],
     damage: {
       type: 'fire',
@@ -408,6 +442,7 @@ export const spells: Spell[] = [
     ritual: false,
     description: 'A creature you touch regains a number of hit points equal to 1d8 + your spellcasting ability modifier. This spell has no effect on undead or constructs.',
     higherLevels: 'When you cast this spell using a spell slot of 2nd level or higher, the healing increases by 1d8 for each slot level above 1st.',
+    upcastDice: { dicePerLevel: '1d8' },
     classes: ['bard', 'cleric', 'druid', 'paladin', 'ranger'],
   },
   {
@@ -423,6 +458,7 @@ export const spells: Spell[] = [
     ritual: false,
     description: 'A creature of your choice that you can see within range regains hit points equal to 1d4 + your spellcasting ability modifier. This spell has no effect on undead or constructs.',
     higherLevels: 'When you cast this spell using a spell slot of 2nd level or higher, the healing increases by 1d4 for each slot level above 1st.',
+    upcastDice: { dicePerLevel: '1d4' },
     classes: ['bard', 'cleric', 'druid'],
   },
   {
@@ -473,6 +509,7 @@ export const spells: Spell[] = [
     ritual: false,
     description: 'A wave of thunderous force sweeps out from you. Each creature in a 15-foot cube originating from you must make a Constitution saving throw. On a failed save, a creature takes 2d8 thunder damage and is pushed 10 feet away from you. On a successful save, the creature takes half as much damage and isn\'t pushed.',
     higherLevels: 'When you cast this spell using a spell slot of 2nd level or higher, the damage increases by 1d8 for each slot level above 1st.',
+    upcastDice: { dicePerLevel: '1d8' },
     classes: ['bard', 'druid', 'sorcerer', 'wizard'],
     damage: {
       type: 'thunder',
@@ -510,6 +547,7 @@ export const spells: Spell[] = [
     ritual: false,
     description: 'A flash of light streaks toward a creature of your choice within range. Make a ranged spell attack against the target. On a hit, the target takes 4d6 radiant damage, and the next attack roll made against this target before the end of your next turn has advantage.',
     higherLevels: 'When you cast this spell using a spell slot of 2nd level or higher, the damage increases by 1d6 for each slot level above 1st.',
+    upcastDice: { dicePerLevel: '1d6' },
     classes: ['cleric'],
     damage: {
       type: 'radiant',
@@ -545,6 +583,7 @@ export const spells: Spell[] = [
     ritual: false,
     description: 'Make a melee spell attack against a creature you can reach. On a hit, the target takes 3d10 necrotic damage.',
     higherLevels: 'When you cast this spell using a spell slot of 2nd level or higher, the damage increases by 1d10 for each slot level above 1st.',
+    upcastDice: { dicePerLevel: '1d10' },
     classes: ['cleric'],
     damage: {
       type: 'necrotic',
@@ -614,6 +653,7 @@ export const spells: Spell[] = [
     ritual: false,
     description: 'The next time you hit a creature with a weapon attack before this spell ends, a writhing mass of thorny vines appears at the point of impact, and the target must succeed on a Strength saving throw or be restrained by the magical vines until the spell ends. A Large or larger creature has advantage on this saving throw. If the target succeeds on the save, the vines shrivel away.',
     higherLevels: 'If you cast this spell using a spell slot of 2nd level or higher, the damage increases by 1d6 for each slot level above 1st.',
+    upcastDice: { dicePerLevel: '1d6' },
     classes: ['ranger'],
     damage: {
       type: 'piercing',
@@ -634,6 +674,7 @@ export const spells: Spell[] = [
     ritual: false,
     description: 'The next time you hit a creature with a ranged weapon attack before the spell ends, this spell creates a rain of thorns that sprouts from your ranged weapon or ammunition. In addition to the normal effect of the attack, the target of the attack and each creature within 5 feet of it must make a Dexterity saving throw. A creature takes 1d10 piercing damage on a failed save, or half as much damage on a successful one.',
     higherLevels: 'If you cast this spell using a spell slot of 2nd level or higher, the damage increases by 1d10 for each slot level above 1st.',
+    upcastDice: { dicePerLevel: '1d10' },
     classes: ['ranger'],
     damage: {
       type: 'piercing',
@@ -738,6 +779,7 @@ export const spells: Spell[] = [
     ritual: false,
     description: 'You create a floating, spectral weapon within range that lasts for the duration or until you cast this spell again. When you cast the spell, you can make a melee spell attack against a creature within 5 feet of the weapon. On a hit, the target takes force damage equal to 1d8 + your spellcasting ability modifier.',
     higherLevels: 'When you cast this spell using a spell slot of 3rd level or higher, the damage increases by 1d8 for every two slot levels above 2nd.',
+    upcastDice: { dicePerLevel: '1d8', perLevels: 2 },
     classes: ['cleric'],
     damage: {
       type: 'force',
@@ -757,6 +799,7 @@ export const spells: Spell[] = [
     ritual: false,
     description: 'A sudden loud ringing noise, painfully intense, erupts from a point of your choice within range. Each creature in a 10-foot-radius sphere centered on that point must make a Constitution saving throw. A creature takes 3d8 thunder damage on a failed save, or half as much damage on a successful one.',
     higherLevels: 'When you cast this spell using a spell slot of 3rd level or higher, the damage increases by 1d8 for each slot level above 2nd.',
+    upcastDice: { dicePerLevel: '1d8' },
     classes: ['bard', 'sorcerer', 'warlock', 'wizard'],
     damage: {
       type: 'thunder',
@@ -859,6 +902,7 @@ export const spells: Spell[] = [
     ritual: false,
     description: 'A bright streak flashes from your pointing finger to a point you choose within range and then blossoms with a low roar into an explosion of flame. Each creature in a 20-foot-radius sphere centered on that point must make a Dexterity saving throw. A target takes 8d6 fire damage on a failed save, or half as much damage on a successful one.',
     higherLevels: 'When you cast this spell using a spell slot of 4th level or higher, the damage increases by 1d6 for each slot level above 3rd.',
+    upcastDice: { dicePerLevel: '1d6' },
     classes: ['sorcerer', 'wizard'],
     damage: {
       type: 'fire',
@@ -880,6 +924,7 @@ export const spells: Spell[] = [
     ritual: false,
     description: 'A stroke of lightning forming a line 100 feet long and 5 feet wide blasts out from you in a direction you choose. Each creature in the line must make a Dexterity saving throw. A creature takes 8d6 lightning damage on a failed save, or half as much damage on a successful one.',
     higherLevels: 'When you cast this spell using a spell slot of 4th level or higher, the damage increases by 1d6 for each slot level above 3rd.',
+    upcastDice: { dicePerLevel: '1d6' },
     classes: ['sorcerer', 'wizard'],
     damage: {
       type: 'lightning',
@@ -945,6 +990,7 @@ export const spells: Spell[] = [
     ritual: false,
     description: 'You call forth spirits to protect you. They flit around you to a distance of 15 feet for the duration. When a creature enters the area for the first time on a turn or starts its turn there, it must make a Wisdom saving throw. On a failed save, the creature takes 3d8 radiant damage (if you are good or neutral) or 3d8 necrotic damage (if you are evil). On a successful save, the creature takes half as much damage.',
     higherLevels: 'When you cast this spell using a spell slot of 4th level or higher, the damage increases by 1d8 for each slot level above 3rd.',
+    upcastDice: { dicePerLevel: '1d8' },
     classes: ['cleric'],
     damage: {
       type: 'radiant',
@@ -966,6 +1012,7 @@ export const spells: Spell[] = [
     ritual: false,
     description: 'As you call out words of restoration, up to six creatures of your choice that you can see within range regain hit points equal to 1d4 + your spellcasting ability modifier. This spell has no effect on undead or constructs.',
     higherLevels: 'When you cast this spell using a spell slot of 4th level or higher, the healing increases by 1d4 for each slot level above 3rd.',
+    upcastDice: { dicePerLevel: '1d4' },
     classes: ['cleric'],
   },
 
@@ -983,6 +1030,7 @@ export const spells: Spell[] = [
     ritual: false,
     description: 'A hail of rock-hard ice pounds to the ground in a 20-foot-radius, 40-foot-high cylinder centered on a point within range. Each creature in the cylinder must make a Dexterity saving throw. A creature takes 2d8 bludgeoning damage and 4d6 cold damage on a failed save, or half as much damage on a successful one.',
     higherLevels: 'When you cast this spell using a spell slot of 5th level or higher, the bludgeoning damage increases by 1d8 for each slot level above 4th.',
+    upcastDice: { dicePerLevel: '1d8' },
     classes: ['druid', 'sorcerer', 'wizard'],
     damage: {
       type: 'cold',
@@ -1051,6 +1099,7 @@ export const spells: Spell[] = [
     ritual: false,
     description: 'A blast of cold air erupts from your hands. Each creature in a 60-foot cone must make a Constitution saving throw. A creature takes 8d8 cold damage on a failed save, or half as much damage on a successful one.',
     higherLevels: 'When you cast this spell using a spell slot of 6th level or higher, the damage increases by 1d8 for each slot level above 5th.',
+    upcastDice: { dicePerLevel: '1d8' },
     classes: ['sorcerer', 'wizard'],
     damage: {
       type: 'cold',
@@ -1072,6 +1121,7 @@ export const spells: Spell[] = [
     ritual: false,
     description: 'A wave of healing energy washes out from a point of your choice within range. Choose up to six creatures in a 30-foot-radius sphere centered on that point. Each target regains hit points equal to 3d8 + your spellcasting ability modifier. This spell has no effect on undead or constructs.',
     higherLevels: 'When you cast this spell using a spell slot of 6th level or higher, the healing increases by 1d8 for each slot level above 5th.',
+    upcastDice: { dicePerLevel: '1d8' },
     classes: ['bard', 'cleric', 'druid'],
     areaOfEffect: { type: 'sphere', size: 30 },
   },
@@ -1105,6 +1155,24 @@ export const spells: Spell[] = [
     classes: ['bard', 'sorcerer', 'warlock', 'wizard'],
     savingThrow: 'wisdom',
     conditionOnFailedSave: 'paralyzed',
+  },
+  // False Life
+  {
+    id: 'false-life',
+    name: 'False Life',
+    level: 1,
+    school: 'necromancy',
+    castingTime: '1 action',
+    range: 'Self',
+    components: { verbal: true, somatic: true, material: 'a small amount of alcohol' },
+    duration: 'Instantaneous',
+    concentration: false,
+    ritual: false,
+    description: 'You gain 2d4 + 4 Temporary Hit Points.',
+    higherLevels: 'You gain 5 additional Temporary Hit Points for each spell slot level above 1.',
+    classes: ['sorcerer', 'wizard'],
+    grantsTempHp: '2d4+4',
+    grantsTempHpUpcastBonus: 5,
   },
 ]
 
