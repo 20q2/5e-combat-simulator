@@ -45,7 +45,9 @@
       "Bash(npx:*)",
       "Bash(git log:*)",
       "Bash(node_modules/.bin/tsc:*)",
-      "Bash(echo:*)"
+      "Bash(echo:*)",
+      "Bash(a:)",
+      "Bash(PATH=\"/c/Program Files/nodejs:$PATH\")"
     ]
   }
 }

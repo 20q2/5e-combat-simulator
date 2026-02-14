@@ -61,6 +61,7 @@ export type Condition =
   | 'evasive'  // AC bonus from Evasive Footwork (bonus stored on combatant)
   // Self-buff spell conditions
   | 'expeditious_retreat'  // Bonus action Dash while concentrating on Expeditious Retreat
+  | 'jump'  // +10ft movement from Jump spell
 
 // ============================================
 // Character Types
@@ -387,6 +388,10 @@ export interface Spell {
   grantsDash?: boolean
   // Condition applied to caster on cast (self-buff spells like Expeditious Retreat)
   conditionOnSelf?: Condition
+  // Grants extra movement to targets on cast (Jump: +10ft per target)
+  grantsExtraMovement?: number
+  // Condition to apply to each target of a buff spell (Jump: 'jump')
+  conditionOnTarget?: Condition
   // Grants temporary HP to caster on cast (False Life: '2d4+4')
   grantsTempHp?: string
   // Flat bonus per upcast level for grantsTempHp (False Life: +5 per level above 1)
@@ -404,6 +409,13 @@ export interface Spell {
     savingThrow: AbilityName
     radius: number          // Blast radius in feet
     upcastDice?: string     // Extra dice per slot level above base (e.g., '1d6')
+  }
+  // Targeting category: who this spell can target (default: 'enemy')
+  targetType?: 'enemy' | 'ally' | 'self' | 'any'
+  // Multi-target spell: select N willing creatures (Jump, Haste at higher levels, etc.)
+  multiTarget?: {
+    baseCount: number              // Targets at base spell level
+    additionalPerLevel?: number    // Extra targets per slot level above base
   }
   // Creates a persistent zone on the battlefield
   createsZone?: ZoneType
@@ -801,6 +813,13 @@ export interface CombatState {
     spell: Spell
     totalProjectiles: number
     assignments: Record<string, number>  // targetId -> count
+    castAtLevel?: number
+  }
+  // Multi-target spell selection (Jump, Haste, etc.)
+  multiTargetSelection?: {
+    spell: Spell
+    maxTargets: number
+    selectedTargetIds: string[]
     castAtLevel?: number
   }
   // Pending reaction prompt (Shield, opportunity attacks, etc.)

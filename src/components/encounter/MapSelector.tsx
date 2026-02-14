@@ -1,9 +1,113 @@
+import { useRef, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
 import { mapPresets, type MapPreset } from '@/data/maps'
 import { useMapStore } from '@/stores/mapStore'
-import { Map, Trees, Skull, Plus, Waves, Bookmark, X } from 'lucide-react'
+import { Map, Trees, Skull, Plus, Waves, Bookmark, Trash2 } from 'lucide-react'
+
+const mapBackgroundImages = import.meta.glob<{ default: string }>(
+  '@/assets/maps/*.{png,jpg,jpeg}',
+  { eager: true }
+)
+
+function getMapBackgroundUrl(filename: string | undefined): string | null {
+  if (!filename) return null
+  for (const ext of ['png', 'jpg', 'jpeg']) {
+    const imagePath = `/src/assets/maps/${filename}.${ext}`
+    const imageModule = mapBackgroundImages[imagePath]
+    if (imageModule) return imageModule.default
+  }
+  return null
+}
+
+// Colors for mini-map rendering
+const TERRAIN_COLORS: Record<string, string> = {
+  water: '#1e40af',
+  difficult: '#92400e',
+  hazard: '#991b1b',
+}
+const OBSTACLE_COLORS: Record<string, string> = {
+  wall: '#334155',
+  pillar: '#475569',
+  boulder: '#57534e',
+  tree: '#166534',
+  furniture: '#78350f',
+}
+
+function MiniMapCanvas({ map }: { map: MapPreset }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const bgUrl = getMapBackgroundUrl(map.backgroundImage)
+
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+
+    const size = 320 // canvas resolution (2x for retina)
+    canvas.width = size
+    canvas.height = size
+
+    const cellW = size / map.gridWidth
+    const cellH = size / map.gridHeight
+
+    const draw = (bgImage?: HTMLImageElement) => {
+      // Background
+      if (bgImage) {
+        ctx.drawImage(bgImage, 0, 0, size, size)
+        // Slight darkening overlay
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.2)'
+        ctx.fillRect(0, 0, size, size)
+      } else {
+        ctx.fillStyle = '#0f172a'
+        ctx.fillRect(0, 0, size, size)
+        // Draw subtle grid lines
+        ctx.strokeStyle = '#1e293b'
+        ctx.lineWidth = 0.5
+        for (let x = 0; x <= map.gridWidth; x++) {
+          ctx.beginPath()
+          ctx.moveTo(x * cellW, 0)
+          ctx.lineTo(x * cellW, size)
+          ctx.stroke()
+        }
+        for (let y = 0; y <= map.gridHeight; y++) {
+          ctx.beginPath()
+          ctx.moveTo(0, y * cellH)
+          ctx.lineTo(size, y * cellH)
+          ctx.stroke()
+        }
+      }
+
+      // Draw terrain and obstacles
+      for (const t of map.terrain) {
+        const color = t.obstacle
+          ? (OBSTACLE_COLORS[t.obstacle.type] || '#334155')
+          : (t.terrain ? TERRAIN_COLORS[t.terrain] : null)
+        if (!color) continue
+        ctx.fillStyle = bgImage ? color + 'cc' : color
+        ctx.fillRect(t.x * cellW, t.y * cellH, cellW, cellH)
+      }
+    }
+
+    if (bgUrl) {
+      const img = new Image()
+      img.onload = () => draw(img)
+      img.onerror = () => draw()
+      img.src = bgUrl
+    } else {
+      draw()
+    }
+  }, [map, bgUrl])
+
+  return (
+    <canvas
+      ref={canvasRef}
+      className="w-full h-full"
+      style={{ imageRendering: 'auto' }}
+    />
+  )
+}
 
 interface MapSelectorProps {
   selectedMap: MapPreset | null
@@ -29,6 +133,7 @@ function MapCard({
   onDelete?: () => void
 }) {
   const Icon = map ? mapIcons[map.id] || (onDelete ? Bookmark : Map) : Map
+  const bgUrl = map?.previewImage || getMapBackgroundUrl(map?.backgroundImage)
 
   return (
     <button
@@ -39,11 +144,11 @@ function MapCard({
       )}
     >
       {/* Background map image with gradient fade */}
-      {map?.previewImage && (
+      {bgUrl && (
         <div
           className="absolute inset-0 opacity-20"
           style={{
-            backgroundImage: `linear-gradient(to right, transparent 0%, hsl(var(--background)) 70%), url(${map.previewImage})`,
+            backgroundImage: `linear-gradient(to right, transparent 0%, hsl(var(--background)) 70%), url(${bgUrl})`,
             backgroundSize: 'cover, cover',
             backgroundPosition: 'center, center',
             backgroundRepeat: 'no-repeat, no-repeat',
@@ -72,7 +177,7 @@ function MapCard({
             onClick={(e) => { e.stopPropagation(); onDelete() }}
             className="w-6 h-6 rounded flex items-center justify-center shrink-0 text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
           >
-            <X className="w-3.5 h-3.5" />
+            <Trash2 className="w-3.5 h-3.5" />
           </div>
         )}
       </div>
@@ -141,11 +246,13 @@ export function MapSelector({ selectedMap, onSelectMap }: MapSelectorProps) {
                   alt={selectedMap.name}
                   className="w-full h-full object-cover"
                 />
+              ) : selectedMap ? (
+                <MiniMapCanvas map={selectedMap} />
               ) : (
                 <div className="text-center p-4">
                   <Map className="w-8 h-8 mx-auto text-slate-600 mb-2" />
                   <span className="text-xs text-slate-500">
-                    {selectedMap ? 'No preview' : 'Select a map'}
+                    Select a map
                   </span>
                 </div>
               )}

@@ -18,6 +18,7 @@ import {
   Footprints,
   ShieldPlus,
   Target,
+  ArrowUp,
   type LucideIcon,
 } from 'lucide-react'
 import type { Condition } from '@/types'
@@ -189,6 +190,12 @@ export const conditionIcons: Record<ExtendedCondition, ConditionIconInfo> = {
     color: 'text-cyan-300',
     bgColor: 'bg-cyan-900',
     label: 'Expeditious Retreat',
+  },
+  jump: {
+    icon: ArrowUp,
+    color: 'text-lime-300',
+    bgColor: 'bg-lime-900',
+    label: 'Jump',
   },
 }
 

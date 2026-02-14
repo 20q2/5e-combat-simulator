@@ -911,6 +911,101 @@ function ProjectileTargetSelector({
   )
 }
 
+// Multi-target spell selector (Jump, Haste, etc.) — click allies to select/deselect
+function MultiTargetSelector({
+  targets,
+  onHover,
+}: {
+  targets: { id: string; name: string; hp: number; maxHp: number }[]
+  onHover?: (targetId: string | undefined) => void
+}) {
+  const {
+    multiTargetSelection,
+    toggleMultiTarget,
+    confirmMultiTargetSelection,
+    cancelMultiTargetSelection,
+  } = useCombatStore()
+  const { onDragStart, dragStyle } = useDraggable()
+
+  if (!multiTargetSelection) return null
+
+  const { spell, maxTargets, selectedTargetIds } = multiTargetSelection
+  const selectedCount = selectedTargetIds.length
+
+  return (
+    <div className="absolute bottom-full left-1/2 mb-2 w-80 bg-slate-900/85 backdrop-blur-md border-2 border-emerald-800 rounded-lg shadow-2xl p-3 z-50" style={dragStyle}>
+      <div className="text-sm font-semibold text-emerald-300 mb-1 flex items-center gap-2 cursor-grab active:cursor-grabbing select-none" onMouseDown={onDragStart}>
+        <Sparkles className="w-4 h-4" />
+        {spell.name}
+        <GripHorizontal className="w-4 h-4 text-slate-600 ml-auto" />
+      </div>
+      <div className="text-xs text-slate-400 mb-3">
+        Select up to {maxTargets} {maxTargets === 1 ? 'target' : 'targets'} ({selectedCount}/{maxTargets} selected)
+      </div>
+
+      <div className="space-y-1 max-h-48 overflow-y-auto mb-3">
+        {targets.map((target) => {
+          const isSelected = selectedTargetIds.includes(target.id)
+          return (
+            <button
+              key={target.id}
+              onClick={() => toggleMultiTarget(target.id)}
+              onMouseEnter={() => onHover?.(target.id)}
+              onMouseLeave={() => onHover?.(undefined)}
+              className={cn(
+                'flex items-center gap-2 p-2 rounded w-full text-left transition-colors',
+                isSelected
+                  ? 'bg-emerald-900/50 border border-emerald-600'
+                  : selectedCount >= maxTargets
+                    ? 'bg-slate-800/50 opacity-50 cursor-not-allowed'
+                    : 'bg-slate-800 hover:bg-slate-700 border border-transparent'
+              )}
+              disabled={!isSelected && selectedCount >= maxTargets}
+            >
+              <div className={cn(
+                'w-4 h-4 rounded border-2 flex items-center justify-center flex-shrink-0',
+                isSelected ? 'border-emerald-400 bg-emerald-600' : 'border-slate-500'
+              )}>
+                {isSelected && <span className="text-white text-xs font-bold">{'\u2713'}</span>}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-xs text-slate-200 truncate">{target.name}</div>
+                <div className="text-[10px] text-emerald-400">{target.hp}/{target.maxHp} HP</div>
+              </div>
+            </button>
+          )
+        })}
+        {targets.length === 0 && (
+          <div className="text-xs text-slate-500 italic py-2 text-center">
+            No valid targets in range
+          </div>
+        )}
+      </div>
+
+      <div className="flex gap-2">
+        <button
+          onClick={confirmMultiTargetSelection}
+          disabled={selectedCount === 0}
+          className={cn(
+            'flex-1 p-2 rounded text-sm font-medium transition-colors',
+            selectedCount > 0
+              ? 'bg-emerald-700 hover:bg-emerald-600 text-emerald-100'
+              : 'bg-slate-700 text-slate-500 cursor-not-allowed'
+          )}
+        >
+          Cast on {selectedCount} {selectedCount === 1 ? 'target' : 'targets'}
+        </button>
+        <button
+          onClick={cancelMultiTargetSelection}
+          className="px-4 p-2 text-sm text-slate-400 hover:text-slate-200 transition-colors"
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  )
+}
+
 // Death saves UI
 function DeathSavesUI({
   combatant,
@@ -1169,6 +1264,9 @@ export function ActionBar() {
     projectileTargeting,
     startProjectileTargeting,
     cancelProjectileTargeting,
+    multiTargetSelection,
+    startMultiTargetSelection,
+    cancelMultiTargetSelection,
     resetCombat,
     debugApplyCondition,
     debugRemoveCondition,
@@ -1208,6 +1306,9 @@ export function ActionBar() {
       setAoEPreview(undefined)
       setSelectedSpell(undefined)
       setSelectedSlotLevel(undefined)
+      if (multiTargetSelection) {
+        cancelMultiTargetSelection()
+      }
     }
     setShowDashPopover(false)
   }, [selectedAction, setRangeHighlight])
@@ -1467,9 +1568,25 @@ export function ActionBar() {
   const availableSpells = getAvailableSpells(currentCombatant.id)
   const hasSpells = availableSpells.length > 0
   const spellTargets = (() => {
-    const enemies = combatants.filter((c) =>
-      c.id !== currentCombatant.id && c.currentHp > 0 && c.position.x >= 0
-    )
+    const targetType = selectedSpell?.targetType || 'enemy'
+    const isAllySpell = targetType === 'ally' || targetType === 'self' || targetType === 'any'
+
+    // For ally/self spells, include allies (same type as caster) + optionally self
+    // For enemy spells, include enemies (opposite type)
+    const candidates = combatants.filter((c) => {
+      if (c.currentHp <= 0 || c.position.x < 0) return false
+      if (isAllySpell) {
+        // Allies = same type as caster (character targets character allies, monster targets monster allies)
+        // Include self for targetType 'self' or 'any'
+        if (targetType === 'ally' || targetType === 'any') {
+          return c.type === currentCombatant.type
+        }
+        return c.id === currentCombatant.id // 'self' only
+      }
+      // Enemy targeting — exclude self
+      return c.id !== currentCombatant.id && c.type !== currentCombatant.type
+    })
+
     // When a spell is selected, filter by range + LOS (same as ranged weapon targeting)
     if (selectedSpell) {
       const spellRange = parseSpellRange(selectedSpell.range)
@@ -1478,13 +1595,13 @@ export function ActionBar() {
         for (const zone of state.persistentZones) {
           for (const cell of zone.affectedCells) fogCells.add(cell)
         }
-        return enemies.filter((c) => {
+        return candidates.filter((c) => {
           const { canTarget } = canTargetWithRangedAttack(state.grid, currentCombatant.position, c.position, spellRange, fogCells)
           return canTarget
         })
       }
     }
-    return enemies
+    return candidates
   })()
 
   // Check for threatening enemies
@@ -1761,7 +1878,10 @@ export function ActionBar() {
     setIsSelectingSpell(false)
     setSelectedSlotLevel(undefined)
 
-    if (spell.damage || spell.attackType || spell.savingThrow || spell.areaOfEffect) {
+    if (spell.multiTarget) {
+      // Multi-target buff spells (Jump, Haste, etc.) — enter multi-target selection mode
+      startMultiTargetSelection(spell, _castAtLevel)
+    } else if (spell.damage || spell.attackType || spell.savingThrow || spell.areaOfEffect) {
       // Set range highlight for the spell
       if (currentCombatant) {
         const spellRange = parseSpellRange(spell.range)
@@ -1986,6 +2106,19 @@ export function ActionBar() {
               {/* Projectile target selector for multi-projectile spells */}
               {projectileTargeting && (
                 <ProjectileTargetSelector
+                  targets={spellTargets.map((t) => ({
+                    id: t.id,
+                    name: t.name,
+                    hp: t.currentHp,
+                    maxHp: t.maxHp,
+                  }))}
+                  onHover={setHoveredTarget}
+                />
+              )}
+
+              {/* Multi-target spell selector (Jump, Haste, etc.) */}
+              {multiTargetSelection && (
+                <MultiTargetSelector
                   targets={spellTargets.map((t) => ({
                     id: t.id,
                     name: t.name,

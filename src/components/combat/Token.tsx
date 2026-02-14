@@ -11,6 +11,7 @@ interface TokenProps {
   isCurrentTurn: boolean
   isDraggable: boolean
   isHoveredTarget?: boolean
+  isMultiTargetSelected?: boolean
   suppressTooltip?: boolean
   visualScale?: number // 0.6-1.0 for tiny/small creatures visual scaling
   onClick: () => void
@@ -26,6 +27,7 @@ export function Token({
   isCurrentTurn,
   isDraggable,
   isHoveredTarget,
+  isMultiTargetSelected,
   suppressTooltip,
   visualScale,
   onClick,
@@ -165,6 +167,7 @@ export function Token({
           'w-full h-full rounded-full p-[2px] transition-all cursor-pointer shadow-md shadow-black/40',
           isCurrentTurn && 'ring-2 ring-emerald-400 ring-offset-1 ring-offset-slate-900 scale-110 shadow-lg shadow-black/50',
           isHoveredTarget && 'ring-4 ring-rose-500 ring-offset-2 ring-offset-slate-900 scale-[1.15] animate-pulse',
+          isMultiTargetSelected && !isHoveredTarget && 'ring-4 ring-emerald-400 ring-offset-2 ring-offset-slate-900 scale-[1.1]',
           // Concentration glow effect
           isConcentrating && !isSelected && !isHoveredTarget && 'ring-2 ring-purple-400/70 ring-offset-1 ring-offset-slate-900',
           // Hit animation: shrink and bounce back

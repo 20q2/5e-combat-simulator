@@ -1227,6 +1227,25 @@ export const spells: Spell[] = [
       upcastDice: '1d6',
     },
   },
+  {
+    id: 'jump',
+    name: 'Jump',
+    level: 1,
+    school: 'transmutation',
+    castingTime: '1 bonus action',
+    range: 'Touch',
+    components: { verbal: true, somatic: true, material: 'a grasshopper\'s hind leg' },
+    duration: '1 minute',
+    concentration: false,
+    ritual: false,
+    description: 'You touch a willing creature. Once on each of its turns until the spell ends, that creature can jump up to 30 feet by spending 10 feet of movement.',
+    higherLevels: 'You can target one additional creature for each spell slot level above 1.',
+    classes: ['druid', 'ranger', 'sorcerer', 'wizard'],
+    targetType: 'ally',
+    multiTarget: { baseCount: 1, additionalPerLevel: 1 },
+    conditionOnTarget: 'jump',
+    grantsExtraMovement: 10,
+  },
 ]
 
 export function getSpellById(id: string): Spell | undefined {

@@ -122,6 +122,15 @@ import {
   canUseHeroicInspiration,
 } from '@/engine/originFeats'
 
+/** Parse a spell range string (e.g., "120 feet", "Touch", "Self") into a numeric distance in feet. */
+function parseSpellRange(range: string): number {
+  const lower = range.toLowerCase()
+  if (lower.startsWith('self')) return 0
+  if (lower === 'touch') return 5
+  const match = range.match(/(\d+)\s*(feet|ft|foot)?/i)
+  return match ? parseInt(match[1], 10) : 0
+}
+
 /**
  * Helper to immutably update grid cell occupancy.
  * Creates new arrays only for the rows that change, preserving referential equality for unchanged rows.
@@ -200,6 +209,12 @@ interface CombatStore extends CombatState {
   confirmProjectileTargeting: () => void
   cancelProjectileTargeting: () => void
 
+  // Multi-target spell selection (Jump, Haste, etc.)
+  startMultiTargetSelection: (spell: Spell, castAtLevel?: number) => void
+  toggleMultiTarget: (targetId: string) => void
+  confirmMultiTargetSelection: () => void
+  cancelMultiTargetSelection: () => void
+
   // Reactions (Shield, opportunity attacks, etc.)
   useReactionSpell: (spellId: string) => void
   skipReaction: () => void
@@ -237,7 +252,7 @@ interface CombatStore extends CombatState {
   useDash: () => void
   useDodge: () => void
   getValidTargets: (attackerId: string, weapon?: Weapon, monsterAction?: MonsterAction, rangedWeapon?: Weapon) => Combatant[]
-  castSpell: (casterId: string, spell: Spell, targetId?: string, targetPosition?: Position, projectileAssignments?: { targetId: string; count: number }[], castAtLevel?: number) => boolean
+  castSpell: (casterId: string, spell: Spell, targetId?: string, targetPosition?: Position, projectileAssignments?: { targetId: string; count: number }[], castAtLevel?: number, selectedTargetIds?: string[]) => boolean
   getAvailableSpells: (combatantId: string) => Spell[]
   makeDeathSave: (combatantId: string) => void
   stabilize: (combatantId: string) => void
@@ -1155,6 +1170,97 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
   cancelProjectileTargeting: () => {
     set({
       projectileTargeting: undefined,
+      selectedSpell: undefined,
+      selectedAction: undefined,
+      rangeHighlight: undefined,
+      hoveredTargetId: undefined,
+    })
+  },
+
+  // Multi-target spell selection (Jump, Haste, etc.)
+  startMultiTargetSelection: (spell, castAtLevel) => {
+    if (!spell.multiTarget) return
+    const currentCombatant = getCurrentCombatant(get())
+    if (!currentCombatant) return
+
+    let maxTargets = spell.multiTarget.baseCount
+    if (castAtLevel && castAtLevel > spell.level && spell.multiTarget.additionalPerLevel) {
+      maxTargets += (castAtLevel - spell.level) * spell.multiTarget.additionalPerLevel
+    }
+
+    const spellRange = parseSpellRange(spell.range)
+
+    set({
+      selectedSpell: spell,
+      selectedAction: 'spell',
+      multiTargetSelection: {
+        spell,
+        maxTargets,
+        selectedTargetIds: [],
+        castAtLevel,
+      },
+      rangeHighlight: spellRange > 0 ? {
+        origin: currentCombatant.position,
+        range: spellRange,
+        type: 'spell',
+      } : undefined,
+    })
+  },
+
+  toggleMultiTarget: (targetId) => {
+    const { multiTargetSelection } = get()
+    if (!multiTargetSelection) return
+
+    const { selectedTargetIds, maxTargets } = multiTargetSelection
+    const isSelected = selectedTargetIds.includes(targetId)
+
+    let newSelected: string[]
+    if (isSelected) {
+      newSelected = selectedTargetIds.filter(id => id !== targetId)
+    } else {
+      if (selectedTargetIds.length >= maxTargets) return
+      newSelected = [...selectedTargetIds, targetId]
+    }
+
+    set({
+      multiTargetSelection: {
+        ...multiTargetSelection,
+        selectedTargetIds: newSelected,
+      },
+    })
+  },
+
+  confirmMultiTargetSelection: () => {
+    const { multiTargetSelection } = get()
+    if (!multiTargetSelection) return
+    if (multiTargetSelection.selectedTargetIds.length === 0) return
+
+    const currentCombatant = getCurrentCombatant(get())
+    if (currentCombatant) {
+      get().castSpell(
+        currentCombatant.id,
+        multiTargetSelection.spell,
+        undefined,
+        undefined,
+        undefined,
+        multiTargetSelection.castAtLevel,
+        multiTargetSelection.selectedTargetIds
+      )
+    }
+
+    set({
+      multiTargetSelection: undefined,
+      selectedSpell: undefined,
+      selectedAction: undefined,
+      rangeHighlight: undefined,
+      hoveredTargetId: undefined,
+    })
+  },
+
+  cancelMultiTargetSelection: () => {
+    if (!get().multiTargetSelection) return
+    set({
+      multiTargetSelection: undefined,
       selectedSpell: undefined,
       selectedAction: undefined,
       rangeHighlight: undefined,
@@ -3743,7 +3849,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
     })
   },
 
-  castSpell: (casterId, spell, targetId, targetPosition, projectileAssignments, castAtLevel) => {
+  castSpell: (casterId, spell, targetId, targetPosition, projectileAssignments, castAtLevel, selectedTargetIds) => {
     const { combatants } = get()
     const caster = combatants.find((c) => c.id === casterId)
     if (!caster) return false
@@ -3864,9 +3970,14 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
       return true
     }
 
-    // Determine targets (AoE or single target)
+    // Determine targets (multi-target selection, AoE, or single target)
     let targets: Combatant[] = []
-    if (spell.areaOfEffect && (targetPosition || targetId)) {
+    if (selectedTargetIds && selectedTargetIds.length > 0) {
+      // Multi-target spell selection (Jump, Haste, etc.)
+      targets = selectedTargetIds
+        .map(id => combatants.find(c => c.id === id))
+        .filter((c): c is Combatant => c !== undefined && c.currentHp > 0)
+    } else if (spell.areaOfEffect && (targetPosition || targetId)) {
       targets = findAoETargets(caster, spell, targetPosition, targetId, combatants)
       if (targets.length === 0 && !spell.createsZone) {
         get().addLogEntry({
@@ -4406,6 +4517,39 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
         actorId: casterId,
         actorName: caster.name,
         message: `${caster.name} casts ${spell.name} and gains ${totalTempHp} temporary HP! (rolled ${tempHpRoll.breakdown})`,
+      })
+    }
+
+    // Handle buff spells applied to selected targets (Jump, etc.)
+    if (spell.conditionOnTarget && targets.length > 0) {
+      for (const target of targets) {
+        set((state) => ({
+          combatants: state.combatants.map((c) =>
+            c.id === target.id
+              ? { ...c, conditions: [...c.conditions, { condition: spell.conditionOnTarget!, source: `${caster.name}'s ${spell.name}` }] }
+              : c
+          ),
+        }))
+        get().addCombatPopup(target.id, 'condition', spell.conditionOnTarget)
+      }
+    }
+
+    if (spell.grantsExtraMovement && targets.length > 0) {
+      for (const target of targets) {
+        set((state) => ({
+          combatants: state.combatants.map((c) =>
+            c.id === target.id
+              ? { ...c, movementUsed: c.movementUsed - spell.grantsExtraMovement! }
+              : c
+          ),
+        }))
+      }
+      const targetNames = targets.map(t => t.name).join(', ')
+      get().addLogEntry({
+        type: 'other',
+        actorId: casterId,
+        actorName: caster.name,
+        message: `${spell.name} grants +${spell.grantsExtraMovement} ft movement to ${targetNames}!`,
       })
     }
 

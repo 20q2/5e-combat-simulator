@@ -107,6 +107,7 @@ interface GridCellProps {
   isDragOver: boolean
   isValidDrop: boolean
   isTargetable: boolean
+  isAllyTargetable: boolean
   isThreatened: boolean
   isInWeaponRange?: 'melee' | 'ranged' | 'spell'
   isInLongRange: boolean
@@ -152,6 +153,7 @@ function GridCell({
   isDragOver,
   isValidDrop,
   isTargetable,
+  isAllyTargetable,
   isThreatened,
   isInWeaponRange,
   isInLongRange,
@@ -220,9 +222,10 @@ function GridCell({
         isSelected && 'bg-violet-900/60 border-violet-500',
         isDragOver && isValidDrop && 'bg-emerald-700/80 border-emerald-400 border-2',
         isDragOver && !isValidDrop && 'bg-red-900/70 border-red-500 border-2',
-        isTargetable && 'bg-rose-900/40 border-rose-600 ring-1 ring-rose-500/50',
+        isTargetable && !isAllyTargetable && 'bg-rose-900/40 border-rose-600 ring-1 ring-rose-500/50',
+        isAllyTargetable && 'bg-emerald-900/40 border-emerald-600 ring-1 ring-emerald-500/50',
         isThreatened && !isReachable && !hasObstacle && 'bg-amber-900/30 border-amber-700/50',
-        !isReachable && !isSelected && !isDragOver && !isTargetable && !isThreatened && !hasObstacle && !hasDifficultTerrain && !hasHazardTerrain && !hasWaterTerrain && !isElevated && !hasStairs && 'hover:bg-slate-800/70'
+        !isReachable && !isSelected && !isDragOver && !isTargetable && !isAllyTargetable && !isThreatened && !hasObstacle && !hasDifficultTerrain && !hasHazardTerrain && !hasWaterTerrain && !isElevated && !hasStairs && 'hover:bg-slate-800/70'
       )}
       style={{
         width: CELL_SIZE,
@@ -377,6 +380,9 @@ export function CombatGrid() {
     projectileTargeting,
     assignProjectile,
     cancelProjectileTargeting,
+    multiTargetSelection,
+    toggleMultiTarget,
+    cancelMultiTargetSelection,
     breathWeaponTargeting,
     setBreathWeaponTargeting,
     performAttackReplacement,
@@ -591,6 +597,35 @@ export function CombatGrid() {
       return { targetablePositions: new Set<string>(), validTargetIds: new Set<string>(), attackerWeapons: null, isSpellTargeting: false }
     }
 
+    // Multi-target spell selection mode (Jump, Haste, etc.) — show valid ally targets
+    if (multiTargetSelection && selectedSpell) {
+      const spellRange = parseSpellRangeForGrid(selectedSpell.range)
+      const targetType = selectedSpell.targetType || 'enemy'
+
+      const candidates = combatants.filter(c => {
+        if (c.currentHp <= 0 || c.position.x < 0) return false
+        if (targetType === 'ally' || targetType === 'any') {
+          return c.type === attacker.type
+        }
+        if (targetType === 'self') return c.id === currentTurnId
+        return c.id !== currentTurnId && c.type !== attacker.type
+      })
+
+      const inRange = spellRange > 0
+        ? candidates.filter(c => {
+            const { canTarget } = canTargetWithRangedAttack(grid, attacker.position, c.position, spellRange, fogCellSet)
+            return canTarget
+          })
+        : candidates
+
+      return {
+        targetablePositions: new Set(inRange.map(t => `${t.position.x},${t.position.y}`)),
+        validTargetIds: new Set(inRange.map(t => t.id)),
+        attackerWeapons: null,
+        isSpellTargeting: true
+      }
+    }
+
     // Check if we're targeting with a single-target attack spell (not AoE, not projectile)
     const isSpellAttackTargeting = selectedSpell &&
       (selectedSpell.attackType || selectedSpell.savingThrow || selectedSpell.damage) &&
@@ -652,7 +687,7 @@ export function CombatGrid() {
       attackerWeapons: { meleeWeapon, rangedWeapon, monsterAction },
       isSpellTargeting: false
     }
-  }, [phase, selectedAction, currentTurnId, combatants, getValidTargets, selectedSpell, aoePreview, grid, fogCellSet])
+  }, [phase, selectedAction, currentTurnId, combatants, getValidTargets, selectedSpell, aoePreview, grid, fogCellSet, multiTargetSelection])
 
   // Calculate threatened positions (cells adjacent to enemies - opportunity attack zones)
   const threatenedPositions = useMemo(() => {
@@ -971,6 +1006,15 @@ export function CombatGrid() {
       return
     }
 
+    // In multi-target selection mode, clicking toggles target selection
+    if (phase === 'combat' && multiTargetSelection && currentTurnId) {
+      const targetCombatant = combatants.find(c => c.id === combatantId)
+      if (targetCombatant && targetCombatant.currentHp > 0) {
+        toggleMultiTarget(combatantId)
+      }
+      return
+    }
+
     // In AoE spell mode, clicking a token casts the spell targeting that combatant
     if (phase === 'combat' && aoePreview && selectedSpell && currentTurnId) {
       const targetCombatant = combatants.find(c => c.id === combatantId)
@@ -1051,11 +1095,12 @@ export function CombatGrid() {
     setAoEPreview(undefined)
     setRangeHighlight(undefined)
     cancelProjectileTargeting()
+    cancelMultiTargetSelection()
     setBreathWeaponTargeting(undefined)
   }
 
   // Check if we're in any targeting mode
-  const isInTargetingMode = selectedAction || selectedSpell || projectileTargeting || breathWeaponTargeting
+  const isInTargetingMode = selectedAction || selectedSpell || projectileTargeting || multiTargetSelection || breathWeaponTargeting
 
   // Right-click on grid cancels targeting
   const handleGridContextMenu = (e: React.MouseEvent) => {
@@ -1216,6 +1261,7 @@ export function CombatGrid() {
                 isDragOver={isDragOver}
                 isValidDrop={isValidDrop}
                 isTargetable={isTargetable}
+                isAllyTargetable={isTargetable && !!multiTargetSelection}
                 isThreatened={isThreatened}
                 isInWeaponRange={isInWeaponRange}
                 isInLongRange={isInLongRange}
@@ -1291,6 +1337,7 @@ export function CombatGrid() {
                 isCurrentTurn={currentTurnId === combatant.id && phase === 'combat'}
                 isDraggable={canDrag}
                 isHoveredTarget={hoveredTargetId === combatant.id}
+                isMultiTargetSelected={multiTargetSelection?.selectedTargetIds.includes(combatant.id)}
                 suppressTooltip={!!aoePreview}
                 visualScale={visualScale}
                 onClick={() => handleTokenClick(combatant.id)}
@@ -1303,8 +1350,8 @@ export function CombatGrid() {
                   if (hovered) {
                     setHoveredCell(combatant.position)
                   }
-                  // Highlight valid targets when hovering in attack or spell targeting mode
-                  if ((selectedAction === 'attack' || (selectedSpell && !aoePreview && !projectileTargeting)) && validTargetIds.has(combatant.id)) {
+                  // Highlight valid targets when hovering in attack, spell, or multi-target mode
+                  if ((selectedAction === 'attack' || multiTargetSelection || (selectedSpell && !aoePreview && !projectileTargeting)) && validTargetIds.has(combatant.id)) {
                     setHoveredTarget(hovered ? combatant.id : undefined)
                   }
                 }}
