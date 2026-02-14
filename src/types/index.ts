@@ -62,6 +62,9 @@ export type Condition =
   // Self-buff spell conditions
   | 'expeditious_retreat'  // Bonus action Dash while concentrating on Expeditious Retreat
   | 'jump'  // +10ft movement from Jump spell
+  | 'longstrider'  // +10ft speed from Longstrider spell
+  | 'protected_from_evil_good'  // Disadvantage for aberrations/celestials/elementals/fey/fiends/undead attacking this target
+  | 'witch_bolt'  // Bonus action 1d12 lightning damage to linked target while concentrating on Witch Bolt
 
 // ============================================
 // Character Types
@@ -374,6 +377,8 @@ export interface Spell {
   conditionOnHit?: Condition
   // Condition applied when target fails saving throw (e.g., Charm Person → charmed)
   conditionOnFailedSave?: Condition
+  // Multiple conditions applied on failed save (e.g., Tasha's Hideous Laughter → prone + incapacitated)
+  conditionsOnFailedSave?: Condition[]
   // Target gets advantage on save during combat (e.g., Charm Person)
   saveAdvantageInCombat?: boolean
   // Target can't take reactions until start of its next turn (Shocking Grasp)
@@ -382,6 +387,17 @@ export interface Spell {
   onHitDescription?: string
   // Descriptive effect logged on failed save (Mind Sliver -1d4)
   onFailedSaveDescription?: string
+  // Repeat save at end of target's turn and/or when taking damage (Tasha's Hideous Laughter)
+  repeatSave?: {
+    ability: AbilityName
+    onEndOfTurn?: boolean     // Save at end of affected creature's turn
+    onDamage?: boolean        // Save when taking damage
+    advantageOnDamage?: boolean // Advantage on save when triggered by damage
+    onFailCondition?: Condition    // On failed repeat save, replace condition with this (Sleep: incapacitated → unconscious)
+    onFailEndsOnDamage?: boolean   // The replacement condition ends when target takes damage
+  }
+  // Condition applied by this spell ends when target takes damage (Sleep)
+  endsOnDamage?: boolean
   // Replace base die type when target is below max HP (Toll the Dead: 'd8' → 'd12')
   damagedTargetDieUpgrade?: string
   // Grants Dash on cast and bonus-action Dash while concentrating (Expeditious Retreat)
@@ -498,6 +514,18 @@ export interface ActiveCondition {
   condition: Condition
   duration?: number
   source?: string
+  casterId?: string              // ID of caster who applied this (for concentration cleanup)
+  endsOnDamage?: boolean         // Remove when target takes any damage (Sleep)
+  // Repeat save data (baked in at cast time for end-of-turn / on-damage saves)
+  repeatSave?: {
+    ability: AbilityName
+    dc: number
+    onEndOfTurn?: boolean
+    onDamage?: boolean
+    advantageOnDamage?: boolean
+    onFailCondition?: Condition    // On failed repeat save, replace with this condition (Sleep: incapacitated → unconscious)
+    onFailEndsOnDamage?: boolean   // The replacement condition ends when target takes damage
+  }
 }
 
 // ============================================
@@ -659,6 +687,8 @@ export interface Combatant {
   lungingAttackBonus?: number  // Superiority die roll for Lunging Attack bonus damage
   // Fighter Studied Attacks tracking (level 13)
   studiedTargetId?: string  // ID of combatant this fighter has advantage against (after missing them)
+  // Witch Bolt concentration tracking
+  witchBoltTargetId?: string  // ID of the target linked by Witch Bolt
   // Origin Feat tracking
   featUses: Record<string, number>  // feat id -> remaining uses (e.g., { lucky: 2 })
   usedSavageAttackerThisTurn: boolean  // Track if Savage Attacker was used this turn (once per turn)

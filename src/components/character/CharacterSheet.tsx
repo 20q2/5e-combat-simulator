@@ -193,7 +193,7 @@ export function CharacterSheet() {
   )
 
   const hp = activeEntries.length > 0
-    ? calculateMulticlassHP(activeEntries, finalAbilityScores.constitution, originFeats)
+    ? calculateMulticlassHP(activeEntries, finalAbilityScores.constitution, originFeats, race?.abilities ?? [])
     : 0
 
   const fightingStyles = activeEntries.flatMap(e =>

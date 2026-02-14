@@ -1261,6 +1261,7 @@ export function ActionBar() {
     useCunningDisengage,
     useCunningHide,
     useExpeditiousRetreatDash,
+    useWitchBoltZap,
     projectileTargeting,
     startProjectileTargeting,
     cancelProjectileTargeting,
@@ -1639,6 +1640,10 @@ export function ActionBar() {
 
   // Check for Expeditious Retreat bonus action Dash
   const canExpeditiousDash = isCharacter && !currentCombatant.hasBonusActed && currentCombatant.conditions.some(c => c.condition === 'expeditious_retreat')
+
+  // Check for Witch Bolt bonus action zap
+  const canWitchBoltZap = isCharacter && !currentCombatant.hasBonusActed && currentCombatant.conditions.some(c => c.condition === 'witch_bolt') && !!currentCombatant.witchBoltTargetId
+  const witchBoltTarget = canWitchBoltZap ? combatants.find(c => c.id === currentCombatant.witchBoltTargetId) : undefined
 
   // Check for Battle Medic (Healer origin feat)
   const hasBattleMedicFeat = isCharacter && canUseBattleMedic(currentCombatant)
@@ -2279,7 +2284,7 @@ export function ActionBar() {
                 </div>
 
                 {/* Row 2: Class Features (only if any exist) */}
-                {(hasSecondWind || hasActionSurge || hasBattleMedicFeat || hasCunningActionFeature || bonusActionManeuvers.length > 0) && (
+                {(hasSecondWind || hasActionSurge || hasBattleMedicFeat || hasCunningActionFeature || bonusActionManeuvers.length > 0 || canWitchBoltZap) && (
                 <div className="flex items-center justify-center gap-2">
                   {/* Second Wind (Fighter bonus action) */}
                   {hasSecondWind && (() => {
@@ -2473,6 +2478,19 @@ export function ActionBar() {
                       )}
                     </div>
                   )}
+
+                  {/* Witch Bolt (bonus action zap while concentrating) */}
+                  {canWitchBoltZap && witchBoltTarget && (
+                    <ActionButton
+                      icon={<Zap className="w-5 h-5" />}
+                      label="Witch Bolt"
+                      onClick={() => useWitchBoltZap()}
+                      disabled={currentCombatant.hasBonusActed}
+                      variant="spell"
+                      tooltip={`Deal 1d12 lightning damage to ${witchBoltTarget.name}`}
+                      actionType="bonus"
+                    />
+                  )}
                 </div>
                 )}
               </div>
@@ -2489,7 +2507,8 @@ export function ActionBar() {
                   canCunningDisengage ||
                   canCunningHide ||
                   canUseBonusManeuver ||
-                  canExpeditiousDash
+                  canExpeditiousDash ||
+                  canWitchBoltZap
                 )
                 const hasActionsRemaining = hasUnusedAction || hasUnusedBonusAction
 

@@ -17,13 +17,14 @@ import type {
   DamageType,
   CombatPopupType,
   Condition,
+  ActiveCondition,
   WeaponMastery,
   PersistentZone,
 } from '@/types'
 import { ZoneType } from '@/types'
 import { rollInitiative, rollDie, rollD20 } from '@/engine/dice'
 import { getAbilityModifier } from '@/types'
-import { resolveAttack, canAttackTarget, getSpellSaveDC, getSpellAttackBonus, rollCombatantSavingThrow, rollDeathSave, selectWeaponForTarget, isRangedAttack, type AttackResult } from '@/engine/combat'
+import { resolveAttack, canAttackTarget, getSpellSaveDC, getSpellAttackBonus, rollCombatantSavingThrow, rollDeathSave, selectWeaponForTarget, isRangedAttack, isProtectedFromEvilGoodCreature, type AttackResult } from '@/engine/combat'
 import { rollAttack, rollDamage } from '@/engine/dice'
 import { getNextAIAction } from '@/engine/ai'
 import { getDistanceBetweenPositions } from '@/lib/distance'
@@ -313,6 +314,9 @@ interface CombatStore extends CombatState {
 
   // Expeditious Retreat bonus action Dash
   useExpeditiousRetreatDash: () => void
+
+  // Witch Bolt bonus action zap
+  useWitchBoltZap: () => void
 
   // Chromatic Orb damage type choice
   resolveDamageTypeChoice: (damageType: DamageType) => void
@@ -695,6 +699,8 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
       lungingAttackBonus: undefined,
       // Fighter Studied Attacks tracking (level 13)
       studiedTargetId: undefined,
+      // Witch Bolt tracking
+      witchBoltTargetId: undefined,
       // Origin Feat tracking
       featUses: {},
       usedSavageAttackerThisTurn: false,
@@ -925,6 +931,63 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
       get().checkGreaseZoneSave(currentId, endingCombatant.position)
     }
 
+    // End-of-turn: repeat saves for conditions like Tasha's Hideous Laughter
+    if (endingCombatant && endingCombatant.currentHp > 0) {
+      // Find conditions with end-of-turn repeat saves (only check the first per source to avoid double-rolling)
+      const repeatSaveConditions = endingCombatant.conditions.filter(ac => ac.repeatSave?.onEndOfTurn)
+      for (const ac of repeatSaveConditions) {
+        const saveResult = rollCombatantSavingThrow(endingCombatant, ac.repeatSave!.ability, ac.repeatSave!.dc)
+        if (saveResult.success) {
+          // Remove ALL conditions from this source (e.g., both prone + incapacitated from Tasha's)
+          const sourceToRemove = ac.source
+          set((state) => ({
+            combatants: state.combatants.map((c) =>
+              c.id === currentId
+                ? { ...c, conditions: c.conditions.filter(cond => cond.source !== sourceToRemove) }
+                : c
+            ),
+          }))
+          get().addLogEntry({
+            type: 'spell', actorId: currentId, actorName: endingCombatant.name,
+            message: `${endingCombatant.name} saves against ${ac.source ?? 'an effect'} (DC ${ac.repeatSave!.dc})`,
+            details: saveResult.roll.breakdown,
+          })
+          get().addCombatPopup(currentId, 'saved')
+        } else {
+          get().addLogEntry({
+            type: 'spell', actorId: currentId, actorName: endingCombatant.name,
+            message: `${endingCombatant.name} fails repeat save against ${ac.source ?? 'an effect'} (DC ${ac.repeatSave!.dc})`,
+            details: saveResult.roll.breakdown,
+          })
+          get().addCombatPopup(currentId, 'save_failed')
+
+          // If repeat save specifies an upgrade condition (Sleep: incapacitated → unconscious),
+          // replace the original condition(s) from this source with the new one
+          if (ac.repeatSave!.onFailCondition) {
+            const sourceToReplace = ac.source
+            const newCondition: ActiveCondition = {
+              condition: ac.repeatSave!.onFailCondition,
+              source: sourceToReplace,
+              casterId: ac.casterId,
+              endsOnDamage: ac.repeatSave!.onFailEndsOnDamage,
+            }
+            set((state) => ({
+              combatants: state.combatants.map((c) =>
+                c.id === currentId
+                  ? { ...c, conditions: [...c.conditions.filter(cond => cond.source !== sourceToReplace), newCondition] }
+                  : c
+              ),
+            }))
+            get().addLogEntry({
+              type: 'condition', actorId: currentId, actorName: endingCombatant.name,
+              message: `${endingCombatant.name} falls ${ac.repeatSave!.onFailCondition}!`,
+            })
+            get().addCombatPopup(currentId, 'condition', ac.repeatSave!.onFailCondition)
+          }
+        }
+      }
+    }
+
     // Reset current combatant's turn state
     const resetFields = getTurnResetFields()
     const updatedCombatants = combatants.map((c) =>
@@ -1014,6 +1077,15 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
         if (effect.newHp !== undefined) {
           updatedCombatant = { ...updatedCombatant, currentHp: effect.newHp }
         }
+      }
+
+      // Apply persistent speed buff conditions (Longstrider, etc.) at start of turn
+      const speedBonus = updatedCombatant.conditions.reduce((bonus, cond) => {
+        if (cond.condition === 'longstrider') return bonus + 10
+        return bonus
+      }, 0)
+      if (speedBonus > 0) {
+        updatedCombatant = { ...updatedCombatant, movementUsed: -speedBonus }
       }
 
       finalCombatants = updatedCombatants.map((c) =>
@@ -2589,6 +2661,66 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
         }
       })
     }
+
+    // On-damage repeat saves (e.g., Tasha's Hideous Laughter: save with advantage when taking damage)
+    if (amount > 0 && result.newHp > 0) {
+      const updatedTarget = get().combatants.find(c => c.id === targetId)
+      if (updatedTarget) {
+        const onDamageConditions = updatedTarget.conditions.filter(ac => ac.repeatSave?.onDamage)
+        for (const ac of onDamageConditions) {
+          const advantage = ac.repeatSave!.advantageOnDamage ? 'advantage' as const : 'normal' as const
+          const saveResult = rollCombatantSavingThrow(updatedTarget, ac.repeatSave!.ability, ac.repeatSave!.dc, advantage)
+          if (saveResult.success) {
+            const sourceToRemove = ac.source
+            set((state) => ({
+              combatants: state.combatants.map((c) =>
+                c.id === targetId
+                  ? { ...c, conditions: c.conditions.filter(cond => cond.source !== sourceToRemove) }
+                  : c
+              ),
+            }))
+            get().addLogEntry({
+              type: 'spell', actorId: targetId, actorName: updatedTarget.name,
+              message: `${updatedTarget.name} saves against ${ac.source ?? 'an effect'} after taking damage (DC ${ac.repeatSave!.dc}${advantage === 'advantage' ? ', advantage' : ''})`,
+              details: saveResult.roll.breakdown,
+            })
+            get().addCombatPopup(targetId, 'saved')
+          } else {
+            get().addLogEntry({
+              type: 'spell', actorId: targetId, actorName: updatedTarget.name,
+              message: `${updatedTarget.name} fails save against ${ac.source ?? 'an effect'} after taking damage (DC ${ac.repeatSave!.dc}${advantage === 'advantage' ? ', advantage' : ''})`,
+              details: saveResult.roll.breakdown,
+            })
+            get().addCombatPopup(targetId, 'save_failed')
+          }
+        }
+      }
+    }
+
+    // Auto-remove conditions that end on damage (Sleep: incapacitated/unconscious ends when target takes damage)
+    if (amount > 0) {
+      const targetAfterSaves = get().combatants.find(c => c.id === targetId)
+      if (targetAfterSaves) {
+        const endsOnDamageConditions = targetAfterSaves.conditions.filter(c => c.endsOnDamage)
+        if (endsOnDamageConditions.length > 0) {
+          set((state) => ({
+            combatants: state.combatants.map((c) =>
+              c.id === targetId
+                ? { ...c, conditions: c.conditions.filter(cond => !cond.endsOnDamage) }
+                : c
+            ),
+          }))
+          for (const cond of endsOnDamageConditions) {
+            get().addLogEntry({
+              type: 'condition',
+              actorName: targetAfterSaves.name,
+              actorId: targetId,
+              message: `${targetAfterSaves.name} is no longer ${cond.condition} (took damage)`,
+            })
+          }
+        }
+      }
+    }
   },
 
   healDamage: (targetId, amount, source) => {
@@ -4135,14 +4267,26 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
                 }))
               }
               if (spell.conditionOnHit) {
-                set((state) => ({
-                  combatants: state.combatants.map((c) =>
-                    c.id === currentTargetId
-                      ? { ...c, conditions: [...c.conditions, { condition: spell.conditionOnHit!, source: `${caster.name}'s ${spell.name}` }] }
-                      : c
-                  ),
-                }))
-                get().addCombatPopup(currentTargetId, 'condition', spell.conditionOnHit)
+                const isBlockedByProtection = (spell.conditionOnHit === 'charmed' || spell.conditionOnHit === 'frightened') &&
+                  isProtectedFromEvilGoodCreature(target, caster)
+
+                if (isBlockedByProtection) {
+                  get().addLogEntry({
+                    type: 'condition', actorId: casterId, actorName: caster.name,
+                    targetId: currentTargetId, targetName: target.name,
+                    message: `${target.name} is protected from being ${spell.conditionOnHit} (Protection from Evil and Good)`,
+                  })
+                  get().addCombatPopup(currentTargetId, 'saved')
+                } else {
+                  set((state) => ({
+                    combatants: state.combatants.map((c) =>
+                      c.id === currentTargetId
+                        ? { ...c, conditions: [...c.conditions, { condition: spell.conditionOnHit!, source: `${caster.name}'s ${spell.name}` }] }
+                        : c
+                    ),
+                  }))
+                  get().addCombatPopup(currentTargetId, 'condition', spell.conditionOnHit)
+                }
               }
               if (spell.onHitDescription) {
                 get().addLogEntry({
@@ -4260,14 +4404,74 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
               })
             }
             if (spell.conditionOnFailedSave) {
+              // Protection from Evil and Good: immune to charmed/frightened from qualifying creatures
+              const isBlockedByProtection = (spell.conditionOnFailedSave === 'charmed' || spell.conditionOnFailedSave === 'frightened') &&
+                isProtectedFromEvilGoodCreature(target, caster)
+
+              if (isBlockedByProtection) {
+                get().addLogEntry({
+                  type: 'condition', actorId: casterId, actorName: caster.name,
+                  targetId: currentTargetId, targetName: target.name,
+                  message: `${target.name} is protected from being ${spell.conditionOnFailedSave} (Protection from Evil and Good)`,
+                })
+                get().addCombatPopup(currentTargetId, 'saved')
+              } else {
+                const condSource = `${caster.name}'s ${spell.name}`
+                const condDc = getSpellSaveDC(character)
+                const singleRepeatSave = spell.repeatSave ? {
+                  ability: spell.repeatSave.ability,
+                  dc: condDc,
+                  onEndOfTurn: spell.repeatSave.onEndOfTurn,
+                  onDamage: spell.repeatSave.onDamage,
+                  advantageOnDamage: spell.repeatSave.advantageOnDamage,
+                  onFailCondition: spell.repeatSave.onFailCondition,
+                  onFailEndsOnDamage: spell.repeatSave.onFailEndsOnDamage,
+                } : undefined
+                set((state) => ({
+                  combatants: state.combatants.map((c) =>
+                    c.id === currentTargetId
+                      ? { ...c, conditions: [...c.conditions, {
+                          condition: spell.conditionOnFailedSave!,
+                          source: condSource,
+                          casterId,
+                          endsOnDamage: spell.endsOnDamage,
+                          ...(singleRepeatSave ? { repeatSave: singleRepeatSave } : {}),
+                        }] }
+                      : c
+                  ),
+                }))
+                get().addCombatPopup(currentTargetId, 'condition', spell.conditionOnFailedSave)
+              }
+            }
+            // Apply multiple conditions on failed save (Tasha's Hideous Laughter: prone + incapacitated)
+            if (spell.conditionsOnFailedSave) {
+              const source = `${caster.name}'s ${spell.name}`
+              const dc = getSpellSaveDC(character)
+              const repeatSaveData = spell.repeatSave ? {
+                ability: spell.repeatSave.ability,
+                dc,
+                onEndOfTurn: spell.repeatSave.onEndOfTurn,
+                onDamage: spell.repeatSave.onDamage,
+                advantageOnDamage: spell.repeatSave.advantageOnDamage,
+                onFailCondition: spell.repeatSave.onFailCondition,
+                onFailEndsOnDamage: spell.repeatSave.onFailEndsOnDamage,
+              } : undefined
+              const newConditions: ActiveCondition[] = spell.conditionsOnFailedSave.map((cond, idx) => ({
+                condition: cond,
+                source,
+                // Attach repeatSave to the first condition only (saves roll once per source)
+                ...(idx === 0 && repeatSaveData ? { repeatSave: repeatSaveData } : {}),
+              }))
               set((state) => ({
                 combatants: state.combatants.map((c) =>
                   c.id === currentTargetId
-                    ? { ...c, conditions: [...c.conditions, { condition: spell.conditionOnFailedSave!, source: `${caster.name}'s ${spell.name}` }] }
+                    ? { ...c, conditions: [...c.conditions, ...newConditions] }
                     : c
                 ),
               }))
-              get().addCombatPopup(currentTargetId, 'condition', spell.conditionOnFailedSave)
+              for (const cond of spell.conditionsOnFailedSave) {
+                get().addCombatPopup(currentTargetId, 'condition', cond)
+              }
             }
           }
         } else if (spell.autoHit) {
@@ -4297,7 +4501,30 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
       const dc = getSpellSaveDC(character)
 
       for (const target of targets) {
-        const saveAdvantage = spell.saveAdvantageInCombat ? 'advantage' as const : 'normal' as const
+        // Sleep immunity: elves (Trance trait) and creatures immune to exhaustion auto-succeed
+        if (spell.id === 'sleep') {
+          const isElf = target.type === 'character' && (target.data as Character).race.id === 'elf'
+          const isExhaustionImmune = target.type === 'monster' &&
+            (target.data as Monster).conditionImmunities?.includes('exhaustion' as Condition)
+          if (isElf || isExhaustionImmune) {
+            get().addLogEntry({
+              type: 'spell', actorId: casterId, actorName: caster.name,
+              targetId: target.id, targetName: target.name,
+              message: `${target.name} is immune to ${spell.name}!`,
+            })
+            get().addCombatPopup(target.id, 'saved')
+            continue
+          }
+        }
+
+        let saveAdvantage = spell.saveAdvantageInCombat ? 'advantage' as const : 'normal' as const
+
+        // Protection from Evil and Good: advantage on saves against charm/frighten from qualifying creatures
+        if (isProtectedFromEvilGoodCreature(target, caster) &&
+            (spell.conditionOnFailedSave === 'charmed' || spell.conditionOnFailedSave === 'frightened')) {
+          saveAdvantage = 'advantage'
+        }
+
         const saveResult = rollCombatantSavingThrow(target, spell.savingThrow, dc, saveAdvantage)
 
         if (saveResult.success) {
@@ -4318,19 +4545,84 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
           get().addCombatPopup(target.id, 'save_failed')
 
           if (spell.conditionOnFailedSave) {
+            // Protection from Evil and Good: immune to charmed/frightened from qualifying creatures
+            const isBlockedByProtection = (spell.conditionOnFailedSave === 'charmed' || spell.conditionOnFailedSave === 'frightened') &&
+              isProtectedFromEvilGoodCreature(target, caster)
+
+            if (isBlockedByProtection) {
+              get().addLogEntry({
+                type: 'condition', actorId: casterId, actorName: caster.name,
+                targetId: target.id, targetName: target.name,
+                message: `${target.name} is protected from being ${spell.conditionOnFailedSave} (Protection from Evil and Good)`,
+              })
+              get().addCombatPopup(target.id, 'saved')
+            } else {
+              const condSource2 = `${caster.name}'s ${spell.name}`
+              const singleRepeatSave2 = spell.repeatSave ? {
+                ability: spell.repeatSave.ability,
+                dc,
+                onEndOfTurn: spell.repeatSave.onEndOfTurn,
+                onDamage: spell.repeatSave.onDamage,
+                advantageOnDamage: spell.repeatSave.advantageOnDamage,
+                onFailCondition: spell.repeatSave.onFailCondition,
+                onFailEndsOnDamage: spell.repeatSave.onFailEndsOnDamage,
+              } : undefined
+              set((state) => ({
+                combatants: state.combatants.map((c) =>
+                  c.id === target.id
+                    ? { ...c, conditions: [...c.conditions, {
+                        condition: spell.conditionOnFailedSave!,
+                        source: condSource2,
+                        casterId,
+                        endsOnDamage: spell.endsOnDamage,
+                        ...(singleRepeatSave2 ? { repeatSave: singleRepeatSave2 } : {}),
+                      }] }
+                    : c
+                ),
+              }))
+              get().addLogEntry({
+                type: 'condition', actorId: casterId, actorName: caster.name,
+                targetId: target.id, targetName: target.name,
+                message: `${target.name} is ${spell.conditionOnFailedSave}!`,
+              })
+              get().addCombatPopup(target.id, 'condition', spell.conditionOnFailedSave)
+            }
+          }
+          // Apply multiple conditions on failed save (Tasha's Hideous Laughter: prone + incapacitated)
+          if (spell.conditionsOnFailedSave) {
+            const source = `${caster.name}'s ${spell.name}`
+            const repeatSaveData = spell.repeatSave ? {
+              ability: spell.repeatSave.ability,
+              dc,
+              onEndOfTurn: spell.repeatSave.onEndOfTurn,
+              onDamage: spell.repeatSave.onDamage,
+              advantageOnDamage: spell.repeatSave.advantageOnDamage,
+              onFailCondition: spell.repeatSave.onFailCondition,
+              onFailEndsOnDamage: spell.repeatSave.onFailEndsOnDamage,
+            } : undefined
+            const newConditions: ActiveCondition[] = spell.conditionsOnFailedSave.map((cond, idx) => ({
+              condition: cond,
+              source,
+              casterId,
+              endsOnDamage: spell.endsOnDamage,
+              // Attach repeatSave to the first condition only (saves roll once per source)
+              ...(idx === 0 && repeatSaveData ? { repeatSave: repeatSaveData } : {}),
+            }))
             set((state) => ({
               combatants: state.combatants.map((c) =>
                 c.id === target.id
-                  ? { ...c, conditions: [...c.conditions, { condition: spell.conditionOnFailedSave!, source: `${caster.name}'s ${spell.name}` }] }
+                  ? { ...c, conditions: [...c.conditions, ...newConditions] }
                   : c
               ),
             }))
-            get().addLogEntry({
-              type: 'condition', actorId: casterId, actorName: caster.name,
-              targetId: target.id, targetName: target.name,
-              message: `${target.name} is ${spell.conditionOnFailedSave}!`,
-            })
-            get().addCombatPopup(target.id, 'condition', spell.conditionOnFailedSave)
+            for (const cond of spell.conditionsOnFailedSave) {
+              get().addLogEntry({
+                type: 'condition', actorId: casterId, actorName: caster.name,
+                targetId: target.id, targetName: target.name,
+                message: `${target.name} is ${cond}!`,
+              })
+              get().addCombatPopup(target.id, 'condition', cond)
+            }
           }
           if (spell.onFailedSaveDescription) {
             get().addLogEntry({
@@ -4370,6 +4662,64 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
           ),
         }))
       }
+      // Clear Witch Bolt target link if previous spell was Witch Bolt
+      if (currentConc?.id === 'witch-bolt') {
+        set((state) => ({
+          combatants: state.combatants.map((c) =>
+            c.id === casterId
+              ? { ...c, witchBoltTargetId: undefined }
+              : c
+          ),
+        }))
+      }
+      // Remove target-buff condition from previous concentration spell (Protection from Evil and Good, etc.)
+      if (currentConc?.conditionOnTarget) {
+        const condToRemove = currentConc.conditionOnTarget
+        const sourceMatch = `${caster.name}'s ${currentConc.name}`
+        set((state) => ({
+          combatants: state.combatants.map((c) => ({
+            ...c,
+            conditions: c.conditions.filter(ac => !(ac.condition === condToRemove && ac.source === sourceMatch)),
+          })),
+        }))
+      }
+      // Remove conditions from previous concentration spell that applied multiple conditions (Tasha's Hideous Laughter, etc.)
+      if (currentConc?.conditionsOnFailedSave) {
+        const sourceMatch = `${caster.name}'s ${currentConc.name}`
+        set((state) => ({
+          combatants: state.combatants.map((c) => ({
+            ...c,
+            conditions: c.conditions.filter(ac => ac.source !== sourceMatch),
+          })),
+        }))
+        get().addLogEntry({
+          type: 'other',
+          actorId: casterId,
+          actorName: caster.name,
+          message: `${caster.name}'s ${currentConc.name} ends as concentration shifts.`,
+        })
+      }
+      // Remove debuff conditions applied to other combatants via conditionOnFailedSave (Sleep, etc.)
+      if (currentConc?.conditionOnFailedSave) {
+        const sourceMatch = `${caster.name}'s ${currentConc.name}`
+        const hadConditions = get().combatants.some(c =>
+          c.id !== casterId && c.conditions.some(ac => ac.casterId === casterId && ac.source === sourceMatch)
+        )
+        if (hadConditions) {
+          set((state) => ({
+            combatants: state.combatants.map((c) => ({
+              ...c,
+              conditions: c.conditions.filter(ac => !(ac.casterId === casterId && ac.source === sourceMatch)),
+            })),
+          }))
+          get().addLogEntry({
+            type: 'other',
+            actorId: casterId,
+            actorName: caster.name,
+            message: `${caster.name}'s ${currentConc.name} ends as concentration shifts.`,
+          })
+        }
+      }
       set((state) => ({
         combatants: state.combatants.map((c) =>
           c.id === casterId ? { ...c, concentratingOn: spell } : c
@@ -4389,6 +4739,17 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
                   source: spell.name,
                 }],
               }
+            : c
+        ),
+      }))
+    }
+
+    // Witch Bolt: store linked target ID (works regardless of hit/miss per 2024 PHB)
+    if (spell.id === 'witch-bolt' && targetId) {
+      set((state) => ({
+        combatants: state.combatants.map((c) =>
+          c.id === casterId
+            ? { ...c, witchBoltTargetId: targetId }
             : c
         ),
       }))
@@ -4936,6 +5297,45 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
       combatants: state.combatants.map((c) =>
         c.id === currentId
           ? { ...c, hasBonusActed: true, movementUsed: c.movementUsed - speed }
+          : c
+      ),
+      selectedAction: undefined,
+    }))
+  },
+
+  // Witch Bolt: bonus action to deal 1d12 lightning damage to linked target
+  useWitchBoltZap: () => {
+    const { turnOrder, currentTurnIndex, combatants } = get()
+    const currentId = turnOrder[currentTurnIndex]
+    const combatant = combatants.find((c) => c.id === currentId)
+
+    if (!combatant || combatant.hasBonusActed) return
+    if (!combatant.conditions.some(c => c.condition === 'witch_bolt')) return
+    if (!combatant.witchBoltTargetId) return
+
+    const target = combatants.find((c) => c.id === combatant.witchBoltTargetId)
+    if (!target || target.currentHp <= 0) return
+
+    // Always 1d12 lightning damage regardless of upcast level
+    const damage = rollDamage('1d12', false)
+
+    get().addLogEntry({
+      type: 'spell',
+      actorId: currentId,
+      actorName: combatant.name,
+      targetId: target.id,
+      targetName: target.name,
+      message: `${combatant.name} channels Witch Bolt at ${target.name} for ${damage.total} lightning damage!`,
+      details: damage.breakdown,
+    })
+
+    get().dealDamage(target.id, damage.total, combatant.name)
+    get().addDamagePopup(target.id, damage.total, 'lightning', false)
+
+    set((state) => ({
+      combatants: state.combatants.map((c) =>
+        c.id === currentId
+          ? { ...c, hasBonusActed: true }
           : c
       ),
       selectedAction: undefined,

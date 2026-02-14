@@ -26,6 +26,23 @@ import {
 } from './originFeats'
 
 // ============================================
+// Protection from Evil and Good
+// ============================================
+
+const PROTECTION_CREATURE_TYPES = ['aberration', 'celestial', 'elemental', 'fey', 'fiend', 'undead']
+
+/**
+ * Check if a target is protected from a specific creature by Protection from Evil and Good.
+ * Returns true if the target has the condition AND the creature is a qualifying monster type.
+ */
+export function isProtectedFromEvilGoodCreature(target: Combatant, creature: Combatant): boolean {
+  if (!target.conditions.some((c) => c.condition === 'protected_from_evil_good')) return false
+  if (creature.type !== 'monster') return false
+  const monsterType = (creature.data as Monster).type?.toLowerCase()
+  return PROTECTION_CREATURE_TYPES.includes(monsterType)
+}
+
+// ============================================
 // Attack Resolution
 // ============================================
 
@@ -187,6 +204,11 @@ export function getAttackAdvantage(
 
   // Check if target is dodging - gives disadvantage to attacks against them
   if (target.conditions.some((c) => c.condition === 'dodging')) {
+    hasDisadvantage = true
+  }
+
+  // Protection from Evil and Good: aberrations/celestials/elementals/fey/fiends/undead have disadvantage
+  if (isProtectedFromEvilGoodCreature(target, attacker)) {
     hasDisadvantage = true
   }
 

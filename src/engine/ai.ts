@@ -1,5 +1,5 @@
 import type { Combatant, Monster, Position, MonsterAction, Grid, Character } from '@/types'
-import { getDistance, canAttackTarget } from './combat'
+import { getDistance, canAttackTarget, canTakeActions } from './combat'
 import { findPath, getReachablePositions, calculatePathCost, type MovementContext } from '@/lib/pathfinding'
 import { hasLineOfSight } from '@/lib/lineOfSight'
 import {
@@ -342,6 +342,11 @@ export function decideMonsterAction(
   const isMonster = monster.type === 'monster'
 
   if (!isCharacter && !isMonster) {
+    return { actions: [{ type: 'end' }] }
+  }
+
+  // Can't take actions if incapacitated, stunned, unconscious, etc.
+  if (!canTakeActions(monster)) {
     return { actions: [{ type: 'end' }] }
   }
 

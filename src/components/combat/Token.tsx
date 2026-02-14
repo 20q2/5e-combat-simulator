@@ -48,6 +48,7 @@ export function Token({
   const hpPercent = (combatant.currentHp / combatant.maxHp) * 100
   const isDead = combatant.currentHp <= 0
   const isConcentrating = !!combatant.concentratingOn
+  const isProne = !isDead && combatant.conditions.some(c => c.condition === 'prone')
 
   // Detect when combatant dies or takes damage and trigger animations
   useEffect(() => {
@@ -175,12 +176,16 @@ export function Token({
           // Death state: play animation when just died, otherwise show dead state (prone/rotated 90deg)
           isPlayingDeathAnimation && 'animate-death',
           isDead && !isPlayingDeathAnimation && 'opacity-50 grayscale scale-[0.85] rotate-90',
+          // Prone: rotate 90deg (smooth transition via transition-all)
+          isProne && 'rotate-90',
           isDraggable && 'cursor-grab active:cursor-grabbing hover:scale-110'
         )}
         style={{
           background: teamGradient,
-          // Apply visual scaling for tiny/small creatures
-          ...(visualScale && visualScale < 1 ? { transform: `scale(${visualScale})` } : {}),
+          // Apply visual scaling for tiny/small creatures (combine with prone rotation if needed)
+          ...(visualScale && visualScale < 1
+            ? { transform: `scale(${visualScale})${isProne ? ' rotate(90deg)' : ''}` }
+            : {}),
         }}
       >
         {/* Inner token content */}

@@ -17,8 +17,10 @@ import {
   Wind,
   Footprints,
   ShieldPlus,
+  ShieldCheck,
   Target,
   ArrowUp,
+  CloudLightning,
   type LucideIcon,
 } from 'lucide-react'
 import type { Condition } from '@/types'
@@ -196,6 +198,24 @@ export const conditionIcons: Record<ExtendedCondition, ConditionIconInfo> = {
     color: 'text-lime-300',
     bgColor: 'bg-lime-900',
     label: 'Jump',
+  },
+  longstrider: {
+    icon: Footprints,
+    color: 'text-teal-300',
+    bgColor: 'bg-teal-900',
+    label: 'Longstrider',
+  },
+  protected_from_evil_good: {
+    icon: ShieldCheck,
+    color: 'text-amber-300',
+    bgColor: 'bg-amber-900',
+    label: 'Protected from Evil/Good',
+  },
+  witch_bolt: {
+    icon: CloudLightning,
+    color: 'text-blue-300',
+    bgColor: 'bg-blue-900',
+    label: 'Witch Bolt',
   },
 }
 

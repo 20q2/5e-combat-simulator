@@ -72,7 +72,7 @@ export function CharacterPreview() {
 
   const activeEntries = draft.classEntries.filter(e => e.level > 0)
   const hp = activeEntries.length > 0
-    ? calculateMulticlassHP(activeEntries, finalAbilityScores.constitution, originFeats)
+    ? calculateMulticlassHP(activeEntries, finalAbilityScores.constitution, originFeats, race?.abilities ?? [])
     : 0
 
   const ac = calculateAC(

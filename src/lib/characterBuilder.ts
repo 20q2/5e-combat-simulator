@@ -101,7 +101,7 @@ export function buildCharacterFromDraft(draft: CharacterDraft): Character | null
     )
   )
 
-  const hp = calculateMulticlassHP(draft.classEntries, finalAbilityScores.constitution, originFeats)
+  const hp = calculateMulticlassHP(draft.classEntries, finalAbilityScores.constitution, originFeats, race.abilities)
   const ac = calculateAC(
     armor?.category !== 'shield' ? armor : null,
     draft.shieldEquipped,

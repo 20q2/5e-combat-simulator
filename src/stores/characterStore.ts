@@ -795,7 +795,8 @@ export function calculateHP(
   characterClass: CharacterClass,
   level: number,
   constitution: number,
-  originFeats: OriginFeatId[] = []
+  originFeats: OriginFeatId[] = [],
+  raceAbilities: Array<{ id: string }> = []
 ): number {
   const conMod = getAbilityModifier(constitution)
   // Max HP at level 1, then average for subsequent levels
@@ -808,6 +809,11 @@ export function calculateHP(
     hp += level * 2
   }
 
+  // Dwarven Toughness: +1 HP per level
+  if (raceAbilities.some(a => a.id === 'dwarf-toughness')) {
+    hp += level
+  }
+
   return hp
 }
 
@@ -818,7 +824,8 @@ export function calculateHP(
 export function calculateMulticlassHP(
   classEntries: Array<{ classId: string; level: number }>,
   constitution: number,
-  originFeats: OriginFeatId[] = []
+  originFeats: OriginFeatId[] = [],
+  raceAbilities: Array<{ id: string }> = []
 ): number {
   const conMod = getAbilityModifier(constitution)
   let hp = 0
@@ -843,6 +850,11 @@ export function calculateMulticlassHP(
   const totalLevel = classEntries.reduce((s, e) => s + e.level, 0)
   if (originFeats.includes('tough')) {
     hp += totalLevel * 2
+  }
+
+  // Dwarven Toughness: +1 HP per level
+  if (raceAbilities.some(a => a.id === 'dwarf-toughness')) {
+    hp += totalLevel
   }
 
   return hp
