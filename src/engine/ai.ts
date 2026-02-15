@@ -342,11 +342,13 @@ export function decideMonsterAction(
   const isMonster = monster.type === 'monster'
 
   if (!isCharacter && !isMonster) {
+    console.warn(`[AI] ${monster.name}: not a character or monster (type=${monster.type}), ending`)
     return { actions: [{ type: 'end' }] }
   }
 
   // Can't take actions if incapacitated, stunned, unconscious, etc.
   if (!canTakeActions(monster)) {
+    console.warn(`[AI] ${monster.name}: can't take actions (conditions=[${monster.conditions.map(c => c.condition).join(',')}]), ending`)
     return { actions: [{ type: 'end' }] }
   }
 
@@ -357,8 +359,11 @@ export function decideMonsterAction(
   // Find best target (smarter than just nearest)
   const bestTarget = findBestTarget(combatants, monster)
   if (!bestTarget) {
+    console.warn(`[AI] ${monster.name}: no valid target found, ending`)
     return { actions: [{ type: 'end' }] }
   }
+
+  console.warn(`[AI] ${monster.name}: best target = ${bestTarget.name} (hp=${bestTarget.currentHp}/${bestTarget.maxHp}, distance=${getDistance(monster, bestTarget)})`)
 
   // For characters, check if should use Second Wind
   if (isCharacter && shouldUseSecondWind(monster)) {
@@ -397,6 +402,8 @@ export function decideMonsterAction(
     : { canAttack: false }
   const canAttackNow = attackCheck.canAttack
 
+  console.warn(`[AI] ${monster.name}: speed=${speed}, remainingMovement=${remainingMovement}, maxAttacks=${maxAttacks}, attacksRemaining=${attacksRemaining}, usableAttack=${usableAttack?.name ?? 'none'}, canAttackNow=${canAttackNow}`)
+
   if (canAttackNow && usableAttack) {
     // Attack the best target with the usable attack
     if (attacksRemaining > 0) {
@@ -405,6 +412,8 @@ export function decideMonsterAction(
         targetId: bestTarget.id,
         action: usableAttack,
       })
+    } else {
+      console.warn(`[AI] ${monster.name}: can attack but no attacks remaining (attacksMadeThisTurn=${monster.attacksMadeThisTurn})`)
     }
 
     // After attacking, could move away or stay
@@ -428,7 +437,11 @@ export function decideMonsterAction(
           type: 'move',
           targetPosition: moveTarget,
         })
+      } else {
+        console.warn(`[AI] ${monster.name}: no valid move position found toward ${bestTarget.name}`)
       }
+    } else {
+      console.warn(`[AI] ${monster.name}: no remaining movement (movementUsed=${monster.movementUsed})`)
     }
 
     // Check if we can attack after moving (simulate the move)
@@ -457,6 +470,7 @@ export function decideMonsterAction(
     actions.push({ type: 'end' })
   }
 
+  console.warn(`[AI] ${monster.name}: final actions = [${actions.map(a => a.type).join(', ')}]`)
   return { actions }
 }
 

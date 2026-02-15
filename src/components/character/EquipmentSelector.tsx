@@ -226,7 +226,6 @@ export function EquipmentSelector() {
 
   // Get selected items
   const selectedMeleeWeapon = draft.meleeWeaponId ? getWeaponById(draft.meleeWeaponId) : null
-  const selectedRangedWeapon = draft.rangedWeaponId ? getWeaponById(draft.rangedWeaponId) : null
   const selectedArmor = draft.armorId ? getArmorById(draft.armorId) ?? null : null
 
   const hasTwoHandedWeapon = selectedMeleeWeapon?.properties.includes('two-handed') ?? false
@@ -275,14 +274,14 @@ export function EquipmentSelector() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid md:grid-cols-2 gap-6">
+          <div className="grid md:grid-cols-2 gap-4">
             {/* Melee Weapons */}
-            <div>
+            <div className="bg-slate-800/30 rounded-lg p-3 border border-border/40">
               <h4 className="font-medium text-sm mb-2 flex items-center gap-1.5">
                 <Swords className="w-4 h-4 text-orange-400" />
                 Melee Weapon
               </h4>
-              <div className="space-y-2 max-h-[300px] overflow-y-auto pr-2">
+              <div className="space-y-2 max-h-[500px] overflow-y-auto pr-1">
                 <button
                   onClick={() => handleMeleeWeaponSelect(null)}
                   className={cn(
@@ -307,12 +306,12 @@ export function EquipmentSelector() {
             </div>
 
             {/* Ranged Weapons */}
-            <div>
+            <div className="bg-slate-800/30 rounded-lg p-3 border border-border/40">
               <h4 className="font-medium text-sm mb-2 flex items-center gap-1.5">
                 <Target className="w-4 h-4 text-blue-400" />
                 Ranged Weapon
               </h4>
-              <div className="space-y-2 max-h-[300px] overflow-y-auto pr-2">
+              <div className="space-y-2 max-h-[500px] overflow-y-auto pr-1">
                 <button
                   onClick={() => setRangedWeapon(null)}
                   className={cn(
@@ -336,30 +335,6 @@ export function EquipmentSelector() {
               </div>
             </div>
           </div>
-
-          {(selectedMeleeWeapon || selectedRangedWeapon) && (
-            <div className="mt-4 p-3 bg-muted/50 rounded-lg space-y-2">
-              <h4 className="font-medium">Selected Weapons</h4>
-              {selectedMeleeWeapon && (
-                <p className="text-sm text-muted-foreground">
-                  <span className="text-foreground">{selectedMeleeWeapon.name}:</span>{' '}
-                  {selectedMeleeWeapon.damage} {selectedMeleeWeapon.damageType}
-                  {selectedMeleeWeapon.properties.length > 0 && (
-                    <> · {selectedMeleeWeapon.properties.join(', ')}</>
-                  )}
-                </p>
-              )}
-              {selectedRangedWeapon && (
-                <p className="text-sm text-muted-foreground">
-                  <span className="text-foreground">{selectedRangedWeapon.name}:</span>{' '}
-                  {selectedRangedWeapon.damage} {selectedRangedWeapon.damageType}
-                  {selectedRangedWeapon.properties.length > 0 && (
-                    <> · {selectedRangedWeapon.properties.join(', ')}</>
-                  )}
-                </p>
-              )}
-            </div>
-          )}
 
           {/* Offhand */}
           <div className="mt-4 pt-4 border-t">

@@ -5519,17 +5519,24 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
     // Loop to handle consecutive AI turns — endTurn() changes currentTurnIndex
     // before .finally() clears isExecutingAI, so the useEffect that triggers
     // this function would miss the next AI turn without this loop.
+    console.warn('[AI] executeAITurn started')
     while (true) {
       const { turnOrder, currentTurnIndex, combatants, grid, phase } = get()
-      if (phase !== 'combat') return
+      if (phase !== 'combat') {
+        console.warn('[AI] Exiting: phase is not combat')
+        return
+      }
 
       const currentId = turnOrder[currentTurnIndex]
       const current = combatants.find((c) => c.id === currentId)
 
       // Stop looping if it's not a living monster's turn
       if (!current || current.type !== 'monster' || current.currentHp <= 0) {
+        console.warn(`[AI] Exiting loop: ${!current ? 'no combatant found' : current.type !== 'monster' ? `not a monster (type=${current.type})` : `dead (hp=${current.currentHp})`}`)
         return
       }
+
+      console.warn(`[AI] Processing turn for ${current.name} (id=${current.id}, hp=${current.currentHp}/${current.maxHp}, pos=${current.position.x},${current.position.y}, conditions=[${current.conditions.map(c => c.condition).join(',')}])`)
 
       // Add small delay for visual feedback
       await new Promise((resolve) => setTimeout(resolve, 500))
@@ -5538,13 +5545,20 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
       const aiFogCells = getFogCells(get().persistentZones)
       const aiGreaseCells = getGreaseCells(get().persistentZones)
       const action = getNextAIAction(current, combatants, grid, aiFogCells, aiGreaseCells)
+      console.warn(`[AI] ${current.name} decided: ${action.type}`, action.type === 'move' ? `to (${action.targetPosition?.x},${action.targetPosition?.y})` : action.type === 'attack' ? `target=${action.targetId} action=${action.action?.name}` : '')
 
       if (action.type === 'move' && action.targetPosition) {
         get().moveCombatant(current.id, action.targetPosition)
 
         // Wait for movement animation to fully complete before proceeding
+        let moveWaitTicks = 0
         while (get().movementAnimation || get().pendingMovement) {
           await new Promise((resolve) => setTimeout(resolve, 50))
+          moveWaitTicks++
+          if (moveWaitTicks > 200) { // 10 seconds safety valve
+            console.warn(`[AI] WARNING: Movement wait exceeded 10s for ${current.name}, breaking out`)
+            break
+          }
         }
         // Small extra delay for visual clarity
         await new Promise((resolve) => setTimeout(resolve, 200))
@@ -5555,39 +5569,66 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
         if (updatedCurrent && updatedCurrent.currentHp > 0) {
           const updatedGrid = get().grid
           const nextAction = getNextAIAction(updatedCurrent, updatedCombatants, updatedGrid, getFogCells(get().persistentZones), getGreaseCells(get().persistentZones))
+          console.warn(`[AI] ${current.name} post-move decided: ${nextAction.type}`, nextAction.type === 'attack' ? `target=${nextAction.targetId} action=${nextAction.action?.name}` : '')
           if (nextAction.type === 'attack' && nextAction.targetId && nextAction.action) {
             get().performAttack(updatedCurrent.id, nextAction.targetId, undefined, nextAction.action)
           }
+        } else {
+          console.warn(`[AI] ${current.name} died during movement (opportunity attack?)`)
         }
       } else if (action.type === 'attack' && action.targetId && action.action) {
         get().performAttack(current.id, action.targetId, undefined, action.action)
+      } else if (action.type === 'end') {
+        console.warn(`[AI] ${current.name} chose to end turn (no valid actions)`)
+      } else {
+        console.warn(`[AI] ${current.name} unhandled action type: ${action.type}`)
       }
 
       // Wait for any active projectiles to complete before ending turn
+      let projectileWaitTicks = 0
       while (get().activeProjectiles.length > 0) {
         await new Promise((resolve) => setTimeout(resolve, 50))
+        projectileWaitTicks++
+        if (projectileWaitTicks > 200) {
+          console.warn(`[AI] WARNING: Projectile wait exceeded 10s for ${current.name}, breaking out`)
+          break
+        }
       }
 
       // Wait for any pending triggers (Shield, Parry, maneuvers) to resolve
+      let triggerWaitTicks = 0
       while (get().pendingTrigger !== undefined) {
         await new Promise((resolve) => setTimeout(resolve, 50))
+        triggerWaitTicks++
+        if (triggerWaitTicks > 600) { // 30 seconds — player needs to respond
+          console.warn(`[AI] WARNING: Trigger wait exceeded 30s for ${current.name}, breaking out`)
+          break
+        }
       }
 
       // Wait for any pending heroic inspiration decisions to resolve
+      let heroicWaitTicks = 0
       while (get().pendingHeroicInspiration !== undefined) {
         await new Promise((resolve) => setTimeout(resolve, 50))
+        heroicWaitTicks++
+        if (heroicWaitTicks > 600) {
+          console.warn(`[AI] WARNING: Heroic inspiration wait exceeded 30s for ${current.name}, breaking out`)
+          break
+        }
       }
 
       // Check if there's a pending reaction - if so, don't end turn yet
       // The reaction handlers (useReactionSpell/skipReaction) will end the turn
       const hasPendingReaction = get().pendingReaction !== undefined
       if (hasPendingReaction) {
+        console.warn(`[AI] ${current.name} has pending reaction, deferring to reaction handler`)
         // The reaction handler will call endTurn(), and if the next turn is
         // also AI, the useEffect will re-trigger executeAITurn
         return
       }
 
       // End the monster's turn
+      console.warn(`[AI] ${current.name} ending turn`)
       await new Promise((resolve) => setTimeout(resolve, 500))
       get().endTurn()
 

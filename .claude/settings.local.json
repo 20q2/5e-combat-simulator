@@ -47,7 +47,14 @@
       "Bash(node_modules/.bin/tsc:*)",
       "Bash(echo:*)",
       "Bash(a:)",
-      "Bash(PATH=\"/c/Program Files/nodejs:$PATH\")"
+      "Bash(PATH=\"/c/Program Files/nodejs:$PATH\")",
+      "Bash(pushd:*)",
+      "Bash(popd:*)",
+      "Bash(GIT_DIR=\"a:/Coding/5e-combat-simulator/.git\" git diff:*)",
+      "Bash(\"F:\\\\Program Files\\\\Git\\\\cmd\\\\git.exe\" -C \"a:\\\\Coding\\\\5e-combat-simulator\" diff src/engine/ai.ts)",
+      "Bash(PATH=\"/usr/bin:/bin:/mingw64/bin:$PATH\" git -C \"a:/Coding/5e-combat-simulator\" diff src/engine/ai.ts)",
+      "Bash(git -C \"a:/Coding/5e-combat-simulator\" diff src/engine/ai.ts)",
+      "Bash(git -C \"a:/Coding/5e-combat-simulator\" diff --stat)"
     ]
   }
 }

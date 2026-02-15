@@ -6,7 +6,7 @@ import { useCharacterStore } from '@/stores/characterStore'
 import { getCharacterTokenImage } from '@/lib/tokenImages'
 import { cn } from '@/lib/utils'
 import type { Character } from '@/types'
-import { Trash2, Plus, Users, Heart, Shield, Footprints, Pencil } from 'lucide-react'
+import { Trash2, Plus, Heart, Shield, Footprints, Pencil } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 
 function SavedCharacterCard({
@@ -107,24 +107,9 @@ export function CharacterPage() {
 
   if (showCreator) {
     return (
-      <div className="space-y-6">
-        <div className="flex justify-between items-center">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight">Character Creator</h1>
-            <p className="text-muted-foreground">
-              Build your character step by step
-            </p>
-          </div>
-          {savedCharacters.length > 0 && (
-            <Button variant="outline" onClick={() => setShowCreator(false)}>
-              <Users className="w-4 h-4 mr-2" />
-              View Saved Characters
-            </Button>
-          )}
-        </div>
-
-        <CharacterCreator />
-      </div>
+      <CharacterCreator
+        onViewSaved={savedCharacters.length > 0 ? () => setShowCreator(false) : undefined}
+      />
     )
   }
 

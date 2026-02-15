@@ -9,7 +9,18 @@ import {
   getArmorById,
   getClassFeaturesByLevel,
   getSubclassFeaturesByLevel,
+  getBackgroundById,
 } from '@/data'
+
+const backgroundImages = import.meta.glob<{ default: string }>(
+  '@/assets/background_backgrounds/*.webp',
+  { eager: true }
+)
+
+function getBackgroundImage(backgroundName: string): string | null {
+  const path = `/src/assets/background_backgrounds/${backgroundName}.webp`
+  return backgroundImages[path]?.default ?? null
+}
 import {
   useCharacterStore,
   calculateFinalAbilityScores,
@@ -107,10 +118,22 @@ export function CharacterPreview() {
   // Calculate if we have enough to show certain sections
   const hasRaceOrClass = race || characterClass
   const hasEquipment = meleeWeapon || rangedWeapon || armor || draft.shieldEquipped
+  const background = draft.backgroundId ? getBackgroundById(draft.backgroundId) ?? null : null
+  const bgImage = background ? getBackgroundImage(background.name) : null
 
   return (
-    <Card className="sticky top-4">
-      <CardContent className="pt-6">
+    <Card className="sticky top-4 relative overflow-hidden">
+      {bgImage && (
+        <div className="absolute inset-x-0 top-0 h-1/2 pointer-events-none">
+          <img
+            src={bgImage}
+            alt=""
+            className="w-full h-full object-cover opacity-15"
+          />
+          <div className="absolute inset-0 bg-gradient-to-b from-transparent to-card" />
+        </div>
+      )}
+      <CardContent className="pt-6 relative">
         {/* Character Portrait & Name */}
         <div className="text-center mb-6">
           {/* Token with upload */}

@@ -47,16 +47,19 @@ function StepIndicator({
   steps,
   currentStepId,
   onStepClick,
+  trailing,
 }: {
   steps: StepDefinition[]
   currentStepId: string
   onStepClick: (stepId: string) => void
+  trailing?: React.ReactNode
 }) {
   const currentIndex = steps.findIndex(s => s.id === currentStepId)
 
   return (
-    <nav className="mb-8">
-      <ol className="flex items-center justify-center gap-2 flex-wrap">
+    <nav className="sticky top-0 z-40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 py-2 mb-4 -mx-4 px-4 border-b border-border/50">
+      <div className="flex items-center gap-2">
+      <ol className="flex items-center justify-center gap-1 flex-wrap flex-1">
         {steps.map((step, index) => {
           const Icon = step.icon
           const isCompleted = index < currentIndex
@@ -67,7 +70,7 @@ function StepIndicator({
               <button
                 onClick={() => onStepClick(step.id)}
                 className={cn(
-                  'flex items-center gap-2 px-3 py-2 rounded-lg transition-colors',
+                  'flex items-center gap-1.5 px-2 py-1 rounded-md transition-colors text-sm',
                   isCurrent
                     ? 'bg-primary text-primary-foreground'
                     : isCompleted
@@ -76,7 +79,7 @@ function StepIndicator({
                 )}
               >
                 <span className={cn(
-                  'flex items-center justify-center w-6 h-6 rounded-full',
+                  'flex items-center justify-center w-5 h-5 rounded-full',
                   isCurrent
                     ? 'bg-primary-foreground text-primary'
                     : isCompleted
@@ -84,16 +87,16 @@ function StepIndicator({
                       : 'bg-muted-foreground/20'
                 )}>
                   {isCompleted ? (
-                    <Check className="w-4 h-4" />
+                    <Check className="w-3 h-3" />
                   ) : (
-                    <Icon className="w-4 h-4" />
+                    <Icon className="w-3 h-3" />
                   )}
                 </span>
                 <span className="hidden sm:inline">{step.label}</span>
               </button>
               {index < steps.length - 1 && (
                 <div className={cn(
-                  'w-8 h-0.5 mx-1',
+                  'w-6 h-0.5 mx-0.5',
                   isCompleted ? 'bg-primary' : 'bg-muted'
                 )} />
               )}
@@ -101,6 +104,8 @@ function StepIndicator({
           )
         })}
       </ol>
+      {trailing}
+      </div>
     </nav>
   )
 }
@@ -132,7 +137,7 @@ function classHasOptions(classId: string, subclassId: string | null, classLevel:
   return false
 }
 
-export function CharacterCreator() {
+export function CharacterCreator({ onViewSaved }: { onViewSaved?: () => void }) {
   const { currentStep, setCurrentStep, draft, saveCharacter, resetDraft } = useCharacterStore()
   const navigate = useNavigate()
   const isEditing = !!draft.editingCharacterId
@@ -196,6 +201,7 @@ export function CharacterCreator() {
     const nextIndex = actualCurrentIndex + 1
     if (nextIndex < visibleSteps.length) {
       setCurrentStep(visibleSteps[nextIndex].id)
+      window.scrollTo({ top: 0 })
     }
   }
 
@@ -203,12 +209,14 @@ export function CharacterCreator() {
     const prevIndex = actualCurrentIndex - 1
     if (prevIndex >= 0) {
       setCurrentStep(visibleSteps[prevIndex].id)
+      window.scrollTo({ top: 0 })
     }
   }
 
   const handleStepClick = (stepId: string) => {
     if (visibleSteps.some(s => s.id === stepId)) {
       setCurrentStep(stepId)
+      window.scrollTo({ top: 0 })
     }
   }
 
@@ -284,6 +292,12 @@ export function CharacterCreator() {
         steps={visibleSteps}
         currentStepId={currentStepDef?.id ?? 'abilities'}
         onStepClick={handleStepClick}
+        trailing={onViewSaved && (
+          <Button variant="ghost" size="sm" onClick={onViewSaved} className="shrink-0 text-muted-foreground">
+            <Users className="w-4 h-4 mr-1.5" />
+            <span className="hidden sm:inline">Saved</span>
+          </Button>
+        )}
       />
 
       {isReviewStep ? (

@@ -1,34 +1,49 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { cn } from '@/lib/utils'
-import { getClassById, getSpellsForClassAtLevel, getSpellById } from '@/data'
+import { getClassById, getSpellsForClassAtLevel } from '@/data'
 import { useCharacterStore } from '@/stores/characterStore'
 import type { Spell } from '@/types'
-import { Sparkles, BookOpen, Info, Wand2 } from 'lucide-react'
+import { Sparkles, Wand2, ChevronDown, ChevronUp } from 'lucide-react'
 
 function SpellCard({
   spell,
   selected,
   onToggle,
   disabled,
+  isExpanded,
+  onExpand,
 }: {
   spell: Spell
   selected: boolean
   onToggle: () => void
   disabled?: boolean
+  isExpanded: boolean
+  onExpand: () => void
 }) {
   return (
-    <button
-      onClick={onToggle}
-      disabled={disabled && !selected}
-      className={cn(
-        'w-full text-left p-3 rounded-lg border-2 transition-all',
-        selected ? 'border-primary bg-primary/5' : 'border-border bg-slate-800/40',
-        disabled && !selected ? 'opacity-50 cursor-not-allowed' : 'hover:border-primary/50 hover:bg-slate-800/60 cursor-pointer'
-      )}
-    >
-      <div className="flex justify-between items-start gap-2">
-        <div className="flex-1 min-w-0">
+    <div className={cn(
+      'rounded-lg border-2 transition-all',
+      selected ? 'border-primary bg-primary/5' : 'border-border bg-slate-800/40',
+      disabled && !selected ? 'opacity-50' : ''
+    )}>
+      <div className="flex items-center gap-2 p-3">
+        <button
+          onClick={onToggle}
+          disabled={disabled && !selected}
+          className={cn(
+            'w-5 h-5 rounded border-2 shrink-0 flex items-center justify-center transition-colors',
+            selected ? 'border-primary bg-primary text-primary-foreground' : 'border-muted-foreground',
+            disabled && !selected ? 'cursor-not-allowed' : 'cursor-pointer'
+          )}
+        >
+          {selected && '✓'}
+        </button>
+        <button
+          onClick={onExpand}
+          className="flex-1 text-left min-w-0 cursor-pointer"
+        >
           <div className="flex items-center gap-2">
             <h4 className="font-medium text-sm truncate">{spell.name}</h4>
             {spell.concentration && (
@@ -45,45 +60,34 @@ function SpellCard({
           <p className="text-xs text-muted-foreground">
             {spell.school.charAt(0).toUpperCase() + spell.school.slice(1)} · {spell.castingTime}
           </p>
-        </div>
-        <div className={cn(
-          'w-5 h-5 rounded border-2 shrink-0 flex items-center justify-center',
-          selected ? 'border-primary bg-primary text-primary-foreground' : 'border-muted-foreground'
-        )}>
-          {selected && '✓'}
-        </div>
+        </button>
+        <button onClick={onExpand} className="shrink-0 text-muted-foreground hover:text-foreground transition-colors cursor-pointer">
+          {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+        </button>
       </div>
-    </button>
-  )
-}
-
-function SpellDetails({ spell }: { spell: Spell }) {
-  return (
-    <div className="p-4 bg-muted/50 rounded-lg">
-      <h4 className="font-semibold">{spell.name}</h4>
-      <p className="text-sm text-muted-foreground mb-2">
-        {spell.level === 0 ? 'Cantrip' : `Level ${spell.level}`} {spell.school}
-      </p>
-      <div className="text-sm space-y-1 mb-3">
-        <p><span className="font-medium">Casting Time:</span> {spell.castingTime}</p>
-        <p><span className="font-medium">Range:</span> {spell.range}</p>
-        <p><span className="font-medium">Duration:</span> {spell.duration}</p>
-        <p>
-          <span className="font-medium">Components:</span>{' '}
-          {[
-            spell.components.verbal && 'V',
-            spell.components.somatic && 'S',
-            spell.components.material && `M (${spell.components.material})`,
-          ]
-            .filter(Boolean)
-            .join(', ')}
-        </p>
-      </div>
-      <p className="text-sm">{spell.description}</p>
-      {spell.higherLevels && (
-        <p className="text-sm mt-2 text-muted-foreground">
-          <span className="font-medium">At Higher Levels:</span> {spell.higherLevels}
-        </p>
+      {isExpanded && (
+        <div className="px-3 pb-3 pt-0 border-t border-border/50">
+          <div className="text-sm space-y-1 mt-2 mb-2">
+            <p><span className="font-medium text-muted-foreground">Range:</span> {spell.range}</p>
+            <p><span className="font-medium text-muted-foreground">Duration:</span> {spell.duration}</p>
+            <p>
+              <span className="font-medium text-muted-foreground">Components:</span>{' '}
+              {[
+                spell.components.verbal && 'V',
+                spell.components.somatic && 'S',
+                spell.components.material && `M (${spell.components.material})`,
+              ]
+                .filter(Boolean)
+                .join(', ')}
+            </p>
+          </div>
+          <p className="text-sm text-muted-foreground">{spell.description}</p>
+          {spell.higherLevels && (
+            <p className="text-sm mt-2 text-cyan-400/80">
+              <span className="font-medium">At Higher Levels:</span> {spell.higherLevels}
+            </p>
+          )}
+        </div>
       )}
     </div>
   )
@@ -96,6 +100,7 @@ function ClassSpellSection({ classId }: { classId: string }) {
   const draft = useCharacterStore((state) => state.draft)
   const toggleClassSpell = useCharacterStore((state) => state.toggleClassSpell)
   const toggleClassCantrip = useCharacterStore((state) => state.toggleClassCantrip)
+  const [expandedSpellId, setExpandedSpellId] = useState<string | null>(null)
 
   const entry = draft.classEntries.find(e => e.classId === classId)
   const selectedClass = getClassById(classId) ?? null
@@ -122,7 +127,7 @@ function ClassSpellSection({ classId }: { classId: string }) {
     return getSpellsForClassAtLevel(selectedClass.name, maxSpellLevel)
   }, [selectedClass, maxSpellLevel])
 
-  const cantrips = availableSpells.filter((s) => s.level === 0)
+  const cantrips = availableSpells.filter((s) => s.level === 0).sort((a, b) => a.name.localeCompare(b.name))
   const leveledSpells = availableSpells.filter((s) => s.level > 0)
 
   const spellsByLevel = useMemo(() => {
@@ -130,6 +135,9 @@ function ClassSpellSection({ classId }: { classId: string }) {
     for (const spell of leveledSpells) {
       if (!grouped[spell.level]) grouped[spell.level] = []
       grouped[spell.level].push(spell)
+    }
+    for (const level of Object.keys(grouped)) {
+      grouped[Number(level)].sort((a, b) => a.name.localeCompare(b.name))
     }
     return grouped
   }, [leveledSpells])
@@ -139,35 +147,53 @@ function ClassSpellSection({ classId }: { classId: string }) {
   const isPreparedCaster = spellcasting?.preparedCaster ?? false
   const preparedLimit = isPreparedCaster ? classLevel + 3 : undefined
 
-  const lastSelectedId = selectedSpellIds.length > 0
-    ? selectedSpellIds[selectedSpellIds.length - 1]
-    : selectedCantrips.length > 0
-      ? selectedCantrips[selectedCantrips.length - 1]
-      : null
-  const selectedSpell = lastSelectedId ? getSpellById(lastSelectedId) : null
+  const spellLevels = Object.keys(spellsByLevel).map(Number).sort((a, b) => a - b)
 
   if (!spellcasting) return null
 
+  const handleExpand = (spellId: string) => {
+    setExpandedSpellId(expandedSpellId === spellId ? null : spellId)
+  }
+
   return (
-    <div className="space-y-4">
-      <h3 className="text-lg font-semibold flex items-center gap-2">
-        <Wand2 className="w-5 h-5 text-violet-400" />
-        {selectedClass?.name} Spells (Level {classLevel})
-      </h3>
-      <div className="grid md:grid-cols-3 gap-6">
-        {/* Cantrips */}
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-lg flex items-center gap-2">
-              <Sparkles className="w-5 h-5 text-cyan-400" />
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Wand2 className="w-5 h-5 text-violet-400" />
+          {selectedClass?.name} Spells (Level {classLevel})
+        </CardTitle>
+        <CardDescription>
+          {isPreparedCaster ? (
+            <>Prepared: {selectedSpellIds.length} (suggested max: {preparedLimit})</>
+          ) : (
+            <>Known: {selectedSpellIds.length}{spellsKnown ? ` / ${spellsKnown}` : ''}</>
+          )}
+          {' · '}Cantrips: {selectedCantrips.length} / {cantripsKnown}
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <Tabs defaultValue="cantrips">
+          <TabsList className="mb-4 flex-wrap h-auto gap-1">
+            <TabsTrigger value="cantrips" className="gap-1.5">
+              <Sparkles className="w-3.5 h-3.5" />
               Cantrips
-            </CardTitle>
-            <CardDescription>
-              Selected: {selectedCantrips.length} / {cantripsKnown}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-2 max-h-[400px] overflow-y-auto pr-2">
+              <span className="text-xs opacity-70">({selectedCantrips.length}/{cantripsKnown})</span>
+            </TabsTrigger>
+            {spellLevels.map((level) => {
+              const count = spellsByLevel[level]?.filter(s => selectedSpellIds.includes(s.id)).length ?? 0
+              return (
+                <TabsTrigger key={level} value={`level-${level}`} className="gap-1.5">
+                  Level {level}
+                  {count > 0 && (
+                    <span className="text-xs bg-primary/20 text-primary px-1.5 rounded-full">{count}</span>
+                  )}
+                </TabsTrigger>
+              )
+            })}
+          </TabsList>
+
+          <TabsContent value="cantrips">
+            <div className="space-y-2 max-h-[500px] overflow-y-auto pr-1">
               {cantrips.map((spell) => (
                 <SpellCard
                   key={spell.id}
@@ -178,82 +204,38 @@ function ClassSpellSection({ classId }: { classId: string }) {
                     selectedCantrips.length >= cantripsKnown &&
                     !selectedCantrips.includes(spell.id)
                   }
+                  isExpanded={expandedSpellId === spell.id}
+                  onExpand={() => handleExpand(spell.id)}
                 />
               ))}
             </div>
-          </CardContent>
-        </Card>
+          </TabsContent>
 
-        {/* Leveled Spells */}
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-lg flex items-center gap-2">
-              <BookOpen className="w-5 h-5 text-violet-400" />
-              Spells
-            </CardTitle>
-            <CardDescription>
-              {isPreparedCaster ? (
-                <>Prepared: {selectedSpellIds.length} (suggested max: {preparedLimit})</>
-              ) : (
-                <>Known: {selectedSpellIds.length}{spellsKnown ? ` / ${spellsKnown}` : ''}</>
-              )}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4 max-h-[400px] overflow-y-auto pr-2">
-              {Object.entries(spellsByLevel)
-                .sort(([a], [b]) => parseInt(a) - parseInt(b))
-                .map(([level, spells]) => (
-                  <div key={level}>
-                    <h4 className="font-medium text-sm text-muted-foreground mb-2">
-                      Level {level}
-                    </h4>
-                    <div className="space-y-2">
-                      {spells.map((spell) => (
-                        <SpellCard
-                          key={spell.id}
-                          spell={spell}
-                          selected={selectedSpellIds.includes(spell.id)}
-                          onToggle={() => toggleClassSpell(classId, spell.id)}
-                          disabled={
-                            !isPreparedCaster &&
-                            spellsKnown !== undefined &&
-                            selectedSpellIds.length >= spellsKnown &&
-                            !selectedSpellIds.includes(spell.id)
-                          }
-                        />
-                      ))}
-                    </div>
-                  </div>
+          {spellLevels.map((level) => (
+            <TabsContent key={level} value={`level-${level}`}>
+              <div className="space-y-2 max-h-[500px] overflow-y-auto pr-1">
+                {spellsByLevel[level].map((spell) => (
+                  <SpellCard
+                    key={spell.id}
+                    spell={spell}
+                    selected={selectedSpellIds.includes(spell.id)}
+                    onToggle={() => toggleClassSpell(classId, spell.id)}
+                    disabled={
+                      !isPreparedCaster &&
+                      spellsKnown !== undefined &&
+                      selectedSpellIds.length >= spellsKnown &&
+                      !selectedSpellIds.includes(spell.id)
+                    }
+                    isExpanded={expandedSpellId === spell.id}
+                    onExpand={() => handleExpand(spell.id)}
+                  />
                 ))}
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Spell Details */}
-        <div>
-          {selectedSpell ? (
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <Info className="w-5 h-5 text-blue-400" />
-                  Spell Details
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <SpellDetails spell={selectedSpell} />
-              </CardContent>
-            </Card>
-          ) : (
-            <Card className="h-full flex items-center justify-center">
-              <CardContent className="text-center text-muted-foreground py-12">
-                Select a spell to see its details
-              </CardContent>
-            </Card>
-          )}
-        </div>
-      </div>
-    </div>
+              </div>
+            </TabsContent>
+          ))}
+        </Tabs>
+      </CardContent>
+    </Card>
   )
 }
 

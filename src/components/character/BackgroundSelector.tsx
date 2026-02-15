@@ -13,6 +13,16 @@ import {
   Briefcase,
 } from 'lucide-react'
 
+const backgroundImages = import.meta.glob<{ default: string }>(
+  '@/assets/background_backgrounds/*.webp',
+  { eager: true }
+)
+
+function getBackgroundImage(backgroundName: string): string | null {
+  const path = `/src/assets/background_backgrounds/${backgroundName}.webp`
+  return backgroundImages[path]?.default ?? null
+}
+
 function BackgroundCard({
   background,
   selected,
@@ -23,20 +33,30 @@ function BackgroundCard({
   onSelect: () => void
 }) {
   const defaultFeat = ORIGIN_FEATS.find((f) => f.id === background.defaultOriginFeat)
+  const bgImage = getBackgroundImage(background.name)
 
   return (
     <button
       onClick={onSelect}
       className={cn(
-        'w-full text-left p-4 rounded-lg border-2 transition-all cursor-pointer',
-        'hover:border-primary/50 hover:bg-slate-800/60',
+        'relative w-full text-left p-4 rounded-lg border-2 transition-all cursor-pointer overflow-hidden',
+        'hover:border-primary/50',
         selected ? 'border-primary bg-primary/5' : 'border-border bg-slate-800/40'
       )}
     >
-      <div>
+      {bgImage && (
+        <div className="absolute inset-y-0 right-0 w-1/2 pointer-events-none">
+          <img
+            src={bgImage}
+            alt=""
+            className="w-full h-full object-cover opacity-20"
+          />
+          <div className="absolute inset-0 bg-gradient-to-r from-slate-900 via-slate-900/60 to-transparent" />
+        </div>
+      )}
+      <div className="relative">
         <h3 className="font-semibold">{background.name}</h3>
-        <p className="text-sm text-muted-foreground line-clamp-2">{background.description}</p>
-        <div className="mt-2 flex flex-wrap gap-1">
+        <div className="mt-1 flex flex-wrap gap-1">
           {background.skillProficiencies.map((skill) => (
             <span key={skill} className="text-xs bg-blue-500/20 text-blue-400 px-1.5 py-0.5 rounded">
               {skill}
@@ -175,9 +195,9 @@ export function BackgroundSelector() {
       : undefined
 
   return (
-    <div className="grid md:grid-cols-2 gap-6">
+    <div className="grid md:grid-cols-2 gap-6 max-h-[calc(100vh-220px)]">
       {/* Background List */}
-      <Card className="flex flex-col">
+      <Card className="flex flex-col min-h-0 max-h-[calc(100vh-220px)]">
         <CardHeader className="flex-shrink-0">
           <CardTitle className="flex items-center gap-2">
             <BookOpen className="w-5 h-5 text-cyan-400" />
@@ -202,7 +222,7 @@ export function BackgroundSelector() {
       </Card>
 
       {/* Background Details and Origin Feat */}
-      <div className="space-y-4">
+      <div className="space-y-4 overflow-y-auto min-h-0">
         {selectedBackground ? (
           <>
             <BackgroundDetails background={selectedBackground} />

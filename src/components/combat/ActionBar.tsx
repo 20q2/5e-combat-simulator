@@ -1323,12 +1323,17 @@ export function ActionBar() {
   isExecutingAIRef.current = isExecutingAI
   useEffect(() => {
     if (phase !== 'combat') return
-    if (isExecutingAIRef.current) return
+    if (isExecutingAIRef.current) {
+      console.warn(`[AI] useEffect: skipping — already executing AI (turnIndex=${currentTurnIndex})`)
+      return
+    }
     if (!isAITurn()) return
 
+    console.warn(`[AI] useEffect: triggering AI turn (turnIndex=${currentTurnIndex})`)
     const timeoutId = setTimeout(() => {
       setIsExecutingAI(true)
       executeAITurn().finally(() => {
+        console.warn('[AI] useEffect: executeAITurn completed')
         setIsExecutingAI(false)
       })
     }, 100)
