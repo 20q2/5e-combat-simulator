@@ -362,21 +362,18 @@ export function EquipmentSelector() {
                   None
                 </button>
 
-                {/* Shield option */}
-                {shield && (
+                {/* Shield option - only show if proficient */}
+                {shield && canUseShield && (
                   <button
                     onClick={() => setShield(true)}
-                    disabled={!canUseShield}
                     className={cn(
-                      'px-3 py-2 rounded-lg border-2 transition-all text-sm',
+                      'px-3 py-2 rounded-lg border-2 transition-all text-sm cursor-pointer',
                       draft.shieldEquipped
                         ? 'border-primary bg-primary/5'
-                        : 'border-border bg-slate-800/40',
-                      canUseShield ? 'hover:border-primary/50 hover:bg-slate-800/60 cursor-pointer' : 'opacity-50 cursor-not-allowed'
+                        : 'border-border bg-slate-800/40 hover:border-primary/50 hover:bg-slate-800/60',
                     )}
                   >
                     Shield (+2 AC)
-                    {!canUseShield && <span className="text-xs text-destructive ml-1">(not proficient)</span>}
                   </button>
                 )}
 

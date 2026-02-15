@@ -45,13 +45,13 @@ function BackgroundCard({
       )}
     >
       {bgImage && (
-        <div className="absolute inset-y-0 right-0 w-1/2 pointer-events-none">
+        <div className="absolute inset-0 pointer-events-none">
           <img
             src={bgImage}
             alt=""
             className="w-full h-full object-cover opacity-20"
           />
-          <div className="absolute inset-0 bg-gradient-to-r from-slate-900 via-slate-900/60 to-transparent" />
+          <div className="absolute inset-0 bg-gradient-to-r from-slate-900/90 via-slate-900/60 to-transparent" />
         </div>
       )}
       <div className="relative">

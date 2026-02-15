@@ -201,7 +201,7 @@ interface CombatStore extends CombatState {
   setHoveredTarget: (id: string | undefined) => void
   setRangeHighlight: (highlight: CombatState['rangeHighlight']) => void
   setAoEPreview: (preview: CombatState['aoePreview']) => void
-  setSelectedSpell: (spell: Spell | undefined) => void
+  setSelectedSpell: (spell: Spell | undefined, castAtLevel?: number) => void
 
   // Projectile targeting
   startProjectileTargeting: (spell: Spell, castAtLevel?: number) => void
@@ -314,6 +314,9 @@ interface CombatStore extends CombatState {
 
   // Expeditious Retreat bonus action Dash
   useExpeditiousRetreatDash: () => void
+
+  // Drop concentration voluntarily
+  dropConcentration: (combatantId: string) => void
 
   // Witch Bolt bonus action zap
   useWitchBoltZap: () => void
@@ -838,6 +841,12 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
       actorName: 'System',
       message: 'Combat has begun!',
     })
+
+    // Show a popup on the first combatant's token
+    const { turnOrder } = get()
+    if (turnOrder.length > 0) {
+      get().addCombatPopup(turnOrder[0], 'condition', 'FIGHT!')
+    }
   },
 
   rollAllInitiative: () => {
@@ -1148,8 +1157,8 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
     set({ aoePreview: preview })
   },
 
-  setSelectedSpell: (spell) => {
-    set({ selectedSpell: spell })
+  setSelectedSpell: (spell, castAtLevel) => {
+    set({ selectedSpell: spell, selectedSpellCastAtLevel: castAtLevel })
   },
 
   // Projectile targeting
@@ -1233,6 +1242,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
     set({
       projectileTargeting: undefined,
       selectedSpell: undefined,
+      selectedSpellCastAtLevel: undefined,
       selectedAction: undefined,
       rangeHighlight: undefined,
       hoveredTargetId: undefined,
@@ -1243,6 +1253,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
     set({
       projectileTargeting: undefined,
       selectedSpell: undefined,
+      selectedSpellCastAtLevel: undefined,
       selectedAction: undefined,
       rangeHighlight: undefined,
       hoveredTargetId: undefined,
@@ -1323,6 +1334,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
     set({
       multiTargetSelection: undefined,
       selectedSpell: undefined,
+      selectedSpellCastAtLevel: undefined,
       selectedAction: undefined,
       rangeHighlight: undefined,
       hoveredTargetId: undefined,
@@ -1334,6 +1346,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
     set({
       multiTargetSelection: undefined,
       selectedSpell: undefined,
+      selectedSpellCastAtLevel: undefined,
       selectedAction: undefined,
       rangeHighlight: undefined,
       hoveredTargetId: undefined,
@@ -1928,6 +1941,40 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
         // Handle Shield spell
         const acBonus = 5
         const newAC = targetAC + acBonus
+
+        // Consume a level 1 spell slot
+        if (reactor.type === 'character') {
+          const reactorChar = reactor.data as Character
+          const spellSlots = reactorChar.spellSlots
+          if (spellSlots) {
+            // Find lowest available slot level (Shield can be upcast but defaults to level 1)
+            let slotLevel: number | undefined
+            for (let lvl = 1; lvl <= 9; lvl++) {
+              const slot = spellSlots[lvl as keyof typeof spellSlots]
+              if (slot && slot.current > 0) {
+                slotLevel = lvl
+                break
+              }
+            }
+            if (slotLevel !== undefined) {
+              const slot = spellSlots[slotLevel as keyof typeof spellSlots]!
+              const updatedSpellSlots = { ...spellSlots, [slotLevel]: { ...slot, current: slot.current - 1 } }
+              set((state) => ({
+                combatants: state.combatants.map(c =>
+                  c.id === reactor.id && c.type === 'character'
+                    ? { ...c, data: { ...(c.data as Character), spellSlots: updatedSpellSlots } }
+                    : c
+                ),
+              }))
+              get().addLogEntry({
+                type: 'spell',
+                actorId: reactor.id,
+                actorName: reactor.name,
+                message: `${reactor.name} uses a level ${slotLevel} spell slot (${slot.current - 1}/${slot.max} remaining)`,
+              })
+            }
+          }
+        }
 
         // Log the Shield cast
         get().addLogEntry({
@@ -2719,6 +2766,31 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
             })
           }
         }
+      }
+    }
+
+    // If target dropped to 0 HP, end any Witch Bolt concentration linked to them
+    if (result.newHp <= 0) {
+      const witchBoltCasters = get().combatants.filter(c => c.witchBoltTargetId === targetId)
+      for (const caster of witchBoltCasters) {
+        set((state) => ({
+          combatants: state.combatants.map(c =>
+            c.id === caster.id
+              ? {
+                  ...c,
+                  witchBoltTargetId: undefined,
+                  concentratingOn: undefined,
+                  conditions: c.conditions.filter(cond => cond.condition !== 'witch_bolt'),
+                }
+              : c
+          ),
+        }))
+        get().addLogEntry({
+          type: 'spell',
+          actorId: caster.id,
+          actorName: caster.name,
+          message: `${caster.name}'s Witch Bolt ends (target died)`,
+        })
       }
     }
   },
@@ -5303,6 +5375,92 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
     }))
   },
 
+  // Drop concentration voluntarily (free action)
+  dropConcentration: (combatantId: string) => {
+    const combatant = get().combatants.find(c => c.id === combatantId)
+    if (!combatant || !combatant.concentratingOn) return
+
+    const spell = combatant.concentratingOn
+
+    // Clean up zone effects
+    if (spell.createsZone) {
+      set((state) => ({
+        persistentZones: state.persistentZones.filter(z => z.casterId !== combatantId),
+      }))
+    }
+
+    // Remove self-buff condition
+    if (spell.conditionOnSelf) {
+      const condToRemove = spell.conditionOnSelf
+      set((state) => ({
+        combatants: state.combatants.map((c) =>
+          c.id === combatantId
+            ? { ...c, conditions: c.conditions.filter(ac => ac.condition !== condToRemove) }
+            : c
+        ),
+      }))
+    }
+
+    // Clear Witch Bolt target link
+    if (spell.id === 'witch-bolt') {
+      set((state) => ({
+        combatants: state.combatants.map((c) =>
+          c.id === combatantId
+            ? { ...c, witchBoltTargetId: undefined }
+            : c
+        ),
+      }))
+    }
+
+    // Remove target-buff conditions
+    if (spell.conditionOnTarget) {
+      const condToRemove = spell.conditionOnTarget
+      const sourceMatch = `${combatant.name}'s ${spell.name}`
+      set((state) => ({
+        combatants: state.combatants.map((c) => ({
+          ...c,
+          conditions: c.conditions.filter(ac => !(ac.condition === condToRemove && ac.source === sourceMatch)),
+        })),
+      }))
+    }
+
+    // Remove multi-conditions (Tasha's Hideous Laughter, etc.)
+    if (spell.conditionsOnFailedSave) {
+      const sourceMatch = `${combatant.name}'s ${spell.name}`
+      set((state) => ({
+        combatants: state.combatants.map((c) => ({
+          ...c,
+          conditions: c.conditions.filter(ac => ac.source !== sourceMatch),
+        })),
+      }))
+    }
+
+    // Remove debuff conditions from other combatants
+    if (spell.conditionOnFailedSave) {
+      const sourceMatch = `${combatant.name}'s ${spell.name}`
+      set((state) => ({
+        combatants: state.combatants.map((c) => ({
+          ...c,
+          conditions: c.conditions.filter(ac => !(ac.casterId === combatantId && ac.source === sourceMatch)),
+        })),
+      }))
+    }
+
+    // Clear concentration
+    set((state) => ({
+      combatants: state.combatants.map((c) =>
+        c.id === combatantId ? { ...c, concentratingOn: undefined } : c
+      ),
+    }))
+
+    get().addLogEntry({
+      type: 'spell',
+      actorId: combatantId,
+      actorName: combatant.name,
+      message: `${combatant.name} drops concentration on ${spell.name}.`,
+    })
+  },
+
   // Witch Bolt: bonus action to deal 1d12 lightning damage to linked target
   useWitchBoltZap: () => {
     const { turnOrder, currentTurnIndex, combatants } = get()
@@ -5548,6 +5706,8 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
       console.warn(`[AI] ${current.name} decided: ${action.type}`, action.type === 'move' ? `to (${action.targetPosition?.x},${action.targetPosition?.y})` : action.type === 'attack' ? `target=${action.targetId} action=${action.action?.name}` : '')
 
       if (action.type === 'move' && action.targetPosition) {
+        const preMovePosX = current.position.x
+        const preMovePosY = current.position.y
         get().moveCombatant(current.id, action.targetPosition)
 
         // Wait for movement animation to fully complete before proceeding
@@ -5566,15 +5726,18 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
         // Get next action after move (monster may have died from opportunity attack)
         const updatedCombatants = get().combatants
         const updatedCurrent = updatedCombatants.find((c) => c.id === currentId)
-        if (updatedCurrent && updatedCurrent.currentHp > 0) {
+        if (!updatedCurrent || updatedCurrent.currentHp <= 0) {
+          console.warn(`[AI] ${current.name} died during movement (opportunity attack?)`)
+        } else if (updatedCurrent.position.x === preMovePosX && updatedCurrent.position.y === preMovePosY) {
+          // Move silently failed (pathfinding mismatch between AI and moveCombatant)
+          console.warn(`[AI] ${current.name} move failed (position unchanged at ${preMovePosX},${preMovePosY}), ending turn`)
+        } else {
           const updatedGrid = get().grid
           const nextAction = getNextAIAction(updatedCurrent, updatedCombatants, updatedGrid, getFogCells(get().persistentZones), getGreaseCells(get().persistentZones))
           console.warn(`[AI] ${current.name} post-move decided: ${nextAction.type}`, nextAction.type === 'attack' ? `target=${nextAction.targetId} action=${nextAction.action?.name}` : '')
           if (nextAction.type === 'attack' && nextAction.targetId && nextAction.action) {
             get().performAttack(updatedCurrent.id, nextAction.targetId, undefined, nextAction.action)
           }
-        } else {
-          console.warn(`[AI] ${current.name} died during movement (opportunity attack?)`)
         }
       } else if (action.type === 'attack' && action.targetId && action.action) {
         get().performAttack(current.id, action.targetId, undefined, action.action)

@@ -194,11 +194,11 @@ function getCubeAffectedCells(
 ): Set<string> {
   const cells = new Set<string>()
   const sizeSquares = Math.ceil(sizeFeet / 5)
-  const halfSize = Math.floor(sizeSquares / 2)
+  const offset = Math.floor((sizeSquares - 1) / 2)
 
-  for (let dx = -halfSize; dx <= halfSize; dx++) {
-    for (let dy = -halfSize; dy <= halfSize; dy++) {
-      cells.add(`${target.x + dx},${target.y + dy}`)
+  for (let dx = 0; dx < sizeSquares; dx++) {
+    for (let dy = 0; dy < sizeSquares; dy++) {
+      cells.add(`${target.x + dx - offset},${target.y + dy - offset}`)
     }
   }
 

@@ -372,6 +372,7 @@ export function CombatGrid() {
     getValidTargets,
     performAttack,
     castSpell,
+    selectedSpellCastAtLevel,
     setSelectedAction,
     setHoveredTarget,
     setSelectedSpell,
@@ -954,7 +955,7 @@ export function CombatGrid() {
       const targetAtPosition = combatants.find(
         c => c.position.x === x && c.position.y === y && c.currentHp > 0
       )
-      castSpell(currentTurnId, selectedSpell, targetAtPosition?.id, position)
+      castSpell(currentTurnId, selectedSpell, targetAtPosition?.id, position, undefined, selectedSpellCastAtLevel)
       // Clear spell state
       setSelectedSpell(undefined)
       setAoEPreview(undefined)
@@ -1018,7 +1019,7 @@ export function CombatGrid() {
     // In AoE spell mode, clicking a token casts the spell targeting that combatant
     if (phase === 'combat' && aoePreview && selectedSpell && currentTurnId) {
       const targetCombatant = combatants.find(c => c.id === combatantId)
-      castSpell(currentTurnId, selectedSpell, combatantId, targetCombatant?.position)
+      castSpell(currentTurnId, selectedSpell, combatantId, targetCombatant?.position, undefined, selectedSpellCastAtLevel)
       // Clear spell state
       setSelectedSpell(undefined)
       setAoEPreview(undefined)
@@ -1044,7 +1045,7 @@ export function CombatGrid() {
     // In single-target spell mode, clicking a valid target casts the spell
     if (phase === 'combat' && selectedSpell && !aoePreview && !projectileTargeting && currentTurnId && validTargetIds.has(combatantId)) {
       setHoveredTarget(undefined)
-      castSpell(currentTurnId, selectedSpell, combatantId)
+      castSpell(currentTurnId, selectedSpell, combatantId, undefined, undefined, selectedSpellCastAtLevel)
       // Clear spell state
       setSelectedSpell(undefined)
       setRangeHighlight(undefined)

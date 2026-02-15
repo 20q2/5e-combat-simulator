@@ -137,7 +137,7 @@ function classHasOptions(classId: string, subclassId: string | null, classLevel:
   return false
 }
 
-export function CharacterCreator({ onViewSaved }: { onViewSaved?: () => void }) {
+export function CharacterCreator() {
   const { currentStep, setCurrentStep, draft, saveCharacter, resetDraft } = useCharacterStore()
   const navigate = useNavigate()
   const isEditing = !!draft.editingCharacterId
@@ -292,20 +292,14 @@ export function CharacterCreator({ onViewSaved }: { onViewSaved?: () => void }) 
         steps={visibleSteps}
         currentStepId={currentStepDef?.id ?? 'abilities'}
         onStepClick={handleStepClick}
-        trailing={onViewSaved && (
-          <Button variant="ghost" size="sm" onClick={onViewSaved} className="shrink-0 text-muted-foreground">
-            <Users className="w-4 h-4 mr-1.5" />
-            <span className="hidden sm:inline">Saved</span>
-          </Button>
-        )}
       />
 
       {isReviewStep ? (
-        <div className="max-w-5xl mx-auto pb-20">
+        <div className="max-w-5xl mx-auto pb-28">
           <CurrentStepComponent />
         </div>
       ) : (
-        <div className="flex gap-6 pb-20">
+        <div className="flex gap-6 pb-28">
           {/* Main Content - Left Side */}
           <div className="flex-1 min-w-0">
             <CurrentStepComponent />

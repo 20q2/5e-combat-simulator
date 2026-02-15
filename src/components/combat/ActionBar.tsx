@@ -52,28 +52,49 @@ import { canUseBattleMedic, getLuckPoints } from '@/engine/originFeats'
 import type { AttackReplacement, AoEAttackReplacement } from '@/types'
 import { Flame, Stethoscope, GripHorizontal } from 'lucide-react'
 
-// Hook for making popover menus draggable by their header
-function useDraggable() {
-  const [offset, setOffset] = useState({ x: 0, y: 0 })
+// Persisted drag offsets and sizes so panels reopen where/how the user last placed them
+const savedOffsets: Record<string, { x: number; y: number }> = {}
+const savedSizes: Record<string, { w: number; h: number }> = {}
+
+// Hook for making popover menus draggable and resizable
+function useDraggable(key?: string) {
+  const initial = (key && savedOffsets[key]) || { x: 0, y: 0 }
+  const [offset, setOffset] = useState(initial)
   const dragging = useRef(false)
   const startPos = useRef({ x: 0, y: 0 })
 
+  const initialSize = (key && savedSizes[key]) || null
+  const [size, setSize] = useState<{ w: number; h: number } | null>(initialSize)
+  const resizing = useRef(false)
+  const resizeStart = useRef({ x: 0, y: 0, w: 0, h: 0 })
+
   useEffect(() => {
     const onMove = (e: MouseEvent) => {
-      if (!dragging.current) return
-      setOffset({
-        x: e.clientX - startPos.current.x,
-        y: e.clientY - startPos.current.y,
-      })
+      if (dragging.current) {
+        const next = {
+          x: e.clientX - startPos.current.x,
+          y: e.clientY - startPos.current.y,
+        }
+        setOffset(next)
+        if (key) savedOffsets[key] = next
+      }
+      if (resizing.current) {
+        const next = {
+          w: Math.max(200, resizeStart.current.w + (e.clientX - resizeStart.current.x)),
+          h: Math.max(120, resizeStart.current.h - (e.clientY - resizeStart.current.y)),
+        }
+        setSize(next)
+        if (key) savedSizes[key] = next
+      }
     }
-    const onUp = () => { dragging.current = false }
+    const onUp = () => { dragging.current = false; resizing.current = false }
     window.addEventListener('mousemove', onMove)
     window.addEventListener('mouseup', onUp)
     return () => {
       window.removeEventListener('mousemove', onMove)
       window.removeEventListener('mouseup', onUp)
     }
-  }, [])
+  }, [key])
 
   const onDragStart = (e: React.MouseEvent) => {
     dragging.current = true
@@ -81,9 +102,27 @@ function useDraggable() {
     e.preventDefault()
   }
 
+  const onResizeStart = (e: React.MouseEvent) => {
+    resizing.current = true
+    const el = (e.target as HTMLElement).closest('[data-panel]') as HTMLElement | null
+    const rect = el?.getBoundingClientRect()
+    resizeStart.current = {
+      x: e.clientX,
+      y: e.clientY,
+      w: rect?.width ?? 320,
+      h: rect?.height ?? 200,
+    }
+    e.preventDefault()
+    e.stopPropagation()
+  }
+
   return {
     onDragStart,
-    dragStyle: { transform: `translate(calc(-50% + ${offset.x}px), ${offset.y}px)` } as React.CSSProperties,
+    onResizeStart,
+    dragStyle: {
+      transform: `translate(calc(-50% + ${offset.x}px), ${offset.y}px)`,
+      ...(size ? { width: `${size.w}px`, height: `${size.h}px` } : {}),
+    } as React.CSSProperties,
   }
 }
 
@@ -294,14 +333,14 @@ function TargetSelector({
   onHover?: (targetId: string | undefined) => void
   label?: string
 }) {
-  const { onDragStart, dragStyle } = useDraggable()
+  const { onDragStart, onResizeStart, dragStyle } = useDraggable('target')
   return (
-    <div className="absolute bottom-full left-1/2 mb-2 w-64 bg-slate-900/85 backdrop-blur-md border-2 border-slate-700 rounded-lg shadow-2xl p-3 z-50" style={dragStyle}>
+    <div data-panel className="absolute bottom-full left-1/2 mb-2 w-64 flex flex-col bg-slate-900/85 backdrop-blur-md border-2 border-slate-700 rounded-lg shadow-2xl p-3 z-50" style={dragStyle}>
       <div className="text-sm font-semibold text-slate-200 mb-2 cursor-grab active:cursor-grabbing select-none flex items-center justify-between" onMouseDown={onDragStart}>
         {label}
         <GripHorizontal className="w-4 h-4 text-slate-600" />
       </div>
-      <div className="space-y-1 max-h-48 overflow-y-auto">
+      <div className="space-y-1 flex-1 overflow-y-auto">
         {targets.map((target) => (
           <button
             key={target.id}
@@ -317,10 +356,13 @@ function TargetSelector({
       </div>
       <button
         onClick={onCancel}
-        className="w-full mt-2 p-2 text-sm text-slate-400 hover:text-slate-200 transition-colors"
+        className="w-full mt-2 p-2 text-sm text-slate-400 hover:text-slate-200 transition-colors shrink-0"
       >
         Cancel
       </button>
+      <div className="absolute bottom-0 right-0 w-4 h-4 cursor-nwse-resize flex items-end justify-end pr-0.5 pb-0.5 text-slate-500 hover:text-slate-300 transition-colors" onMouseDown={onResizeStart}>
+        <svg width="7" height="7" viewBox="0 0 7 7" fill="none"><path d="M5.5 7L7 5.5M2.5 7L7 2.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" /></svg>
+      </div>
     </div>
   )
 }
@@ -367,7 +409,7 @@ function WeaponTargetSelector({
   const [selectedWeapon, setSelectedWeapon] = useState<WeaponOption | undefined>(
     weapons.find(w => w.id === initialWeaponId) ?? (weapons.length > 0 ? weapons[0] : undefined)
   )
-  const { onDragStart, dragStyle } = useDraggable()
+  const { onDragStart, onResizeStart, dragStyle } = useDraggable('weapon')
   const { getValidTargets } = useCombatStore()
   const currentCombatant = getCurrentCombatant(useCombatStore.getState())
 
@@ -393,15 +435,15 @@ function WeaponTargetSelector({
   const isBreathWeaponSelected = selectedWeapon?.type === 'breath_weapon'
 
   return (
-    <div className="absolute bottom-full left-1/2 mb-2 bg-slate-900/85 backdrop-blur-md border-2 border-rose-800 rounded-lg shadow-2xl p-3 z-50" style={dragStyle}>
-      <div className="text-sm font-semibold text-rose-300 mb-2 flex items-center gap-2 cursor-grab active:cursor-grabbing select-none" onMouseDown={onDragStart}>
+    <div data-panel className="absolute bottom-full left-1/2 mb-2 flex flex-col bg-slate-900/85 backdrop-blur-md border-2 border-rose-800 rounded-lg shadow-2xl p-3 z-50" style={dragStyle}>
+      <div className="text-sm font-semibold text-rose-300 mb-2 flex items-center gap-2 cursor-grab active:cursor-grabbing select-none shrink-0" onMouseDown={onDragStart}>
         <Sword className="w-4 h-4" />
         Attack
         <GripHorizontal className="w-4 h-4 text-slate-600 ml-auto" />
       </div>
-      <div className="flex gap-3">
+      <div className="flex gap-3 flex-1 overflow-hidden">
         {/* Left column: Weapons */}
-        <div className="w-44 border-r border-slate-700 pr-3">
+        <div className="min-w-44 flex-1 border-r border-slate-700 pr-3 overflow-y-auto">
           <div className="text-xs text-slate-400 mb-1.5">Weapon</div>
           <div className="space-y-1">
             {weapons.map((weapon) => (
@@ -443,7 +485,7 @@ function WeaponTargetSelector({
         </div>
 
         {/* Right column: Targets or AoE instruction */}
-        <div className="w-44">
+        <div className="min-w-44 flex-1 overflow-y-auto">
           {isBreathWeaponSelected ? (
             <>
               <div className="text-xs text-slate-400 mb-1.5">
@@ -470,7 +512,7 @@ function WeaponTargetSelector({
               <div className="text-xs text-slate-400 mb-1.5">
                 Target {filteredTargets.length > 0 && `(${filteredTargets.length})`}
               </div>
-              <div className="space-y-1 max-h-48 overflow-y-auto">
+              <div className="space-y-1 overflow-y-auto">
                 {filteredTargets.length === 0 ? (
                   <div className="text-xs text-slate-500 italic p-2">No targets in range</div>
                 ) : (
@@ -494,10 +536,13 @@ function WeaponTargetSelector({
       </div>
       <button
         onClick={onCancel}
-        className="w-full mt-2 p-2 text-sm text-slate-400 hover:text-slate-200 transition-colors border-t border-slate-700 pt-2"
+        className="w-full mt-2 p-2 text-sm text-slate-400 hover:text-slate-200 transition-colors border-t border-slate-700 pt-2 shrink-0"
       >
         Cancel
       </button>
+      <div className="absolute bottom-0 right-0 w-4 h-4 cursor-nwse-resize flex items-end justify-end pr-0.5 pb-0.5 text-slate-500 hover:text-slate-300 transition-colors" onMouseDown={onResizeStart}>
+        <svg width="7" height="7" viewBox="0 0 7 7" fill="none"><path d="M5.5 7L7 5.5M2.5 7L7 2.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" /></svg>
+      </div>
     </div>
   )
 }
@@ -599,7 +644,7 @@ function SpellSelector({
     ? spells.filter((s) => s.level > 0 && s.level <= selectedSlotLevel)
     : spells
 
-  const cantrips = selectedSlotLevel ? [] : spells.filter((s) => s.level === 0)
+  const cantrips = (selectedSlotLevel ? [] : spells.filter((s) => s.level === 0)).sort((a, b) => a.name.localeCompare(b.name))
   const leveledSpells = filteredSpells.filter((s) => s.level > 0)
 
   // Group leveled spells by level for tabs
@@ -608,6 +653,9 @@ function SpellSelector({
     for (const spell of leveledSpells) {
       if (!groups[spell.level]) groups[spell.level] = []
       groups[spell.level].push(spell)
+    }
+    for (const level of Object.keys(groups)) {
+      groups[Number(level)].sort((a, b) => a.name.localeCompare(b.name))
     }
     return groups
   }, [leveledSpells])
@@ -673,19 +721,20 @@ function SpellSelector({
     onSelect(spell, selectedSlotLevel)
   }
 
-  const { onDragStart, dragStyle } = useDraggable()
+  const { onDragStart, onResizeStart, dragStyle } = useDraggable('spell')
 
   return (
-    <div className="absolute bottom-full left-1/2 mb-2 w-80 bg-slate-900/85 backdrop-blur-md border-2 border-violet-800 rounded-lg shadow-2xl p-3 z-50" style={dragStyle}>
-      <div className="text-sm font-semibold text-violet-300 mb-2 cursor-grab active:cursor-grabbing select-none flex items-center justify-between" onMouseDown={onDragStart}>
+    <div data-panel className="absolute bottom-full left-1/2 mb-2 w-80 flex flex-col bg-slate-900/85 backdrop-blur-md border-2 border-violet-800 rounded-lg shadow-2xl p-3 z-50" style={dragStyle}>
+      <div className="text-sm font-semibold text-violet-300 mb-2 cursor-grab active:cursor-grabbing select-none flex items-center justify-between shrink-0" onMouseDown={onDragStart}>
         {selectedSlotLevel ? `Cast with Level ${selectedSlotLevel} Slot` : 'Select Spell'}
         <GripHorizontal className="w-4 h-4 text-slate-600" />
       </div>
 
+      <div className="flex-1 overflow-y-auto min-h-0">
       {cantrips.length > 0 && (
         <div className="mb-3">
           <div className="text-xs text-slate-400 mb-1">Cantrips</div>
-          <div className="grid grid-cols-2 gap-1">
+          <div className="grid gap-1" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))' }}>
             {cantrips.map((spell) => {
               const { canCast, actionType, disableReason } = canCastSpell(spell)
               return (
@@ -737,7 +786,7 @@ function SpellSelector({
                   </button>
                 ))}
               </div>
-              <div className="grid grid-cols-2 gap-1 max-h-32 overflow-y-auto">
+              <div className="grid gap-1 overflow-y-auto" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))' }}>
                 {(spellsByLevel[activeSpellLevel] ?? []).map((spell) => {
                   const { canCast, hasFreeUse, actionType, disableReason } = canCastSpell(spell, selectedSlotLevel)
                   const isUpcast = selectedSlotLevel && spell.level < selectedSlotLevel
@@ -762,7 +811,7 @@ function SpellSelector({
               <div className="text-xs text-slate-400 mb-1">
                 {selectedSlotLevel ? `Spells (level ${spellLevels[0]})` : `${spellLevels[0] === 1 ? '1st' : spellLevels[0] === 2 ? '2nd' : spellLevels[0] === 3 ? '3rd' : `${spellLevels[0]}th`} Level`}
               </div>
-              <div className="grid grid-cols-2 gap-1 max-h-32 overflow-y-auto">
+              <div className="grid gap-1 overflow-y-auto" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))' }}>
                 {leveledSpells.map((spell) => {
                   const { canCast, hasFreeUse, actionType, disableReason } = canCastSpell(spell, selectedSlotLevel)
                   const isUpcast = selectedSlotLevel && spell.level < selectedSlotLevel
@@ -791,13 +840,17 @@ function SpellSelector({
           No spells available at this level
         </div>
       )}
+      </div>
 
       <button
         onClick={onCancel}
-        className="w-full mt-2 p-2 text-sm text-slate-400 hover:text-slate-200 transition-colors"
+        className="w-full mt-2 p-2 text-sm text-slate-400 hover:text-slate-200 transition-colors shrink-0"
       >
         Cancel
       </button>
+      <div className="absolute bottom-0 right-0 w-4 h-4 cursor-nwse-resize flex items-end justify-end pr-0.5 pb-0.5 text-slate-500 hover:text-slate-300 transition-colors" onMouseDown={onResizeStart}>
+        <svg width="7" height="7" viewBox="0 0 7 7" fill="none"><path d="M5.5 7L7 5.5M2.5 7L7 2.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" /></svg>
+      </div>
     </div>
   )
 }
@@ -817,7 +870,7 @@ function ProjectileTargetSelector({
     confirmProjectileTargeting,
     cancelProjectileTargeting,
   } = useCombatStore()
-  const { onDragStart, dragStyle } = useDraggable()
+  const { onDragStart, onResizeStart, dragStyle } = useDraggable('projectile')
 
   if (!projectileTargeting) return null
 
@@ -826,17 +879,17 @@ function ProjectileTargetSelector({
   const remaining = totalProjectiles - totalAssigned
 
   return (
-    <div className="absolute bottom-full left-1/2 mb-2 w-80 bg-slate-900/85 backdrop-blur-md border-2 border-violet-800 rounded-lg shadow-2xl p-3 z-50" style={dragStyle}>
-      <div className="text-sm font-semibold text-violet-300 mb-1 flex items-center gap-2 cursor-grab active:cursor-grabbing select-none" onMouseDown={onDragStart}>
+    <div data-panel className="absolute bottom-full left-1/2 mb-2 w-80 flex flex-col bg-slate-900/85 backdrop-blur-md border-2 border-violet-800 rounded-lg shadow-2xl p-3 z-50" style={dragStyle}>
+      <div className="text-sm font-semibold text-violet-300 mb-1 flex items-center gap-2 cursor-grab active:cursor-grabbing select-none shrink-0" onMouseDown={onDragStart}>
         <Sparkles className="w-4 h-4" />
         {spell.name}
         <GripHorizontal className="w-4 h-4 text-slate-600 ml-auto" />
       </div>
-      <div className="text-xs text-slate-400 mb-3">
+      <div className="text-xs text-slate-400 mb-3 shrink-0">
         Assign {totalProjectiles} projectiles to targets ({remaining} remaining)
       </div>
 
-      <div className="space-y-1 max-h-48 overflow-y-auto mb-3">
+      <div className="space-y-1 flex-1 overflow-y-auto mb-3 min-h-0">
         {targets.map((target) => {
           const count = assignments[target.id] || 0
           return (
@@ -887,7 +940,7 @@ function ProjectileTargetSelector({
         })}
       </div>
 
-      <div className="flex gap-2">
+      <div className="flex gap-2 shrink-0">
         <button
           onClick={confirmProjectileTargeting}
           disabled={totalAssigned === 0}
@@ -907,6 +960,9 @@ function ProjectileTargetSelector({
           Cancel
         </button>
       </div>
+      <div className="absolute bottom-0 right-0 w-4 h-4 cursor-nwse-resize flex items-end justify-end pr-0.5 pb-0.5 text-slate-500 hover:text-slate-300 transition-colors" onMouseDown={onResizeStart}>
+        <svg width="7" height="7" viewBox="0 0 7 7" fill="none"><path d="M5.5 7L7 5.5M2.5 7L7 2.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" /></svg>
+      </div>
     </div>
   )
 }
@@ -925,7 +981,7 @@ function MultiTargetSelector({
     confirmMultiTargetSelection,
     cancelMultiTargetSelection,
   } = useCombatStore()
-  const { onDragStart, dragStyle } = useDraggable()
+  const { onDragStart, onResizeStart, dragStyle } = useDraggable('multitarget')
 
   if (!multiTargetSelection) return null
 
@@ -933,17 +989,17 @@ function MultiTargetSelector({
   const selectedCount = selectedTargetIds.length
 
   return (
-    <div className="absolute bottom-full left-1/2 mb-2 w-80 bg-slate-900/85 backdrop-blur-md border-2 border-emerald-800 rounded-lg shadow-2xl p-3 z-50" style={dragStyle}>
-      <div className="text-sm font-semibold text-emerald-300 mb-1 flex items-center gap-2 cursor-grab active:cursor-grabbing select-none" onMouseDown={onDragStart}>
+    <div data-panel className="absolute bottom-full left-1/2 mb-2 w-80 flex flex-col bg-slate-900/85 backdrop-blur-md border-2 border-emerald-800 rounded-lg shadow-2xl p-3 z-50" style={dragStyle}>
+      <div className="text-sm font-semibold text-emerald-300 mb-1 flex items-center gap-2 cursor-grab active:cursor-grabbing select-none shrink-0" onMouseDown={onDragStart}>
         <Sparkles className="w-4 h-4" />
         {spell.name}
         <GripHorizontal className="w-4 h-4 text-slate-600 ml-auto" />
       </div>
-      <div className="text-xs text-slate-400 mb-3">
+      <div className="text-xs text-slate-400 mb-3 shrink-0">
         Select up to {maxTargets} {maxTargets === 1 ? 'target' : 'targets'} ({selectedCount}/{maxTargets} selected)
       </div>
 
-      <div className="space-y-1 max-h-48 overflow-y-auto mb-3">
+      <div className="space-y-1 flex-1 overflow-y-auto mb-3 min-h-0">
         {targets.map((target) => {
           const isSelected = selectedTargetIds.includes(target.id)
           return (
@@ -982,7 +1038,7 @@ function MultiTargetSelector({
         )}
       </div>
 
-      <div className="flex gap-2">
+      <div className="flex gap-2 shrink-0">
         <button
           onClick={confirmMultiTargetSelection}
           disabled={selectedCount === 0}
@@ -1001,6 +1057,9 @@ function MultiTargetSelector({
         >
           Cancel
         </button>
+      </div>
+      <div className="absolute bottom-0 right-0 w-4 h-4 cursor-nwse-resize flex items-end justify-end pr-0.5 pb-0.5 text-slate-500 hover:text-slate-300 transition-colors" onMouseDown={onResizeStart}>
+        <svg width="7" height="7" viewBox="0 0 7 7" fill="none"><path d="M5.5 7L7 5.5M2.5 7L7 2.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" /></svg>
       </div>
     </div>
   )
@@ -1239,6 +1298,7 @@ export function ActionBar() {
     setRangeHighlight,
     setAoEPreview,
     selectedSpell,
+    selectedSpellCastAtLevel,
     setSelectedSpell,
     endTurn,
     startCombat,
@@ -1791,7 +1851,7 @@ export function ActionBar() {
     setRangeHighlight(undefined)
     setAoEPreview(undefined)
     if (selectedSpell) {
-      castSpell(currentCombatant.id, selectedSpell, targetId)
+      castSpell(currentCombatant.id, selectedSpell, targetId, undefined, undefined, selectedSpellCastAtLevel)
       setSelectedSpell(undefined)
       setIsSelectingTarget(false)
       setSelectedAction(undefined)
@@ -1883,8 +1943,7 @@ export function ActionBar() {
   }
 
   const handleSpellSelect = (spell: Spell, _castAtLevel?: number) => {
-    // Note: _castAtLevel is available for future upcasting implementation
-    setSelectedSpell(spell)
+    setSelectedSpell(spell, _castAtLevel)
     setIsSelectingSpell(false)
     setSelectedSlotLevel(undefined)
 
@@ -1918,14 +1977,14 @@ export function ActionBar() {
 
       // Check if this is a multi-projectile spell
       if (spell.projectiles) {
-        startProjectileTargeting(spell)
+        startProjectileTargeting(spell, _castAtLevel)
       } else if (!spell.areaOfEffect) {
         // Single-target spells use the target selector popup
         setIsSelectingTarget(true)
       }
       // AoE spells skip the target selector — the grid cursor/preview handles placement
     } else {
-      castSpell(currentCombatant.id, spell)
+      castSpell(currentCombatant.id, spell, undefined, undefined, undefined, _castAtLevel)
       setSelectedSpell(undefined)
       setSelectedAction(undefined)
     }

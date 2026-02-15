@@ -13,7 +13,7 @@ import { getManeuverById } from '@/data/maneuvers'
 import type { Character, Monster, Combatant, FightingStyle, Spell, Weapon } from '@/types'
 import type { Maneuver } from '@/types/maneuver'
 import { getAbilityModifier } from '@/types'
-import { Sword, Crosshair, Sparkles, Shield, Footprints, Zap, Swords, Target, X, type LucideIcon } from 'lucide-react'
+import { Sword, Crosshair, Sparkles, Shield, Footprints, Zap, Swords, Target, X, ChevronDown, type LucideIcon } from 'lucide-react'
 
 // ============================================
 // Selected Feature Types
@@ -656,9 +656,11 @@ function TargetActionsPanel({ target, currentCombatant }: { target: Combatant; c
 
 export function CombatantPanel() {
   const state = useCombatStore()
-  const { selectedCombatantId, combatants, phase, preselectWeapon, preselectSpell } = state
+  const { selectedCombatantId, combatants, phase, preselectWeapon, preselectSpell, selectedSpell } = state
   const currentCombatant = getCurrentCombatant(state)
   const [selectedFeature, setSelectedFeature] = useState<SelectedFeature | null>(null)
+  const [weaponsOpen, setWeaponsOpen] = useState(true)
+  const [spellsOpen, setSpellsOpen] = useState(true)
 
   // Show current combatant if none selected, otherwise show selected
   const displayCombatant = selectedCombatantId
@@ -806,6 +808,23 @@ export function CombatantPanel() {
           </div>
         )}
 
+        {/* Concentration */}
+        {displayCombatant.concentratingOn && (
+          <div className="flex items-center gap-1.5 px-2 py-1.5 bg-purple-900/30 border border-purple-700/50 rounded">
+            <Sparkles className="w-3.5 h-3.5 text-purple-400 shrink-0" />
+            <span className="text-xs text-purple-300 flex-1">
+              Concentrating: <span className="font-medium">{displayCombatant.concentratingOn.name}</span>
+            </span>
+            <button
+              onClick={() => state.dropConcentration(displayCombatant.id)}
+              className="text-purple-400 hover:text-purple-200 transition-colors"
+              title="Drop concentration"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
+
         {/* Conditions */}
         {displayCombatant.conditions.length > 0 && (
           <div>
@@ -823,80 +842,94 @@ export function CombatantPanel() {
           <>
             {(character.equipment?.meleeWeapon || character.equipment?.rangedWeapon) && (
               <div>
-                <div className="text-xs text-muted-foreground mb-1">Weapons</div>
-                <div className="space-y-1">
-                  {character.equipment.meleeWeapon && (
-                    <button
-                      disabled={!canAttack}
-                      className={cn(
-                        "w-full text-left text-sm rounded px-1.5 py-0.5 -mx-1.5 transition-colors",
-                        canAttack
-                          ? "hover:bg-slate-700/60 cursor-pointer"
-                          : "cursor-default opacity-80"
-                      )}
-                      onClick={() => canAttack && preselectWeapon('melee')}
-                    >
-                      <span className="font-medium">{character.equipment.meleeWeapon.name}</span>
-                      <span className="text-xs text-sky-400 ml-1">
-                        {character.equipment.meleeWeapon.range
-                          ? `${character.equipment.meleeWeapon.range.normal}/${character.equipment.meleeWeapon.range.long} ft,`
-                          : 'reach 5 ft,'}
-                      </span>
-                      <span className="text-xs text-muted-foreground ml-1">
-                        {character.equipment.meleeWeapon.damage} {character.equipment.meleeWeapon.damageType}
-                      </span>
-                    </button>
-                  )}
-                  {character.equipment.rangedWeapon && (
-                    <button
-                      disabled={!canAttack}
-                      className={cn(
-                        "w-full text-left text-sm rounded px-1.5 py-0.5 -mx-1.5 transition-colors",
-                        canAttack
-                          ? "hover:bg-slate-700/60 cursor-pointer"
-                          : "cursor-default opacity-80"
-                      )}
-                      onClick={() => canAttack && preselectWeapon('ranged')}
-                    >
-                      <span className="font-medium">{character.equipment.rangedWeapon.name}</span>
-                      {character.equipment.rangedWeapon.range && (
+                <button
+                  className="flex items-center gap-1 w-full text-left text-xs text-muted-foreground mb-1 hover:text-foreground transition-colors"
+                  onClick={() => setWeaponsOpen(!weaponsOpen)}
+                >
+                  <ChevronDown className={cn("w-3 h-3 transition-transform", !weaponsOpen && "-rotate-90")} />
+                  Weapons
+                </button>
+                {weaponsOpen && (
+                  <div className="space-y-1">
+                    {character.equipment.meleeWeapon && (
+                      <button
+                        disabled={!canAttack}
+                        className={cn(
+                          "w-full text-left text-sm rounded px-1.5 py-0.5 -mx-1.5 transition-colors",
+                          canAttack
+                            ? "hover:bg-slate-700/60 cursor-pointer"
+                            : "cursor-default opacity-80"
+                        )}
+                        onClick={() => canAttack && preselectWeapon('melee')}
+                      >
+                        <span className="font-medium">{character.equipment.meleeWeapon.name}</span>
                         <span className="text-xs text-sky-400 ml-1">
-                          {character.equipment.rangedWeapon.range.normal}/{character.equipment.rangedWeapon.range.long} ft,
+                          {character.equipment.meleeWeapon.range
+                            ? `${character.equipment.meleeWeapon.range.normal}/${character.equipment.meleeWeapon.range.long} ft,`
+                            : 'reach 5 ft,'}
                         </span>
-                      )}
-                      <span className="text-xs text-muted-foreground ml-1">
-                        {character.equipment.rangedWeapon.damage} {character.equipment.rangedWeapon.damageType}
-                      </span>
-                    </button>
-                  )}
-                </div>
+                        <span className="text-xs text-muted-foreground ml-1">
+                          {character.equipment.meleeWeapon.damage} {character.equipment.meleeWeapon.damageType}
+                        </span>
+                      </button>
+                    )}
+                    {character.equipment.rangedWeapon && (
+                      <button
+                        disabled={!canAttack}
+                        className={cn(
+                          "w-full text-left text-sm rounded px-1.5 py-0.5 -mx-1.5 transition-colors",
+                          canAttack
+                            ? "hover:bg-slate-700/60 cursor-pointer"
+                            : "cursor-default opacity-80"
+                        )}
+                        onClick={() => canAttack && preselectWeapon('ranged')}
+                      >
+                        <span className="font-medium">{character.equipment.rangedWeapon.name}</span>
+                        {character.equipment.rangedWeapon.range && (
+                          <span className="text-xs text-sky-400 ml-1">
+                            {character.equipment.rangedWeapon.range.normal}/{character.equipment.rangedWeapon.range.long} ft,
+                          </span>
+                        )}
+                        <span className="text-xs text-muted-foreground ml-1">
+                          {character.equipment.rangedWeapon.damage} {character.equipment.rangedWeapon.damageType}
+                        </span>
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
             )}
 
             {character.knownSpells && character.knownSpells.length > 0 && (
               <div>
-                <div className="text-xs text-muted-foreground mb-1">
+                <button
+                  className="flex items-center gap-1 w-full text-left text-xs text-muted-foreground mb-1 hover:text-foreground transition-colors"
+                  onClick={() => setSpellsOpen(!spellsOpen)}
+                >
+                  <ChevronDown className={cn("w-3 h-3 transition-transform", !spellsOpen && "-rotate-90")} />
                   Spells ({character.knownSpells.length})
-                </div>
-                <div className="flex flex-wrap gap-1">
-                  {character.knownSpells.map((spell, idx) => {
-                    const canCast = isCurrentTurn && phase === 'combat' && !displayCombatant.hasActed
-                    return (
-                      <button
-                        key={`${spell.id}-${idx}`}
-                        className={cn(
-                          "text-xs bg-violet-900/50 text-violet-200 px-2 py-0.5 rounded transition-colors",
-                          canCast
-                            ? "hover:bg-violet-700/60 hover:text-violet-100 cursor-pointer"
-                            : "cursor-default opacity-80"
-                        )}
-                        onClick={() => canCast && preselectSpell(spell.id)}
-                      >
-                        {spell.name}
-                      </button>
-                    )
-                  })}
-                </div>
+                </button>
+                {spellsOpen && (
+                  <div className="flex flex-wrap gap-1">
+                    {character.knownSpells.map((spell, idx) => {
+                      const canCast = isCurrentTurn && phase === 'combat' && !displayCombatant.hasActed
+                      return (
+                        <button
+                          key={`${spell.id}-${idx}`}
+                          className={cn(
+                            "text-xs bg-violet-900/50 text-violet-200 px-2 py-0.5 rounded transition-colors",
+                            canCast
+                              ? "hover:bg-violet-700/60 hover:text-violet-100 cursor-pointer"
+                              : "cursor-default opacity-80"
+                          )}
+                          onClick={() => canCast && preselectSpell(spell.id)}
+                        >
+                          {spell.name}
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
               </div>
             )}
 
@@ -1006,6 +1039,35 @@ export function CombatantPanel() {
           combatant={displayCombatant}
           onClose={() => setSelectedFeature(null)}
         />
+      )}
+
+      {/* Spell Detail Card - shown during spell targeting */}
+      {selectedSpell && (
+        <Card className="border-violet-800/50 bg-violet-950/30">
+          <CardHeader className="pb-2 pt-3 px-3">
+            <CardTitle className="text-sm flex items-center justify-between">
+              <span className="text-violet-200">{selectedSpell.name}</span>
+              <span className="text-xs text-muted-foreground font-normal">
+                {selectedSpell.level === 0 ? 'Cantrip' : `Level ${selectedSpell.level}`} {selectedSpell.school}
+              </span>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="px-3 pb-3 space-y-2">
+            <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
+              <span>Casting Time: <span className="text-foreground">{selectedSpell.castingTime}</span></span>
+              <span>Range: <span className="text-foreground">{selectedSpell.range}</span></span>
+              <span>Duration: <span className="text-foreground">{selectedSpell.duration}</span></span>
+              {selectedSpell.concentration && <span className="text-amber-400">Concentration</span>}
+            </div>
+            <p className="text-xs text-muted-foreground leading-relaxed">{selectedSpell.description}</p>
+            {selectedSpell.higherLevels && (
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                <span className="text-violet-300 font-medium">At Higher Levels: </span>
+                {selectedSpell.higherLevels}
+              </p>
+            )}
+          </CardContent>
+        </Card>
       )}
     </div>
   )

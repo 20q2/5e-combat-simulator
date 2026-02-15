@@ -302,13 +302,13 @@ export function CharacterSheet() {
       {/* Header with Token, Name, and Core Stats */}
       <Card className="relative overflow-hidden">
         {bgImage && (
-          <div className="absolute inset-x-0 top-0 h-1/2 pointer-events-none">
+          <div className="absolute inset-0 pointer-events-none">
             <img
               src={bgImage}
               alt=""
               className="w-full h-full object-cover opacity-15"
             />
-            <div className="absolute inset-0 bg-gradient-to-b from-transparent to-card" />
+            <div className="absolute inset-0 bg-gradient-to-b from-transparent via-card/70 to-card" />
           </div>
         )}
         <CardContent className="pt-6 relative">

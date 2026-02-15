@@ -137,7 +137,7 @@ export function ContextMenu({ position, targetId, targetType, onClose }: Context
 
           opts.push({
             id: 'attack-melee',
-            label: `Attack with ${meleeWeapon.name}`,
+            label: meleeWeapon.name,
             icon: Sword,
             disabled: !canAttack || !inMeleeRange,
             action: () => {
@@ -158,8 +158,8 @@ export function ContextMenu({ position, targetId, targetType, onClose }: Context
           opts.push({
             id: 'attack-ranged',
             label: atDisadvantage
-              ? `Attack with ${rangedWeapon.name} (disadvantage)`
-              : `Attack with ${rangedWeapon.name}`,
+              ? `${rangedWeapon.name} (disadvantage)`
+              : rangedWeapon.name,
             icon: Crosshair,
             disabled: !canAttack || (!inNormalRange && !inLongRange),
             action: () => {
@@ -184,7 +184,7 @@ export function ContextMenu({ position, targetId, targetType, onClose }: Context
 
           opts.push({
             id: `spell-${spell.id}`,
-            label: `Cast ${spell.name}`,
+            label: spell.name,
             icon: Sparkles,
             disabled: !inSpellRange,
             action: () => {

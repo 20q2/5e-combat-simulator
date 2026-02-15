@@ -54,7 +54,11 @@
       "Bash(\"F:\\\\Program Files\\\\Git\\\\cmd\\\\git.exe\" -C \"a:\\\\Coding\\\\5e-combat-simulator\" diff src/engine/ai.ts)",
       "Bash(PATH=\"/usr/bin:/bin:/mingw64/bin:$PATH\" git -C \"a:/Coding/5e-combat-simulator\" diff src/engine/ai.ts)",
       "Bash(git -C \"a:/Coding/5e-combat-simulator\" diff src/engine/ai.ts)",
-      "Bash(git -C \"a:/Coding/5e-combat-simulator\" diff --stat)"
+      "Bash(git -C \"a:/Coding/5e-combat-simulator\" diff --stat)",
+      "Bash(ls -la \"a:\\\\Coding\\\\5e-combat-simulator\\\\src\\\\components\\\\combat\"\" | grep -E \"Selector)",
+      "Bash(Prompt)",
+      "Bash(Popup \")",
+      "Bash(node_modules.bintsc.cmd:*)"
     ]
   }
 }

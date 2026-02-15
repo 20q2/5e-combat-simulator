@@ -162,7 +162,16 @@ function getBestUsableAttack(
     }
   }
 
-  // No usable attack from current position - return best melee for movement planning
+  // No usable attack from current position - return best attack for movement planning
+  // If target is beyond melee reach and we have ranged attacks, prefer ranged
+  // (the monster will move to get LOS rather than charge across the map with a sword)
+  const bestMeleeReach = meleeAttacks.length > 0 ? Math.max(...meleeAttacks.map(a => a.reach ?? 5)) : 0
+  if (distance > bestMeleeReach && rangedAttacks.length > 0) {
+    console.warn(`[AI] getBestUsableAttack: no usable attack from current position, distance=${distance} > meleeReach=${bestMeleeReach}, preferring ranged=${rangedAttacks[0].name}`)
+    return rangedAttacks[0]
+  }
+
+  console.warn(`[AI] getBestUsableAttack: no usable attack from current position, falling back to ${meleeAttacks[0]?.name ?? rangedAttacks[0]?.name ?? attacks[0]?.name}`)
   return meleeAttacks[0] ?? rangedAttacks[0] ?? attacks[0]
 }
 
@@ -419,7 +428,7 @@ export function decideMonsterAction(
     // After attacking, could move away or stay
     actions.push({ type: 'end' })
   } else {
-    // Can't attack from here - move toward enemy to get in melee range
+    // Can't attack from here - move toward enemy (for melee range or better LOS for ranged)
     if (remainingMovement > 0) {
       const moveTarget = getPositionTowardTarget(
         monster.position,

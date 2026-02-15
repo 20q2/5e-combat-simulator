@@ -107,9 +107,7 @@ export function CharacterPage() {
 
   if (showCreator) {
     return (
-      <CharacterCreator
-        onViewSaved={savedCharacters.length > 0 ? () => setShowCreator(false) : undefined}
-      />
+      <CharacterCreator />
     )
   }
 

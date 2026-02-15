@@ -835,6 +835,7 @@ export interface CombatState {
   rangeHighlight?: RangeHighlight
   aoePreview?: AoEPreview
   selectedSpell?: Spell
+  selectedSpellCastAtLevel?: number  // Slot level for upcasting the selected spell
   damagePopups: DamagePopup[]
   // Active projectile animations (ranged attacks flying to target)
   activeProjectiles: ActiveProjectile[]

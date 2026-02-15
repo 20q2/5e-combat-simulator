@@ -97,9 +97,9 @@ export function ManeuverPrompt() {
     pendingTrigger.type !== 'on_damage_taken'
   ) return null
 
-  // Only show for maneuver options
-  const hasManeuvers = pendingTrigger.options.some(o => o.type === 'maneuver')
-  if (!hasManeuvers) return null
+  // Only show for maneuver/spell options (Shield spell has type='spell', not 'maneuver')
+  const hasOptions = pendingTrigger.options.some(o => o.type === 'maneuver' || o.type === 'spell')
+  if (!hasOptions) return null
 
   const reactor = combatants.find(c => c.id === pendingTrigger.reactorId)
   const target = combatants.find(c => c.id === pendingTrigger.targetId)
@@ -177,7 +177,7 @@ export function ManeuverPrompt() {
           </div>
           <div>
             <h3 className="text-lg font-bold text-amber-300">{headerText}</h3>
-            <p className="text-sm text-slate-400">{reactor.name} can use a maneuver</p>
+            <p className="text-sm text-slate-400">{reactor.name} can use a {pendingTrigger.type === 'on_damage_taken' ? 'reaction' : 'maneuver'}</p>
           </div>
         </div>
 
