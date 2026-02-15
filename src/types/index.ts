@@ -65,6 +65,7 @@ export type Condition =
   | 'longstrider'  // +10ft speed from Longstrider spell
   | 'protected_from_evil_good'  // Disadvantage for aberrations/celestials/elementals/fey/fiends/undead attacking this target
   | 'witch_bolt'  // Bonus action 1d12 lightning damage to linked target while concentrating on Witch Bolt
+  | 'mage_armor'  // Base AC becomes 13 + DEX mod (only if not wearing armor)
 
 // ============================================
 // Character Types

@@ -24,7 +24,7 @@ import type {
 import { ZoneType } from '@/types'
 import { rollInitiative, rollDie, rollD20 } from '@/engine/dice'
 import { getAbilityModifier } from '@/types'
-import { resolveAttack, canAttackTarget, getSpellSaveDC, getSpellAttackBonus, rollCombatantSavingThrow, rollDeathSave, selectWeaponForTarget, isRangedAttack, isProtectedFromEvilGoodCreature, type AttackResult } from '@/engine/combat'
+import { resolveAttack, canAttackTarget, getCombatantAC, getSpellSaveDC, getSpellAttackBonus, rollCombatantSavingThrow, rollDeathSave, selectWeaponForTarget, isRangedAttack, isProtectedFromEvilGoodCreature, type AttackResult } from '@/engine/combat'
 import { rollAttack, rollDamage } from '@/engine/dice'
 import { getNextAIAction } from '@/engine/ai'
 import { getDistanceBetweenPositions } from '@/lib/distance'
@@ -237,6 +237,7 @@ interface CombatStore extends CombatState {
   canMoveTo: (combatantId: string, to: Position) => boolean
   getReachablePositions: (combatantId: string) => Position[]
   useDisengage: () => void
+  useStandUp: () => void
 
   // Movement animation
   advanceMovementAnimation: () => void
@@ -524,6 +525,18 @@ function createGridWithTerrain(width: number, height: number, terrain: TerrainDe
 
 function generateId(): string {
   return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+}
+
+/** Get a combatant's effective speed, including condition bonuses like Longstrider (+10 ft). */
+export function getCombatantSpeed(combatant: Combatant): number {
+  const baseSpeed = combatant.type === 'character'
+    ? (combatant.data as Character).speed
+    : (combatant.data as Monster).speed.walk
+  const speedBonus = combatant.conditions.reduce((bonus, cond) => {
+    if (cond.condition === 'longstrider') return bonus + 10
+    return bonus
+  }, 0)
+  return baseSpeed + speedBonus
 }
 
 // checkCombatEnd, isDead, getAvailableReactionSpells moved to engine modules
@@ -1086,15 +1099,6 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
         if (effect.newHp !== undefined) {
           updatedCombatant = { ...updatedCombatant, currentHp: effect.newHp }
         }
-      }
-
-      // Apply persistent speed buff conditions (Longstrider, etc.) at start of turn
-      const speedBonus = updatedCombatant.conditions.reduce((bonus, cond) => {
-        if (cond.condition === 'longstrider') return bonus + 10
-        return bonus
-      }, 0)
-      if (speedBonus > 0) {
-        updatedCombatant = { ...updatedCombatant, movementUsed: -speedBonus }
       }
 
       finalCombatants = updatedCombatants.map((c) =>
@@ -2299,13 +2303,12 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
       })
 
     // Build movement context for water terrain cost calculation
-    const walkSpeed = combatant.type === 'character'
-      ? (combatant.data as Character).speed
-      : (combatant.data as Monster).speed.walk
+    const walkSpeed = getCombatantSpeed(combatant)
     const swimSpeed = combatant.type === 'character'
       ? (combatant.data as Character).swimSpeed
       : (combatant.data as Monster).speed.swim
-    const movementContext: MovementContext = { walkSpeed, swimSpeed }
+    const isProne = combatant.conditions.some(c => c.condition === 'prone')
+    const movementContext: MovementContext = { walkSpeed, swimSpeed, isProne }
 
     // Find path using A* pathfinding with footprint awareness
     const footprint = getFootprintSize(size)
@@ -2575,13 +2578,12 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
       })
 
     // Build movement context for water terrain cost calculation
-    const walkSpeed = combatant.type === 'character'
-      ? (combatant.data as Character).speed
-      : (combatant.data as Monster).speed.walk
+    const walkSpeed = getCombatantSpeed(combatant)
     const swimSpeed = combatant.type === 'character'
       ? (combatant.data as Character).swimSpeed
       : (combatant.data as Monster).speed.swim
-    const movementContext: MovementContext = { walkSpeed, swimSpeed }
+    const isProne = combatant.conditions.some(c => c.condition === 'prone')
+    const movementContext: MovementContext = { walkSpeed, swimSpeed, isProne }
 
     // Find path using A* pathfinding with footprint awareness
     const greaseCellsForPath = getGreaseCells(get().persistentZones)
@@ -2607,13 +2609,12 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
     const footprint = getFootprintSize(size)
 
     // Build movement context for water terrain cost calculation
-    const walkSpeed = combatant.type === 'character'
-      ? (combatant.data as Character).speed
-      : (combatant.data as Monster).speed.walk
+    const walkSpeed = getCombatantSpeed(combatant)
     const swimSpeed = combatant.type === 'character'
       ? (combatant.data as Character).swimSpeed
       : (combatant.data as Monster).speed.swim
-    const movementContext: MovementContext = { walkSpeed, swimSpeed }
+    const isProne = combatant.conditions.some(c => c.condition === 'prone')
+    const movementContext: MovementContext = { walkSpeed, swimSpeed, isProne }
 
     const remainingMovement = walkSpeed - combatant.movementUsed
 
@@ -3312,17 +3313,21 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
         // Build combined trigger options for both spells and maneuvers
         const triggerOptions: TriggerOption[] = []
 
-        // Add Shield spell option if available
+        // Add Shield spell option if available (only if +5 AC would block the attack)
         for (const spell of availableReactionSpells) {
           if (spell.id === 'shield') {
-            triggerOptions.push({
-              id: 'shield',
-              type: 'spell',
-              name: 'Shield',
-              description: 'Increase your AC by 5 until the start of your next turn',
-              cost: 'Level 1 Spell Slot',
-              effect: `+5 AC (${result.targetAC} → ${result.targetAC + 5})`,
-            })
+            const shieldedAC = result.targetAC + 5
+            const wouldBlock = !result.critical && result.attackRoll.total < shieldedAC
+            if (wouldBlock) {
+              triggerOptions.push({
+                id: 'shield',
+                type: 'spell',
+                name: 'Shield',
+                description: 'Increase your AC by 5 until the start of your next turn',
+                cost: 'Level 1 Spell Slot',
+                effect: `+5 AC (${result.targetAC} → ${shieldedAC})`,
+              })
+            }
           }
         }
 
@@ -3478,8 +3483,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
     // Remarkable Athlete (Champion Fighter): after scoring a crit, gain half speed of free movement without OAs
     let remarkableAthleteMovement = 0
     if (result.critical && hasRemarkableAthlete(attacker)) {
-      const character = attacker.type === 'character' ? attacker.data as Character : null
-      const speed = character?.speed ?? 30
+      const speed = getCombatantSpeed(attacker)
       remarkableAthleteMovement = Math.floor(speed / 2)
       get().addLogEntry({
         type: 'other',
@@ -3693,9 +3697,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
     if (!combatant || combatant.hasActed || combatant.attacksMadeThisTurn > 0) return
 
     // Dash adds your speed to your remaining movement for this turn
-    const speed = combatant.type === 'character'
-      ? (combatant.data as Character).speed
-      : (combatant.data as Monster).speed.walk
+    const speed = getCombatantSpeed(combatant)
 
     // Subtract speed from movementUsed (can go negative to represent bonus movement)
     // Example: 30 speed, used 10 ft -> movementUsed becomes -20, remaining = 30 - (-20) = 50 ft
@@ -3773,6 +3775,46 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
       actorId: currentId,
       actorName: combatant.name,
       message: `${combatant.name} takes the Disengage action (no opportunity attacks this turn)`,
+    })
+  },
+
+  useStandUp: () => {
+    const { turnOrder, currentTurnIndex, combatants } = get()
+    const currentId = turnOrder[currentTurnIndex]
+    const combatant = combatants.find((c) => c.id === currentId)
+
+    if (!combatant) return
+
+    // Must be prone
+    const isProne = combatant.conditions.some(c => c.condition === 'prone')
+    if (!isProne) return
+
+    // Standing up costs half your speed
+    const speed = getCombatantSpeed(combatant)
+    const standUpCost = Math.floor(speed / 2)
+
+    // Must have enough remaining movement
+    const remainingMovement = speed - combatant.movementUsed
+    if (remainingMovement <= 0) return
+
+    // Remove prone condition and spend half speed
+    set((state) => ({
+      combatants: state.combatants.map((c) =>
+        c.id === currentId
+          ? {
+              ...c,
+              movementUsed: c.movementUsed + standUpCost,
+              conditions: c.conditions.filter(cond => cond.condition !== 'prone'),
+            }
+          : c
+      ),
+    }))
+
+    get().addLogEntry({
+      type: 'other',
+      actorId: currentId,
+      actorName: combatant.name,
+      message: `${combatant.name} stands up (${standUpCost} ft movement used)`,
     })
   },
 
@@ -3969,7 +4011,15 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
         const totalDamage = result.damage.total
 
         // Check if target has reaction spells available (like Shield)
+        // Only offer Shield if +5 AC would actually block the attack (and not a critical hit)
         const availableReactionSpells = getAvailableReactionSpells(target, 'on_hit')
+          .filter(spell => {
+            if (spell.id === 'shield') {
+              const shieldedAC = result.targetAC + 5
+              return !result.critical && result.attackRoll.total < shieldedAC
+            }
+            return true
+          })
 
         if (availableReactionSpells.length > 0 && !target.hasReacted) {
           // Set pending reaction and pause for player decision
@@ -4064,6 +4114,35 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
     const { isBonusAction: isBonusActionSpell } = castValidation
 
     const character = caster.data as Character
+
+    // Mage Armor: validate target isn't wearing armor and doesn't already have Mage Armor
+    if (spell.id === 'mage-armor' && targetId) {
+      const target = combatants.find(c => c.id === targetId)
+      if (target) {
+        if (target.conditions.some(c => c.condition === 'mage_armor')) {
+          get().addLogEntry({
+            type: 'spell',
+            actorId: casterId,
+            actorName: caster.name,
+            message: `${caster.name} cannot cast Mage Armor on ${target.name} - already under the effect of Mage Armor!`,
+          })
+          return false
+        }
+        if (target.type === 'character') {
+          const targetChar = target.data as Character
+          const armor = targetChar.equipment?.armor
+          if (armor && armor.id !== 'mage-armor') {
+            get().addLogEntry({
+              type: 'spell',
+              actorId: casterId,
+              actorName: caster.name,
+              message: `${caster.name} cannot cast Mage Armor on ${target.name} - already wearing armor!`,
+            })
+            return false
+          }
+        }
+      }
+    }
 
     // Check and consume spell slot for leveled spells
     if (spell.level > 0) {
@@ -4913,7 +4992,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
 
     // Handle grantsDash spells (Expeditious Retreat): immediately grant Dash movement
     if (spell.grantsDash) {
-      const speed = character.speed
+      const speed = getCombatantSpeed(caster)
       set((state) => ({
         combatants: state.combatants.map((c) =>
           c.id === casterId
@@ -4964,6 +5043,25 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
           ),
         }))
         get().addCombatPopup(target.id, 'condition', spell.conditionOnTarget)
+
+        // Mage Armor: log the AC change
+        if (spell.id === 'mage-armor') {
+          const updatedTarget = get().combatants.find(c => c.id === target.id)
+          if (updatedTarget) {
+            const newAC = getCombatantAC(updatedTarget)
+            const selfCast = target.id === casterId
+            get().addLogEntry({
+              type: 'spell',
+              actorId: casterId,
+              actorName: caster.name,
+              targetId: selfCast ? undefined : target.id,
+              targetName: selfCast ? undefined : target.name,
+              message: selfCast
+                ? `${caster.name}'s AC is now ${newAC} (Mage Armor: 13 + DEX).`
+                : `${target.name}'s AC is now ${newAC} (Mage Armor: 13 + DEX).`,
+            })
+          }
+        }
       }
     }
 
@@ -5188,7 +5286,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
 
     // Tactical Shift: Level 5+ Fighters can move half speed without provoking OAs
     if (character.class.id === 'fighter' && character.level >= 5) {
-      const speed = character.speed
+      const speed = getCombatantSpeed(combatant)
       const halfSpeed = Math.floor(speed / 2)
 
       get().addLogEntry({
@@ -5259,9 +5357,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
     if (!canUseCunningAction(combatant, 'dash')) return
 
     // Cunning Action Dash: adds your speed to remaining movement for this turn
-    const speed = combatant.type === 'character'
-      ? (combatant.data as Character).speed
-      : (combatant.data as Monster).speed.walk
+    const speed = getCombatantSpeed(combatant)
 
     get().addLogEntry({
       type: 'other',
@@ -5354,9 +5450,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
     if (!combatant || combatant.hasBonusActed) return
     if (!combatant.conditions.some(c => c.condition === 'expeditious_retreat')) return
 
-    const speed = combatant.type === 'character'
-      ? (combatant.data as Character).speed
-      : (combatant.data as Monster).speed.walk
+    const speed = getCombatantSpeed(combatant)
 
     get().addLogEntry({
       type: 'other',
@@ -5534,9 +5628,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
       const result = applyEvasiveFootwork(combatant)
 
       // Get speed for Dash effect
-      const speed = combatant.type === 'character'
-        ? (combatant.data as Character).speed
-        : (combatant.data as Monster).speed.walk
+      const speed = getCombatantSpeed(combatant)
 
       get().addLogEntry({
         type: 'other',
@@ -5599,9 +5691,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
       const result = applyLungingAttack(combatant)
 
       // Get speed for Dash effect
-      const speed = combatant.type === 'character'
-        ? (combatant.data as Character).speed
-        : (combatant.data as Monster).speed.walk
+      const speed = getCombatantSpeed(combatant)
 
       get().addLogEntry({
         type: 'other',

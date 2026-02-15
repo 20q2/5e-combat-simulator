@@ -2,6 +2,7 @@ import type { Combatant, Monster, Position, MonsterAction, Grid, Character } fro
 import { getDistance, canAttackTarget, canTakeActions } from './combat'
 import { findPath, getReachablePositions, calculatePathCost, type MovementContext } from '@/lib/pathfinding'
 import { hasLineOfSight } from '@/lib/lineOfSight'
+import { getCombatantSpeed } from '@/stores/combatStore'
 import {
   canUseSecondWind,
   getMaxAttacksPerAction,
@@ -390,8 +391,8 @@ export function decideMonsterAction(
   // Build occupied position sets (allies passable for pathing, not for ending)
   const { pathBlocked, endBlocked } = buildOccupiedSets(monster, combatants)
 
-  // Calculate remaining movement
-  const speed = monsterData?.speed.walk ?? characterData?.speed ?? 30
+  // Calculate remaining movement (includes Longstrider bonus etc.)
+  const speed = getCombatantSpeed(monster)
   const swimSpeed = monsterData?.speed.swim ?? characterData?.swimSpeed
   const movementContext: MovementContext = { walkSpeed: speed, swimSpeed }
   const remainingMovement = speed - monster.movementUsed

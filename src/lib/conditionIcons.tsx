@@ -217,6 +217,12 @@ export const conditionIcons: Record<ExtendedCondition, ConditionIconInfo> = {
     bgColor: 'bg-blue-900',
     label: 'Witch Bolt',
   },
+  mage_armor: {
+    icon: ShieldPlus,
+    color: 'text-violet-300',
+    bgColor: 'bg-violet-900',
+    label: 'Mage Armor',
+  },
 }
 
 export function getConditionIcon(condition: string): ConditionIconInfo | undefined {

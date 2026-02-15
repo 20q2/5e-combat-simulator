@@ -1,5 +1,6 @@
 import { cn, formatCR } from '@/lib/utils'
 import { getConditionIcon } from '@/lib/conditionIcons'
+import { getCombatantSpeed } from '@/stores/combatStore'
 import type { Combatant, Character, Monster } from '@/types'
 import {
   Heart,
@@ -34,8 +35,8 @@ export function TokenTooltip({ combatant, isCurrentTurn }: TokenTooltipProps) {
   // Get AC
   const ac = isCharacter ? character!.ac : monster!.ac
 
-  // Get speed
-  const speed = isCharacter ? character!.speed : monster!.speed.walk
+  // Get speed (includes Longstrider bonus etc.)
+  const speed = getCombatantSpeed(combatant)
 
   // Calculate movement remaining
   const movementRemaining = speed - combatant.movementUsed

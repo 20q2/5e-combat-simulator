@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { getClassIcon } from '@/lib/classIcons'
-import { useCombatStore, getCurrentCombatant } from '@/stores/combatStore'
+import { useCombatStore, getCurrentCombatant, getCombatantSpeed } from '@/stores/combatStore'
 import { getCombatantTokenImage } from '@/lib/tokenImages'
 import { getMaxAttacksPerAction, getSecondWindMaxUses, getIndomitableMaxUses, getIndomitableFeature } from '@/engine/classAbilities'
 import { canAttackTarget } from '@/engine/combat'
@@ -659,8 +659,8 @@ export function CombatantPanel() {
   const { selectedCombatantId, combatants, phase, preselectWeapon, preselectSpell, selectedSpell } = state
   const currentCombatant = getCurrentCombatant(state)
   const [selectedFeature, setSelectedFeature] = useState<SelectedFeature | null>(null)
-  const [weaponsOpen, setWeaponsOpen] = useState(true)
-  const [spellsOpen, setSpellsOpen] = useState(true)
+  const [weaponsOpen, setWeaponsOpen] = useState(false)
+  const [spellsOpen, setSpellsOpen] = useState(false)
 
   // Show current combatant if none selected, otherwise show selected
   const displayCombatant = selectedCombatantId
@@ -690,7 +690,7 @@ export function CombatantPanel() {
 
   const abilityScores = character?.abilityScores ?? monster?.abilityScores
   const ac = character?.ac ?? monster?.ac ?? 10
-  const speed = character?.speed ?? monster?.speed.walk ?? 30
+  const speed = getCombatantSpeed(displayCombatant)
   const hpPercent = Math.round((displayCombatant.currentHp / displayCombatant.maxHp) * 100)
   const tempHp = displayCombatant.temporaryHp || 0
   const effectiveMax = Math.max(displayCombatant.maxHp, displayCombatant.currentHp + tempHp)
@@ -793,9 +793,6 @@ export function CombatantPanel() {
           <StatBlock label="Initiative" value={displayCombatant.initiative || '—'} icon={Zap} />
         </div>
 
-        {/* Action Economy (only during combat) */}
-        {phase === 'combat' && <ActionEconomyIndicator combatant={displayCombatant} />}
-
         {/* Ability Scores */}
         {abilityScores && (
           <div className="grid grid-cols-6 gap-1">
@@ -807,6 +804,9 @@ export function CombatantPanel() {
             <AbilityScoreDisplay name="Charisma" score={abilityScores.charisma} />
           </div>
         )}
+
+        {/* Action Economy (only during combat) */}
+        {phase === 'combat' && <ActionEconomyIndicator combatant={displayCombatant} />}
 
         {/* Concentration */}
         {displayCombatant.concentratingOn && (

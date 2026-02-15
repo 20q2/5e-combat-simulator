@@ -13,6 +13,7 @@ import { getPathfindingHeuristic } from './distance'
 export interface MovementContext {
   walkSpeed: number
   swimSpeed?: number
+  isProne?: boolean
 }
 
 interface PathNode {
@@ -262,26 +263,29 @@ export function getMovementCost(
   // Calculate base movement cost
   const { cost: baseCost, newDiagonalCount } = calculateAdjacentCost(from, to, diagonalCount)
 
+  // Prone creatures spend double movement (D&D 5e: crawling costs 1 extra foot per foot)
+  const proneMultiplier = movementContext?.isProne ? 2 : 1
+
   // Water terrain - difficult unless creature has swim speed
   if (toCell.terrain === 'water') {
     if (movementContext?.swimSpeed) {
       const ratio = movementContext.walkSpeed / movementContext.swimSpeed
-      return { cost: baseCost * ratio, newDiagonalCount }
+      return { cost: baseCost * ratio * proneMultiplier, newDiagonalCount }
     }
-    return { cost: baseCost * 2, newDiagonalCount }
+    return { cost: baseCost * 2 * proneMultiplier, newDiagonalCount }
   }
 
   // Double cost for difficult terrain (static or zone-based like Grease)
   if (toCell.terrain === 'difficult' || difficultZoneCells?.has(`${to.x},${to.y}`)) {
-    return { cost: baseCost * 2, newDiagonalCount }
+    return { cost: baseCost * 2 * proneMultiplier, newDiagonalCount }
   }
 
   // Hazard terrain - could block or damage, for now treat as difficult
   if (toCell.terrain === 'hazard') {
-    return { cost: baseCost * 2, newDiagonalCount }
+    return { cost: baseCost * 2 * proneMultiplier, newDiagonalCount }
   }
 
-  return { cost: baseCost, newDiagonalCount }
+  return { cost: baseCost * proneMultiplier, newDiagonalCount }
 }
 
 /**

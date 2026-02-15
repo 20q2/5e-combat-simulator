@@ -118,6 +118,27 @@ export function getCharacterDamageBonus(character: Character, weapon: Weapon): n
  */
 export function getCombatantAC(combatant: Combatant): number {
   let baseAC: number
+
+  // Check for Mage Armor condition: override base AC to 13 + DEX mod
+  // Only applies if the target is not wearing real armor (armor id !== 'mage-armor' counts as real armor worn at creation)
+  const hasMageArmorCondition = combatant.conditions.some(c => c.condition === 'mage_armor')
+  if (hasMageArmorCondition && combatant.type === 'character') {
+    const character = combatant.data as Character
+    const armor = character.equipment?.armor
+    // Only apply if wearing no armor, or already using the mage-armor "armor" from character creation
+    const isUnarmored = !armor || armor.id === 'mage-armor'
+    if (isUnarmored) {
+      baseAC = 13 + getAbilityModifier(character.abilityScores.dexterity)
+      // Still add shield if equipped
+      if (character.equipment?.shield) {
+        baseAC += character.equipment.shield.baseAC
+      }
+      const evasiveBonus = combatant.evasiveFootworkBonus ?? 0
+      const shieldSpellBonus = combatant.conditions.some(c => c.condition === 'shielded') ? 5 : 0
+      return baseAC + evasiveBonus + shieldSpellBonus
+    }
+  }
+
   if (combatant.type === 'character') {
     baseAC = (combatant.data as Character).ac
   } else {
@@ -130,7 +151,10 @@ export function getCombatantAC(combatant: Combatant): number {
   // Add Evasive Footwork AC bonus
   const evasiveBonus = combatant.evasiveFootworkBonus ?? 0
 
-  return baseAC + defenseBonus + evasiveBonus
+  // Add Shield spell bonus (+5 AC while shielded condition is active)
+  const shieldBonus = combatant.conditions.some(c => c.condition === 'shielded') ? 5 : 0
+
+  return baseAC + defenseBonus + evasiveBonus + shieldBonus
 }
 
 /**

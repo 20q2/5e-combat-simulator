@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { cn, formatCR } from '@/lib/utils'
-import { useCombatStore, getCurrentCombatant } from '@/stores/combatStore'
+import { useCombatStore, getCurrentCombatant, getCombatantSpeed } from '@/stores/combatStore'
 import { getCharacterTokenImage, getMonsterTokenImage } from '@/lib/tokenImages'
 import { SpellSlotDisplay } from './SpellSlotDisplay'
 import { ResourceTracker } from './ResourceTracker'
@@ -29,6 +29,7 @@ import {
   Skull,
   Bug,
   X,
+  ArrowUp,
 } from 'lucide-react'
 import type { Condition } from '@/types'
 import {
@@ -52,9 +53,10 @@ import { canUseBattleMedic, getLuckPoints } from '@/engine/originFeats'
 import type { AttackReplacement, AoEAttackReplacement } from '@/types'
 import { Flame, Stethoscope, GripHorizontal } from 'lucide-react'
 
-// Persisted drag offsets and sizes so panels reopen where/how the user last placed them
+// Persisted drag offsets, sizes, and resize Y compensation so panels reopen where/how the user last placed them
 const savedOffsets: Record<string, { x: number; y: number }> = {}
 const savedSizes: Record<string, { w: number; h: number }> = {}
+const savedResizeY: Record<string, number> = {}
 
 // Hook for making popover menus draggable and resizable
 function useDraggable(key?: string) {
@@ -65,8 +67,10 @@ function useDraggable(key?: string) {
 
   const initialSize = (key && savedSizes[key]) || null
   const [size, setSize] = useState<{ w: number; h: number } | null>(initialSize)
+  const initialResizeY = (key && savedResizeY[key]) || 0
+  const [resizeYDelta, setResizeYDelta] = useState(initialResizeY)
   const resizing = useRef(false)
-  const resizeStart = useRef({ x: 0, y: 0, w: 0, h: 0 })
+  const resizeStart = useRef({ x: 0, y: 0, w: 0, h: 0, yDelta: 0 })
 
   useEffect(() => {
     const onMove = (e: MouseEvent) => {
@@ -79,12 +83,18 @@ function useDraggable(key?: string) {
         if (key) savedOffsets[key] = next
       }
       if (resizing.current) {
-        const next = {
-          w: Math.max(200, resizeStart.current.w + (e.clientX - resizeStart.current.x)),
-          h: Math.max(120, resizeStart.current.h - (e.clientY - resizeStart.current.y)),
-        }
-        setSize(next)
-        if (key) savedSizes[key] = next
+        const dw = e.clientX - resizeStart.current.x
+        const dh = e.clientY - resizeStart.current.y
+        const newW = Math.max(200, resizeStart.current.w + dw)
+        const newH = Math.max(120, resizeStart.current.h + dh)
+        const nextSize = { w: newW, h: newH }
+        setSize(nextSize)
+        if (key) savedSizes[key] = nextSize
+        // Compensate Y so top stays fixed and bottom-right corner tracks the mouse
+        const actualDh = newH - resizeStart.current.h
+        const nextYDelta = resizeStart.current.yDelta + actualDh
+        setResizeYDelta(nextYDelta)
+        if (key) savedResizeY[key] = nextYDelta
       }
     }
     const onUp = () => { dragging.current = false; resizing.current = false }
@@ -111,6 +121,7 @@ function useDraggable(key?: string) {
       y: e.clientY,
       w: rect?.width ?? 320,
       h: rect?.height ?? 200,
+      yDelta: resizeYDelta,
     }
     e.preventDefault()
     e.stopPropagation()
@@ -120,7 +131,7 @@ function useDraggable(key?: string) {
     onDragStart,
     onResizeStart,
     dragStyle: {
-      transform: `translate(calc(-50% + ${offset.x}px), ${offset.y}px)`,
+      transform: `translate(calc(-50% + ${offset.x}px), ${offset.y + resizeYDelta}px)`,
       ...(size ? { width: `${size.w}px`, height: `${size.h}px` } : {}),
     } as React.CSSProperties,
   }
@@ -1307,6 +1318,7 @@ export function ActionBar() {
     useDash,
     useDodge,
     useDisengage,
+    useStandUp,
     getValidTargets,
     getAvailableSpells,
     castSpell,
@@ -1601,7 +1613,7 @@ export function ActionBar() {
     : getMonsterTokenImage(monster!)
 
   // Get speed and movement
-  const speed = character?.speed ?? monster?.speed.walk ?? 30
+  const speed = getCombatantSpeed(currentCombatant)
   const remainingMovement = speed - currentCombatant.movementUsed
 
   // Check if unconscious
@@ -2345,6 +2357,24 @@ export function ActionBar() {
                     actionType="action"
                     tooltip={currentCombatant.attacksMadeThisTurn > 0 ? "Can't change action mid-Attack" : (isThreatened ? `Escape ${threateningEnemies.length} threatening enemies` : 'Move without opportunity attacks')}
                   />
+
+                  {/* Stand Up (only when prone) */}
+                  {currentCombatant.conditions.some(c => c.condition === 'prone') && (() => {
+                    const proneSpeed = getCombatantSpeed(currentCombatant)
+                    const standUpCost = Math.floor(proneSpeed / 2)
+                    const remainingMovement = proneSpeed - currentCombatant.movementUsed
+                    const canStand = remainingMovement > 0
+                    return (
+                      <ActionButton
+                        icon={<ArrowUp className="w-5 h-5" />}
+                        label="Stand Up"
+                        onClick={useStandUp}
+                        disabled={!canStand}
+                        variant="movement"
+                        tooltip={canStand ? `Stand up (costs ${standUpCost} ft movement)` : 'No movement remaining'}
+                      />
+                    )
+                  })()}
                 </div>
 
                 {/* Row 2: Class Features (only if any exist) */}
