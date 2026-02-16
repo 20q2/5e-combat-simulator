@@ -287,7 +287,7 @@ export const spells: Spell[] = [
       scaling: { 5: '2d6', 11: '3d6', 17: '4d6' },
     },
     savingThrow: 'constitution',
-    areaOfEffect: { type: 'sphere', size: 5, origin: 'self' },
+    areaOfEffect: { type: 'sphere', size: 10, origin: 'self' },
   },
   {
     id: 'true-strike',

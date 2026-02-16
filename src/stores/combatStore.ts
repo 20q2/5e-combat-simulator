@@ -576,6 +576,15 @@ export function getCombatantSpeed(combatant: Combatant): number {
   return baseSpeed + speedBonus
 }
 
+/**
+ * Merge new conditions into an existing conditions array.
+ * Same-name conditions don't stack — the new one replaces the old one.
+ */
+function mergeConditions(existing: ActiveCondition[], added: ActiveCondition[]): ActiveCondition[] {
+  const result = existing.filter(e => !added.some(a => a.condition === e.condition))
+  return [...result, ...added]
+}
+
 // checkCombatEnd, isDead, getAvailableReactionSpells moved to engine modules
 
 /**
@@ -615,7 +624,7 @@ function applyMasteryStateChanges(
     set((state) => ({
       combatants: state.combatants.map((c) =>
         c.id === targetId
-          ? { ...c, conditions: [...c.conditions, ...changes.targetConditionsToAdd!.map(cond => ({ condition: cond.condition as Condition, duration: cond.duration }))] }
+          ? { ...c, conditions: mergeConditions(c.conditions, changes.targetConditionsToAdd!.map(cond => ({ condition: cond.condition as Condition, duration: cond.duration }))) }
           : c
       ),
     }))
@@ -1514,10 +1523,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
           c.id === pendingReaction.reactingCombatantId
             ? {
                 ...c,
-                conditions: [
-                  ...c.conditions,
-                  { condition: 'shielded', duration: 1, source: 'Shield spell' }
-                ]
+                conditions: mergeConditions(c.conditions, [{ condition: 'shielded', duration: 1, source: 'Shield spell' }])
               }
             : c
         ),
@@ -2058,10 +2064,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
             c.id === reactor.id
               ? {
                   ...c,
-                  conditions: [
-                    ...c.conditions,
-                    { condition: 'shielded' as const, duration: 1, source: 'Shield spell' }
-                  ]
+                  conditions: mergeConditions(c.conditions, [{ condition: 'shielded' as const, duration: 1, source: 'Shield spell' }])
                 }
               : c
           ),
@@ -2171,7 +2174,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
               c.id === target.id
                 ? {
                     ...c,
-                    conditions: [...c.conditions, conditionEntry],
+                    conditions: mergeConditions(c.conditions, [conditionEntry]),
                     // Goading Attack: track who goaded the target
                     ...(maneuver.id === 'goading-attack' ? { goadedBy: reactor.id } : {}),
                   }
@@ -3541,7 +3544,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
               hasActed: allAttacksUsed,
               movementUsed: Math.max(0, c.movementUsed - remarkableAthleteMovement),
               ...(remarkableAthleteMovement > 0 && {
-                conditions: [...c.conditions, { condition: 'disengaging' as const, duration: 1 }],
+                conditions: mergeConditions(c.conditions, [{ condition: 'disengaging' as const, duration: 1 }]),
               }),
               usedSneakAttackThisTurn: c.usedSneakAttackThisTurn || (result.sneakAttackUsed ?? false),
               usedSavageAttackerThisTurn: c.usedSavageAttackerThisTurn || usedSavageAttackerFeat,
@@ -3773,7 +3776,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
           ? {
               ...c,
               hasActed: true,
-              conditions: [...c.conditions, { condition: 'dodging', duration: 1 }],
+              conditions: mergeConditions(c.conditions, [{ condition: 'dodging', duration: 1 }]),
             }
           : c
       ),
@@ -3803,7 +3806,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
           ? {
               ...c,
               hasActed: true,
-              conditions: [...c.conditions, { condition: 'disengaging', duration: 1 }],
+              conditions: mergeConditions(c.conditions, [{ condition: 'disengaging', duration: 1 }]),
             }
           : c
       ),
@@ -3938,7 +3941,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
       set((state) => ({
         combatants: state.combatants.map(c =>
           c.id === combatantId
-            ? { ...c, conditions: [...c.conditions, { condition: 'prone' as Condition, source: 'Grease' }] }
+            ? { ...c, conditions: mergeConditions(c.conditions, [{ condition: 'prone' as Condition, source: 'Grease' }]) }
             : c
         ),
       }))
@@ -4474,7 +4477,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
                   set((state) => ({
                     combatants: state.combatants.map((c) =>
                       c.id === currentTargetId
-                        ? { ...c, conditions: [...c.conditions, { condition: spell.conditionOnHit!, source: `${caster.name}'s ${spell.name}` }] }
+                        ? { ...c, conditions: mergeConditions(c.conditions, [{ condition: spell.conditionOnHit!, source: `${caster.name}'s ${spell.name}` }]) }
                         : c
                     ),
                   }))
@@ -4623,13 +4626,13 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
                 set((state) => ({
                   combatants: state.combatants.map((c) =>
                     c.id === currentTargetId
-                      ? { ...c, conditions: [...c.conditions, {
+                      ? { ...c, conditions: mergeConditions(c.conditions, [{
                           condition: spell.conditionOnFailedSave!,
                           source: condSource,
                           casterId,
                           endsOnDamage: spell.endsOnDamage,
                           ...(singleRepeatSave ? { repeatSave: singleRepeatSave } : {}),
-                        }] }
+                        }]) }
                       : c
                   ),
                 }))
@@ -4658,7 +4661,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
               set((state) => ({
                 combatants: state.combatants.map((c) =>
                   c.id === currentTargetId
-                    ? { ...c, conditions: [...c.conditions, ...newConditions] }
+                    ? { ...c, conditions: mergeConditions(c.conditions, newConditions) }
                     : c
                 ),
               }))
@@ -4764,13 +4767,13 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
               set((state) => ({
                 combatants: state.combatants.map((c) =>
                   c.id === target.id
-                    ? { ...c, conditions: [...c.conditions, {
+                    ? { ...c, conditions: mergeConditions(c.conditions, [{
                         condition: spell.conditionOnFailedSave!,
                         source: condSource2,
                         casterId,
                         endsOnDamage: spell.endsOnDamage,
                         ...(singleRepeatSave2 ? { repeatSave: singleRepeatSave2 } : {}),
-                      }] }
+                      }]) }
                     : c
                 ),
               }))
@@ -4805,7 +4808,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
             set((state) => ({
               combatants: state.combatants.map((c) =>
                 c.id === target.id
-                  ? { ...c, conditions: [...c.conditions, ...newConditions] }
+                  ? { ...c, conditions: mergeConditions(c.conditions, newConditions) }
                   : c
               ),
             }))
@@ -4928,10 +4931,10 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
           c.id === casterId
             ? {
                 ...c,
-                conditions: [...c.conditions, {
+                conditions: mergeConditions(c.conditions, [{
                   condition: spell.conditionOnSelf!,
                   source: spell.name,
-                }],
+                }]),
               }
             : c
         ),
@@ -5025,7 +5028,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
             set((state) => ({
               combatants: state.combatants.map(c =>
                 c.id === target.id
-                  ? { ...c, conditions: [...c.conditions, { condition: spell.zoneSave!.condition, source: `${caster.name}'s ${spell.name}` }] }
+                  ? { ...c, conditions: mergeConditions(c.conditions, [{ condition: spell.zoneSave!.condition, source: `${caster.name}'s ${spell.name}` }]) }
                   : c
               ),
             }))
@@ -5082,7 +5085,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
         set((state) => ({
           combatants: state.combatants.map((c) =>
             c.id === target.id
-              ? { ...c, conditions: [...c.conditions, { condition: spell.conditionOnTarget!, source: `${caster.name}'s ${spell.name}` }] }
+              ? { ...c, conditions: mergeConditions(c.conditions, [{ condition: spell.conditionOnTarget!, source: `${caster.name}'s ${spell.name}` }]) }
               : c
           ),
         }))
@@ -5347,7 +5350,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
             ? {
                 ...c,
                 movementUsed: c.movementUsed - halfSpeed,
-                conditions: [...c.conditions, { condition: 'disengaging' as const, duration: 1 }],
+                conditions: mergeConditions(c.conditions, [{ condition: 'disengaging' as const, duration: 1 }]),
               }
             : c
         ),
@@ -5447,7 +5450,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
           ? {
               ...c,
               hasBonusActed: true,
-              conditions: [...c.conditions, { condition: 'disengaging', duration: 1 }],
+              conditions: mergeConditions(c.conditions, [{ condition: 'disengaging', duration: 1 }]),
             }
           : c
       ),
@@ -5477,7 +5480,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
           ? {
               ...c,
               hasBonusActed: true,
-              conditions: [...c.conditions, { condition: 'hidden', duration: 1 }],
+              conditions: mergeConditions(c.conditions, [{ condition: 'hidden', duration: 1 }]),
             }
           : c
       ),
@@ -5690,11 +5693,10 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
                 superiorityDiceRemaining: c.superiorityDiceRemaining - 1,
                 movementUsed: c.movementUsed - speed, // Dash effect
                 evasiveFootworkBonus: result.acBonus,
-                conditions: [
-                  ...c.conditions,
+                conditions: mergeConditions(c.conditions, [
                   { condition: 'disengaging' as const, duration: 1 },
                   { condition: 'evasive' as const, duration: 1 },
-                ],
+                ]),
               }
             : c
         ),
@@ -6085,7 +6087,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
     set((state) => ({
       combatants: state.combatants.map(c =>
         c.id === combatantId
-          ? { ...c, conditions: [...c.conditions, { condition, duration: -1 }] }
+          ? { ...c, conditions: mergeConditions(c.conditions, [{ condition, duration: -1 }]) }
           : c
       ),
     }))

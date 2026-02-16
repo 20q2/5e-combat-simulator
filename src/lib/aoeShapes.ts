@@ -337,6 +337,10 @@ export function getAoEAffectedCells(config: AoEConfig): Set<string> {
       return getConeAffectedCells(origin, target, size)
     case 'sphere':
     case 'cylinder':
+      // Self-origin spheres (emanations like Thunderclap) center on the caster
+      if (originType === 'self') {
+        return getSphereAffectedCells(origin, size)
+      }
       return getSphereAffectedCells(target, size)
     case 'cube':
       // Self-origin cubes (like Thunder Wave) extend from the caster

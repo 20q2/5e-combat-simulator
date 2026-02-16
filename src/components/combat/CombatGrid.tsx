@@ -778,7 +778,23 @@ export function CombatGrid() {
 
   // Calculate AoE preview cells based on hovered position
   const aoeAffectedCells = useMemo(() => {
-    if (!aoePreview || !hoveredCell) return new Set<string>()
+    if (!aoePreview) return new Set<string>()
+
+    // Self-origin emanations (Thunderclap) always show centered on caster, no hover needed
+    const isSelfOriginEmanation = aoePreview.originType === 'self' &&
+      (aoePreview.type === 'sphere' || aoePreview.type === 'cylinder')
+
+    if (isSelfOriginEmanation) {
+      return getAoEAffectedCells({
+        type: aoePreview.type,
+        size: aoePreview.size,
+        origin: aoePreview.origin,
+        target: aoePreview.origin,
+        originType: aoePreview.originType,
+      })
+    }
+
+    if (!hoveredCell) return new Set<string>()
 
     // For cones/lines, the target is where the mouse is pointing
     // For spheres/cubes, the target is where the effect will be centered
