@@ -2267,7 +2267,6 @@ export function ActionBar() {
                         variant="spell"
                         tooltip="Cast a spell"
                         badge={availableSpells.length}
-                        actionType="action"
                       />
                     )
                   })()}
