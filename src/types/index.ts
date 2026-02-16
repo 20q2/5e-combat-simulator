@@ -66,6 +66,8 @@ export type Condition =
   | 'protected_from_evil_good'  // Disadvantage for aberrations/celestials/elementals/fey/fiends/undead attacking this target
   | 'witch_bolt'  // Bonus action 1d12 lightning damage to linked target while concentrating on Witch Bolt
   | 'mage_armor'  // Base AC becomes 13 + DEX mod (only if not wearing armor)
+  | 'mind_sliver'  // -1d4 on next saving throw (consumed on use)
+  | 'blade_ward'  // Attackers subtract 1d4 from attack rolls against this creature
 
 // ============================================
 // Character Types

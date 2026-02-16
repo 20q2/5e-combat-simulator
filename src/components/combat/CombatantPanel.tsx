@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import { getConditionIcon } from '@/lib/conditionIcons'
 import { getClassIcon } from '@/lib/classIcons'
 import { useCombatStore, getCurrentCombatant, getCombatantSpeed } from '@/stores/combatStore'
 import { getCombatantTokenImage } from '@/lib/tokenImages'
@@ -282,24 +283,21 @@ function FeatureDetailCard({ feature, combatant, onClose }: FeatureDetailCardPro
 }
 
 function ConditionBadge({ condition }: { condition: string }) {
-  const colors: Record<string, string> = {
-    unconscious: 'bg-rose-900 text-rose-200',
-    poisoned: 'bg-emerald-900 text-emerald-200',
-    frightened: 'bg-purple-900 text-purple-200',
-    charmed: 'bg-pink-900 text-pink-200',
-    blinded: 'bg-slate-700 text-slate-200',
-    deafened: 'bg-slate-700 text-slate-200',
-    paralyzed: 'bg-amber-900 text-amber-200',
-    stunned: 'bg-amber-900 text-amber-200',
-    grappled: 'bg-orange-900 text-orange-200',
-    restrained: 'bg-orange-900 text-orange-200',
-    prone: 'bg-yellow-900 text-yellow-200',
-    dodging: 'bg-sky-900 text-sky-200',
-  }
+  const iconInfo = getConditionIcon(condition)
+  const IconComponent = iconInfo?.icon
+  const label = iconInfo?.label || condition.charAt(0).toUpperCase() + condition.slice(1)
 
   return (
-    <span className={cn('text-xs px-2 py-0.5 rounded-full', colors[condition] || 'bg-slate-700 text-slate-200')}>
-      {condition}
+    <span className={cn(
+      'flex items-center gap-1 text-xs px-1.5 py-0.5 rounded',
+      iconInfo?.bgColor || 'bg-slate-800',
+    )}>
+      {IconComponent && (
+        <IconComponent className={cn('w-3 h-3', iconInfo?.color || 'text-slate-300')} />
+      )}
+      <span className={iconInfo?.color || 'text-slate-200'}>
+        {label}
+      </span>
     </span>
   )
 }

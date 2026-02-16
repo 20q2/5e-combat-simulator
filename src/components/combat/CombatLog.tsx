@@ -18,28 +18,132 @@ function RoundDivider({ round }: { round: number }) {
   )
 }
 
-// Get text color based on log entry type
-function getEntryColor(type: CombatLogEntry['type']): string {
-  switch (type) {
-    case 'damage':
-      return 'text-rose-400'
-    case 'heal':
-      return 'text-emerald-400'
-    case 'death':
-      return 'text-rose-300 font-bold'
-    case 'condition':
-      return 'text-amber-400'
-    case 'initiative':
-      return 'text-violet-400'
-    case 'movement':
-      return 'text-sky-400'
-    case 'spell':
-      return 'text-purple-400'
-    case 'attack':
-      return 'text-orange-400'
-    default:
-      return 'text-foreground'
+// Highlight important parts of a message with color
+function StyledMessage({ entry }: { entry: CombatLogEntry }) {
+  const { type, message } = entry
+
+  // Death messages: bold red
+  if (type === 'death') {
+    return <span className="text-rose-400 font-bold">{message}</span>
   }
+
+  // Damage messages: color the number and damage type
+  if (type === 'damage') {
+    const match = message.match(/^(\d+)\s+(.+?\s+damage)(.*)$/)
+    if (match) {
+      return (
+        <span>
+          <span className="text-rose-400 font-semibold">{match[1]}</span>
+          <span className="text-slate-300"> {match[2]}</span>
+          {match[3] && <span className="text-slate-400">{match[3]}</span>}
+        </span>
+      )
+    }
+    return <span className="text-slate-300">{message}</span>
+  }
+
+  // Heal messages: color the heal amount
+  if (type === 'heal') {
+    const match = message.match(/(heals?\s+)(\d+)(\s+HP.*)/)
+    if (match) {
+      return (
+        <span className="text-slate-300">
+          {match[1]}<span className="text-emerald-400 font-semibold">{match[2]}</span>{match[3]}
+        </span>
+      )
+    }
+    // Temp HP
+    const tempMatch = message.match(/(gains?\s+)(\d+)(\s+temporary HP.*)/)
+    if (tempMatch) {
+      return (
+        <span className="text-slate-300">
+          {tempMatch[1]}<span className="text-emerald-400 font-semibold">{tempMatch[2]}</span>{tempMatch[3]}
+        </span>
+      )
+    }
+    return <span className="text-slate-300">{message}</span>
+  }
+
+  // Attack messages: highlight CRITICAL
+  if (type === 'attack') {
+    if (message.includes('CRITICAL')) {
+      const parts = message.split(/(CRITICAL(?:LY)?(?:\s+HIT[S]?)?|CRITICAL MISS)/i)
+      return (
+        <span className="text-slate-300">
+          {parts.map((part, i) =>
+            /CRITICAL/i.test(part)
+              ? <span key={i} className="text-amber-400 font-bold">{part}</span>
+              : <span key={i}>{part}</span>
+          )}
+        </span>
+      )
+    }
+    // Highlight "hits" and "misses"
+    if (message.includes(' hits ')) {
+      const idx = message.indexOf(' hits ')
+      return (
+        <span className="text-slate-300">
+          {message.slice(0, idx)}
+          <span className="text-orange-400"> hits </span>
+          {message.slice(idx + 6)}
+        </span>
+      )
+    }
+    if (message.includes(' misses ')) {
+      const idx = message.indexOf(' misses ')
+      return (
+        <span className="text-slate-300">
+          {message.slice(0, idx)}
+          <span className="text-slate-500"> misses </span>
+          {message.slice(idx + 8)}
+        </span>
+      )
+    }
+    return <span className="text-slate-300">{message}</span>
+  }
+
+  // Spell messages: highlight the spell name
+  if (type === 'spell') {
+    const castsMatch = message.match(/^(casts\s+)(.+?)(!.*)?$/)
+    if (castsMatch) {
+      return (
+        <span className="text-slate-300">
+          {castsMatch[1]}<span className="text-purple-400">{castsMatch[2]}</span>{castsMatch[3] || ''}
+        </span>
+      )
+    }
+    // Save results: highlight DC
+    const dcMatch = message.match(/(DC\s+\d+)/)
+    if (dcMatch) {
+      const parts = message.split(/(DC\s+\d+)/)
+      return (
+        <span className="text-slate-300">
+          {parts.map((part, i) =>
+            /DC\s+\d+/.test(part)
+              ? <span key={i} className="text-amber-400">{part}</span>
+              : <span key={i}>{part}</span>
+          )}
+        </span>
+      )
+    }
+    return <span className="text-slate-300">{message}</span>
+  }
+
+  // Movement messages: highlight distance
+  if (type === 'movement') {
+    const match = message.match(/(moves?\s+)(\d+\s*ft)(.*)/)
+    if (match) {
+      return (
+        <span className="text-slate-300">
+          {match[1]}<span className="text-sky-400">{match[2]}</span>{match[3]}
+        </span>
+      )
+    }
+    return <span className="text-slate-300">{message}</span>
+  }
+
+  // Everything else: plain light text
+  return <span className="text-slate-300">{message}</span>
 }
 
 // Token avatar component for combat log
@@ -87,8 +191,6 @@ function ActorToken({ combatant }: { combatant: Combatant | undefined }) {
 }
 
 function LogEntry({ entry, combatants }: { entry: CombatLogEntry; combatants: Combatant[] }) {
-  const color = getEntryColor(entry.type)
-
   // Find the actor combatant
   const actor = entry.actorId ? combatants.find(c => c.id === entry.actorId) : undefined
 
@@ -96,22 +198,22 @@ function LogEntry({ entry, combatants }: { entry: CombatLogEntry; combatants: Co
   const showActorName = entry.actorName && entry.actorName !== 'System'
 
   // Strip leading actor name from message to avoid showing it twice
-  const displayMessage = showActorName && entry.message.startsWith(entry.actorName)
-    ? entry.message.slice(entry.actorName.length).trimStart()
-    : entry.message
+  const strippedEntry = showActorName && entry.message.startsWith(entry.actorName)
+    ? { ...entry, message: entry.message.slice(entry.actorName.length).trimStart() }
+    : entry
 
   return (
-    <div className={cn('flex items-start gap-2 text-sm py-1 pl-1 animate-slide-in-left', color)}>
+    <div className="flex items-start gap-2 text-sm py-1 pl-1 animate-slide-in-left">
       <ActorToken combatant={actor} />
       <div className="flex-1 min-w-0">
         <div>
           {showActorName && (
-            <span className="font-semibold text-slate-200">{entry.actorName} </span>
+            <span className="font-semibold text-white">{entry.actorName} </span>
           )}
-          {displayMessage}
+          <StyledMessage entry={strippedEntry} />
         </div>
         {entry.details && (
-          <div className="text-xs text-muted-foreground mt-0.5 font-mono">
+          <div className="text-xs text-slate-500 mt-0.5 font-mono">
             {entry.details}
           </div>
         )}

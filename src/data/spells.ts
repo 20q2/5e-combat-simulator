@@ -22,7 +22,7 @@ export const spells: Spell[] = [
       scaling: { 5: '2d6', 11: '3d6', 17: '4d6' },
     },
     savingThrow: 'dexterity',
-    areaOfEffect: { type: 'sphere', size: 5, origin: 'point' },
+    areaOfEffect: { type: 'cube', size: 10, origin: 'point' },
   },
   {
     id: 'blade-ward',
@@ -32,11 +32,12 @@ export const spells: Spell[] = [
     castingTime: '1 action',
     range: 'Self',
     components: { verbal: true, somatic: true },
-    duration: '1 round',
-    concentration: false,
+    duration: 'Concentration, up to 1 minute',
+    concentration: true,
     ritual: false,
-    description: 'You weave protective magic around yourself. Until the start of your next turn, you have Resistance to Bludgeoning, Piercing, and Slashing damage.',
-    classes: ['sorcerer', 'warlock', 'wizard'],
+    description: 'Whenever a creature makes an attack roll against you before the spell ends, the attacker subtracts 1d4 from the attack roll.',
+    classes: ['bard', 'sorcerer', 'warlock', 'wizard'],
+    conditionOnSelf: 'blade_ward',
   },
   {
     id: 'fire-bolt',
@@ -245,7 +246,7 @@ export const spells: Spell[] = [
       scaling: { 5: '2d6', 11: '3d6', 17: '4d6' },
     },
     savingThrow: 'intelligence',
-    onFailedSaveDescription: 'subtracts 1d4 from its next saving throw before the end of your next turn',
+    conditionOnFailedSave: 'mind_sliver',
   },
   {
     id: 'poison-spray',
@@ -258,14 +259,14 @@ export const spells: Spell[] = [
     duration: 'Instantaneous',
     concentration: false,
     ritual: false,
-    description: 'You spray a puff of noxious gas from your palm at one creature you can see within range. The target must succeed on a Constitution saving throw or take 1d12 poison damage.',
+    description: 'You spray toxic mist at a creature within range. Make a ranged spell attack against the target. On a hit, the target takes 1d12 Poison damage.',
     classes: ['druid', 'sorcerer', 'warlock', 'wizard'],
     damage: {
       type: 'poison',
       dice: '1d12',
       scaling: { 5: '2d12', 11: '3d12', 17: '4d12' },
     },
-    savingThrow: 'constitution',
+    attackType: 'ranged',
   },
   {
     id: 'thunderclap',
@@ -498,6 +499,7 @@ export const spells: Spell[] = [
     description: 'You touch a willing creature who isn\'t wearing armor, and a protective magical force surrounds it until the spell ends. The target\'s base AC becomes 13 + its Dexterity modifier. The spell ends if the target dons armor or if you dismiss the spell as an action.',
     classes: ['sorcerer', 'wizard'],
     targetType: 'ally',
+    multiTarget: { baseCount: 1 },
     conditionOnTarget: 'mage_armor',
   },
   {
@@ -1239,7 +1241,6 @@ export const spells: Spell[] = [
     targetType: 'ally',
     multiTarget: { baseCount: 1, additionalPerLevel: 1 },
     conditionOnTarget: 'jump',
-    grantsExtraMovement: 10,
   },
   {
     id: 'protection-from-evil-and-good',
@@ -1255,6 +1256,7 @@ export const spells: Spell[] = [
     description: 'Until the spell ends, one willing creature you touch is protected against Aberrations, Celestials, Elementals, Fey, Fiends, and Undead. Those creatures have Disadvantage on attack rolls against the target.',
     classes: ['cleric', 'druid', 'paladin', 'warlock', 'wizard'],
     targetType: 'ally',
+    multiTarget: { baseCount: 1 },
     conditionOnTarget: 'protected_from_evil_good',
   },
   {
@@ -1274,7 +1276,6 @@ export const spells: Spell[] = [
     targetType: 'ally',
     multiTarget: { baseCount: 1, additionalPerLevel: 1 },
     conditionOnTarget: 'longstrider',
-    grantsExtraMovement: 10,
   },
   {
     id: 'ray-of-sickness',

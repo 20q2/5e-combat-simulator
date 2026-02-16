@@ -1,6 +1,6 @@
 import type { Combatant, Character, Monster, Spell, Position, DamageType } from '@/types'
 import { getSpellAttackBonus, getSpellSaveDC, rollCombatantSavingThrow, getScaledCantripDice } from '@/engine/combat'
-import { rollAttack, rollDamage } from '@/engine/dice'
+import { rollAttack, rollDamage, rollDie } from '@/engine/dice'
 import { canUseIndomitable } from '@/engine/classAbilities'
 import { canUseHeroicInspiration } from '@/engine/originFeats'
 import { getAoEAffectedCells } from '@/lib/aoeShapes'
@@ -182,7 +182,7 @@ export function resolveSpellAttack(
   scaledDamageDice: string,
 ): SpellAttackResult {
   const spellAttackBonus = getSpellAttackBonus(character)
-  const attackRoll = rollAttack(spellAttackBonus)
+  let attackRoll = rollAttack(spellAttackBonus)
   const targetAC = target.type === 'character'
     ? (target.data as Character).ac
     : (target.data as Monster).ac
@@ -190,6 +190,16 @@ export function resolveSpellAttack(
 
   if (attackRoll.isNatural1) {
     return { hit: false, critical: false, naturalOne: true, attackRoll, targetAC, damageType }
+  }
+
+  // Blade Ward: target's attacker subtracts 1d4 from the attack roll
+  if (target.conditions.some(c => c.condition === 'blade_ward')) {
+    const penalty = rollDie(4)
+    attackRoll = {
+      ...attackRoll,
+      total: attackRoll.total - penalty,
+      breakdown: `${attackRoll.breakdown} - ${penalty} [Blade Ward]`,
+    }
   }
 
   if (attackRoll.isNatural20 || attackRoll.total >= targetAC) {

@@ -223,6 +223,18 @@ export const conditionIcons: Record<ExtendedCondition, ConditionIconInfo> = {
     bgColor: 'bg-violet-900',
     label: 'Mage Armor',
   },
+  mind_sliver: {
+    icon: Brain,
+    color: 'text-pink-300',
+    bgColor: 'bg-pink-900',
+    label: 'Mind Sliver (-1d4 save)',
+  },
+  blade_ward: {
+    icon: Shield,
+    color: 'text-cyan-300',
+    bgColor: 'bg-cyan-900',
+    label: 'Blade Ward',
+  },
 }
 
 export function getConditionIcon(condition: string): ConditionIconInfo | undefined {

@@ -388,6 +388,16 @@ export function resolveAttack(options: MeleeAttackOptions): AttackResult {
     }
   }
 
+  // Blade Ward: target's attacker subtracts 1d4 from the attack roll
+  if (target.conditions.some(c => c.condition === 'blade_ward')) {
+    const bladeWardPenalty = rollDie(4)
+    attackRoll = {
+      ...attackRoll,
+      total: attackRoll.total - bladeWardPenalty,
+      breakdown: `${attackRoll.breakdown} - ${bladeWardPenalty} [Blade Ward]`,
+    }
+  }
+
   // Check for critical hit (nat 20 always hits and crits, Improved Critical extends to 19-20 or 18-20)
   const criticalRange = getCriticalRange(attacker)
   const isCrit = attackRoll.naturalRoll >= criticalRange
@@ -670,6 +680,7 @@ export interface SavingThrowResult {
   success: boolean
   dc: number
   modifier: number
+  mindSliverPenalty?: number  // 1d4 penalty applied from Mind Sliver condition
 }
 
 /**
@@ -749,11 +760,24 @@ export function rollCombatantSavingThrow(
     }
   }
 
+  // Apply Mind Sliver penalty (-1d4) if the target has the condition
+  let mindSliverPenalty: number | undefined
+  if (combatant.conditions.some(c => c.condition === 'mind_sliver')) {
+    mindSliverPenalty = rollDie(4)
+    const penalizedTotal = rollResult.total - mindSliverPenalty
+    rollResult = {
+      ...rollResult,
+      total: penalizedTotal,
+      breakdown: `${rollResult.breakdown} - ${mindSliverPenalty}[Mind Sliver] = ${penalizedTotal}`,
+    }
+  }
+
   return {
     roll: rollResult,
     success: rollResult.total >= dc,
     dc,
     modifier,
+    mindSliverPenalty,
   }
 }
 

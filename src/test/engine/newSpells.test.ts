@@ -111,54 +111,6 @@ function createMonsterTarget(overrides: Partial<Combatant> = {}): Combatant {
   } as Combatant
 }
 
-function createAllyTarget(overrides: Partial<Combatant> = {}): Combatant {
-  return {
-    id: 'ally-1',
-    name: 'Ally Fighter',
-    type: 'character',
-    position: { x: 6, y: 5 },
-    currentHp: 30,
-    maxHp: 30,
-    temporaryHp: 0,
-    initiative: 14,
-    conditions: [],
-    hasActed: false,
-    hasBonusActed: false,
-    hasReacted: false,
-    movementUsed: 0,
-    speed: 30,
-    classFeatureUses: {},
-    racialAbilityUses: {},
-    magicInitiateFreeUses: {},
-    usedSneakAttackThisTurn: false,
-    attacksMadeThisTurn: 0,
-    usedCleaveThisTurn: false,
-    usedNickThisTurn: false,
-    usedManeuverThisAttack: false,
-    usedSavageAttackerThisTurn: false,
-    usedTavernBrawlerPushThisTurn: false,
-    heroicInspiration: false,
-    deathSaves: { successes: 0, failures: 0 },
-    isStable: false,
-    superiorityDiceRemaining: 0,
-    featUses: {},
-    data: {
-      name: 'Ally Fighter',
-      level: 5,
-      race: { name: 'Human', size: 'medium', speed: 30, abilities: [] },
-      class: { name: 'Fighter', hitDie: 'd10', features: [] },
-      abilityScores: { strength: 16, dexterity: 14, constitution: 14, intelligence: 10, wisdom: 12, charisma: 8 },
-      maxHp: 30,
-      ac: 18,
-      armorClass: 18,
-      speed: 30,
-      equipment: { armor: null, shield: false, weapons: [] },
-      proficiencyBonus: 3,
-    } as unknown as Character,
-    ...overrides,
-  } as Combatant
-}
-
 // ============================================
 // Spell Data Definition Tests
 // ============================================
@@ -239,23 +191,21 @@ describe('Spell definitions: new spell properties', () => {
     expect(spell!.explosionOnImpact!.upcastDice).toBe('1d6')
   })
 
-  it('Jump has ally targeting, conditionOnTarget, and grantsExtraMovement', () => {
+  it('Jump has ally targeting and conditionOnTarget (speed bonus via condition)', () => {
     const spell = getSpellById('jump')
     expect(spell).toBeDefined()
     expect(spell!.targetType).toBe('ally')
     expect(spell!.conditionOnTarget).toBe('jump')
-    expect(spell!.grantsExtraMovement).toBe(10)
     expect(spell!.multiTarget).toBeDefined()
     expect(spell!.multiTarget!.baseCount).toBe(1)
     expect(spell!.multiTarget!.additionalPerLevel).toBe(1)
   })
 
-  it('Longstrider has ally targeting, conditionOnTarget, and grantsExtraMovement', () => {
+  it('Longstrider has ally targeting and conditionOnTarget (speed bonus via condition)', () => {
     const spell = getSpellById('longstrider')
     expect(spell).toBeDefined()
     expect(spell!.targetType).toBe('ally')
     expect(spell!.conditionOnTarget).toBe('longstrider')
-    expect(spell!.grantsExtraMovement).toBe(10)
     expect(spell!.multiTarget).toBeDefined()
     expect(spell!.multiTarget!.baseCount).toBe(1)
     expect(spell!.multiTarget!.additionalPerLevel).toBe(1)
@@ -695,11 +645,6 @@ describe('Jump: ally targeting and movement buff', () => {
     expect(spell.conditionOnTarget).toBe('jump')
   })
 
-  it('grants +10 ft extra movement', () => {
-    const spell = getSpellById('jump')!
-    expect(spell.grantsExtraMovement).toBe(10)
-  })
-
   it('is a bonus action', () => {
     const spell = getSpellById('jump')!
     expect(spell.castingTime).toContain('bonus action')
@@ -709,14 +654,6 @@ describe('Jump: ally targeting and movement buff', () => {
     const spell = getSpellById('jump')!
     expect(spell.concentration).toBe(false)
   })
-
-  it('movement buff simulation works correctly', () => {
-    // Simulate what the store does: reduce movementUsed by grantsExtraMovement
-    const ally = createAllyTarget({ movementUsed: 10 })
-    const spell = getSpellById('jump')!
-    const newMovementUsed = ally.movementUsed - spell.grantsExtraMovement!
-    expect(newMovementUsed).toBe(0) // 10 - 10 = 0 (effectively +10ft available)
-  })
 })
 
 // ============================================
@@ -724,11 +661,10 @@ describe('Jump: ally targeting and movement buff', () => {
 // ============================================
 
 describe('Longstrider: ally targeting and speed buff', () => {
-  it('targets allies, applies longstrider condition, grants +10ft movement', () => {
+  it('targets allies and applies longstrider condition (speed bonus via getCombatantSpeed)', () => {
     const spell = getSpellById('longstrider')!
     expect(spell.targetType).toBe('ally')
     expect(spell.conditionOnTarget).toBe('longstrider')
-    expect(spell.grantsExtraMovement).toBe(10)
   })
 
   it('is NOT a concentration spell', () => {

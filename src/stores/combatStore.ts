@@ -123,6 +123,33 @@ import {
   canUseHeroicInspiration,
 } from '@/engine/originFeats'
 
+/** Consume the Mind Sliver condition after a saving throw is made. Returns true if it was consumed. */
+function consumeMindSliver(
+  get: () => CombatState & CombatStore,
+  set: (partial: Partial<CombatState> | ((state: CombatState) => Partial<CombatState>)) => void,
+  combatantId: string,
+  penalty: number | undefined,
+): boolean {
+  if (!penalty) return false
+  set((state) => ({
+    combatants: state.combatants.map((c) =>
+      c.id === combatantId
+        ? { ...c, conditions: c.conditions.filter(ac => ac.condition !== 'mind_sliver') }
+        : c
+    ),
+  }))
+  const combatant = get().combatants.find(c => c.id === combatantId)
+  if (combatant) {
+    get().addLogEntry({
+      type: 'condition',
+      actorId: combatantId,
+      actorName: combatant.name,
+      message: `${combatant.name}'s Mind Sliver penalty applied (-${penalty} to save), effect consumed.`,
+    })
+  }
+  return true
+}
+
 /** Parse a spell range string (e.g., "120 feet", "Touch", "Self") into a numeric distance in feet. */
 function parseSpellRange(range: string): number {
   const lower = range.toLowerCase()
@@ -361,7 +388,7 @@ function resolveSpellAttackWithType(
 ) {
   const character = caster.data as Character
   const spellAttackBonus = getSpellAttackBonus(character)
-  const attackRoll = rollAttack(spellAttackBonus)
+  let attackRoll = rollAttack(spellAttackBonus)
   const targetAC = target.type === 'character'
     ? (target.data as Character).ac
     : (target.data as Monster).ac
@@ -396,6 +423,16 @@ function resolveSpellAttackWithType(
       get().addCombatPopup(currentTargetId, 'miss')
     })
     return
+  }
+
+  // Blade Ward: target's attacker subtracts 1d4 from the attack roll
+  if (target.conditions.some(c => c.condition === 'blade_ward')) {
+    const penalty = rollDie(4)
+    attackRoll = {
+      ...attackRoll,
+      total: attackRoll.total - penalty,
+      breakdown: `${attackRoll.breakdown} - ${penalty} [Blade Ward]`,
+    }
   }
 
   if (attackRoll.isNatural20 || attackRoll.total >= targetAC) {
@@ -533,7 +570,7 @@ export function getCombatantSpeed(combatant: Combatant): number {
     ? (combatant.data as Character).speed
     : (combatant.data as Monster).speed.walk
   const speedBonus = combatant.conditions.reduce((bonus, cond) => {
-    if (cond.condition === 'longstrider') return bonus + 10
+    if (cond.condition === 'longstrider' || cond.condition === 'jump') return bonus + 10
     return bonus
   }, 0)
   return baseSpeed + speedBonus
@@ -959,6 +996,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
       const repeatSaveConditions = endingCombatant.conditions.filter(ac => ac.repeatSave?.onEndOfTurn)
       for (const ac of repeatSaveConditions) {
         const saveResult = rollCombatantSavingThrow(endingCombatant, ac.repeatSave!.ability, ac.repeatSave!.dc)
+        consumeMindSliver(get, set, currentId, saveResult.mindSliverPenalty)
         if (saveResult.success) {
           // Remove ALL conditions from this source (e.g., both prone + incapacitated from Tasha's)
           const sourceToRemove = ac.source
@@ -2718,6 +2756,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
         for (const ac of onDamageConditions) {
           const advantage = ac.repeatSave!.advantageOnDamage ? 'advantage' as const : 'normal' as const
           const saveResult = rollCombatantSavingThrow(updatedTarget, ac.repeatSave!.ability, ac.repeatSave!.dc, advantage)
+          consumeMindSliver(get, set, targetId, saveResult.mindSliverPenalty)
           if (saveResult.success) {
             const sourceToRemove = ac.source
             set((state) => ({
@@ -3584,6 +3623,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
       for (const target of affectedCombatants) {
         // Roll saving throw for target
         const saveResult = rollCombatantSavingThrow(target, aoeReplacement.savingThrow, aoeReplacement.dc)
+        consumeMindSliver(get, set, target.id, saveResult.mindSliverPenalty)
         const saved = saveResult.success
 
         // Calculate damage (half on save)
@@ -3881,6 +3921,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
     const dc = casterCharacter ? getSpellSaveDC(casterCharacter) : 13
 
     const saveResult = rollCombatantSavingThrow(combatant, 'dexterity', dc)
+    consumeMindSliver(get, set, combatantId, saveResult.mindSliverPenalty)
     if (saveResult.success) {
       get().addLogEntry({
         type: 'spell', actorName: combatant.name, actorId: combatantId,
@@ -4336,6 +4377,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
 
             for (const blastTarget of blastTargets) {
               const saveResult = rollCombatantSavingThrow(blastTarget, spell.explosionOnImpact!.savingThrow, dc)
+              consumeMindSliver(get, set, blastTarget.id, saveResult.mindSliverPenalty)
 
               if (saveResult.success) {
                 get().addLogEntry({
@@ -4677,6 +4719,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
         }
 
         const saveResult = rollCombatantSavingThrow(target, spell.savingThrow, dc, saveAdvantage)
+        consumeMindSliver(get, set, target.id, saveResult.mindSliverPenalty)
 
         if (saveResult.success) {
           get().addLogEntry({
@@ -4962,6 +5005,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
 
         for (const target of creaturesInZone) {
           const saveResult = rollCombatantSavingThrow(target, spell.zoneSave.ability, dc)
+          consumeMindSliver(get, set, target.id, saveResult.mindSliverPenalty)
           if (saveResult.success) {
             get().addLogEntry({
               type: 'spell', actorId: casterId, actorName: caster.name,

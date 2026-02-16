@@ -656,7 +656,7 @@ function SpellSelector({
     : spells
 
   const cantrips = (selectedSlotLevel ? [] : spells.filter((s) => s.level === 0)).sort((a, b) => a.name.localeCompare(b.name))
-  const leveledSpells = filteredSpells.filter((s) => s.level > 0)
+  const leveledSpells = filteredSpells.filter((s) => s.level > 0).sort((a, b) => a.name.localeCompare(b.name))
 
   // Group leveled spells by level for tabs
   const spellsByLevel = useMemo(() => {
@@ -2250,19 +2250,27 @@ export function ActionBar() {
                     actionType="action"
                   />
 
-                  {hasSpells && (
-                    <ActionButton
-                      icon={<Sparkles className="w-5 h-5" />}
-                      label="Spell"
-                      onClick={handleSpellClick}
-                      active={selectedAction === 'spell'}
-                      disabled={currentCombatant.hasActed}
-                      variant="spell"
-                      tooltip="Cast a spell"
-                      badge={availableSpells.length}
-                      actionType="action"
-                    />
-                  )}
+                  {hasSpells && (() => {
+                    const hasBonusSpells = availableSpells.some(s => s.castingTime.toLowerCase().includes('bonus'))
+                    const hasActionSpells = availableSpells.some(s => !s.castingTime.toLowerCase().includes('bonus') && !s.castingTime.toLowerCase().includes('reaction'))
+                    const spellDisabled =
+                      (currentCombatant.hasActed && currentCombatant.hasBonusActed) ||
+                      (currentCombatant.hasActed && !hasBonusSpells) ||
+                      (currentCombatant.hasBonusActed && !hasActionSpells)
+                    return (
+                      <ActionButton
+                        icon={<Sparkles className="w-5 h-5" />}
+                        label="Spell"
+                        onClick={handleSpellClick}
+                        active={selectedAction === 'spell'}
+                        disabled={spellDisabled}
+                        variant="spell"
+                        tooltip="Cast a spell"
+                        badge={availableSpells.length}
+                        actionType="action"
+                      />
+                    )
+                  })()}
 
                   <div className="w-px h-10 bg-slate-700" />
 
