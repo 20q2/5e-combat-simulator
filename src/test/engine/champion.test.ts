@@ -180,6 +180,7 @@ function createChampionCombatant(
     usedSavageAttackerThisTurn: false,
     usedTavernBrawlerPushThisTurn: false,
     heroicInspiration: false,
+    hitDiceRemaining: 0,
   } as Combatant
 }
 
@@ -240,6 +241,7 @@ function createPlainFighterCombatant(): Combatant {
     usedSavageAttackerThisTurn: false,
     usedTavernBrawlerPushThisTurn: false,
     heroicInspiration: false,
+    hitDiceRemaining: 0,
   } as Combatant
 }
 

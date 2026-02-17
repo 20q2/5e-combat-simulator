@@ -115,6 +115,7 @@ interface GridCellProps {
   isInAoEPreview: boolean
   isInFogZone: boolean
   isInGreaseZone: boolean
+  isInCloudOfDaggersZone: boolean
   distance?: number
   wallBorderStyle?: React.CSSProperties // For wall outline rendering
   onDragOver: (e: React.DragEvent) => void
@@ -161,6 +162,7 @@ function GridCell({
   isInAoEPreview,
   isInFogZone,
   isInGreaseZone,
+  isInCloudOfDaggersZone,
   distance,
   wallBorderStyle,
   onDragOver,
@@ -202,6 +204,8 @@ function GridCell({
         isInFogZone && !isInAoEPreview && 'bg-slate-300/40 border-slate-400/50',
         // Persistent grease zone
         isInGreaseZone && !isInAoEPreview && 'bg-yellow-800/35 border-yellow-700/40',
+        // Persistent cloud of daggers zone
+        isInCloudOfDaggersZone && !isInAoEPreview && 'bg-slate-400/35 border-slate-300/50',
         // Terrain backgrounds
         hasDifficultTerrain && 'bg-amber-900/40',
         hasHazardTerrain && 'bg-red-900/50 animate-pulse',
@@ -288,6 +292,11 @@ function GridCell({
       {/* Grease zone overlay */}
       {isInGreaseZone && (
         <div className="absolute inset-0 bg-gradient-to-br from-yellow-600/25 to-yellow-900/30 pointer-events-none z-10" />
+      )}
+
+      {/* Cloud of Daggers zone overlay */}
+      {isInCloudOfDaggersZone && (
+        <div className="absolute inset-0 bg-gradient-to-br from-slate-300/30 to-slate-500/25 pointer-events-none z-10" />
       )}
 
       {/* Stairs indicator */}
@@ -408,6 +417,16 @@ export function CombatGrid() {
     const cells = new Set<string>()
     for (const zone of persistentZones) {
       if (zone.zoneType === ZoneType.Grease) {
+        for (const cell of zone.affectedCells) cells.add(cell)
+      }
+    }
+    return cells
+  }, [persistentZones])
+
+  const cloudOfDaggersCellSet = useMemo(() => {
+    const cells = new Set<string>()
+    for (const zone of persistentZones) {
+      if (zone.zoneType === ZoneType.CloudOfDaggers) {
         for (const cell of zone.affectedCells) cells.add(cell)
       }
     }
@@ -834,9 +853,10 @@ export function CombatGrid() {
     if (cell.stairConnection) parts.push(`Stairs ${cell.stairConnection.direction === 'up' ? 'Up' : 'Down'}`)
     if (fogCellSet.has(`${hoveredCell.x},${hoveredCell.y}`)) parts.push('Fog (Heavily Obscured)')
     if (greaseCellSet.has(`${hoveredCell.x},${hoveredCell.y}`)) parts.push('Grease (Difficult Terrain)')
+    if (cloudOfDaggersCellSet.has(`${hoveredCell.x},${hoveredCell.y}`)) parts.push('Cloud of Daggers (4d4 Slashing)')
 
     return parts.length > 0 ? parts.join(' · ') : undefined
-  }, [hoveredCell, grid, fogCellSet, greaseCellSet])
+  }, [hoveredCell, grid, fogCellSet, greaseCellSet, cloudOfDaggersCellSet])
 
   // Calculate movement path when hovering over a reachable cell in move mode using A* pathfinding
   // This is computed first so getDistanceToCell can use the path cost
@@ -1286,6 +1306,7 @@ export function CombatGrid() {
                 isInAoEPreview={isInAoEPreview}
                 isInFogZone={fogCellSet.has(cellKey)}
                 isInGreaseZone={greaseCellSet.has(cellKey)}
+                isInCloudOfDaggersZone={cloudOfDaggersCellSet.has(cellKey)}
                 distance={distance}
                 wallBorderStyle={isWallCell ? getWallBorderStyle(x, y) : undefined}
                 onDragOver={(e) => handleCellDragOver(e, x, y)}

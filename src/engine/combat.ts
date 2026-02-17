@@ -231,6 +231,11 @@ export function getAttackAdvantage(
     hasDisadvantage = true
   }
 
+  // Blur: attackers have disadvantage on attack rolls against the blurred creature
+  if (target.conditions.some((c) => c.condition === 'blur')) {
+    hasDisadvantage = true
+  }
+
   // Protection from Evil and Good: aberrations/celestials/elementals/fey/fiends/undead have disadvantage
   if (isProtectedFromEvilGoodCreature(target, attacker)) {
     hasDisadvantage = true
@@ -307,18 +312,29 @@ export function resolveAttack(options: MeleeAttackOptions): AttackResult {
     damageType = monsterAction.damageType ?? 'bludgeoning'
   } else {
     // Fallback: unarmed strike
-    const strMod = attacker.type === 'character'
-      ? getAbilityModifier((attacker.data as Character).abilityScores.strength)
-      : getAbilityModifier((attacker.data as Monster).abilityScores.strength)
-    attackBonus = strMod + additionalAttackBonus
-
-    // Tavern Brawler feat: use 1d4+STR instead of 1+STR
-    if (hasTavernBrawler(attacker)) {
-      damageExpression = getTavernBrawlerDamage(attacker)
+    const hasAlterSelf = attacker.type === 'character' && attacker.conditions.some(c => c.condition === 'alter_self_natural_weapons')
+    if (hasAlterSelf) {
+      // Alter Self: Natural Weapons — 1d6 + spellcasting ability modifier
+      const character = attacker.data as Character
+      const spellcastingAbility = character.class.spellcasting?.ability ?? 'strength'
+      const spellMod = getAbilityModifier(character.abilityScores[spellcastingAbility])
+      attackBonus = spellMod + character.proficiencyBonus + additionalAttackBonus
+      damageExpression = spellMod >= 0 ? `1d6+${spellMod}` : `1d6${spellMod}`
+      damageType = 'slashing'
     } else {
-      damageExpression = `1+${strMod}`
+      const strMod = attacker.type === 'character'
+        ? getAbilityModifier((attacker.data as Character).abilityScores.strength)
+        : getAbilityModifier((attacker.data as Monster).abilityScores.strength)
+      attackBonus = strMod + additionalAttackBonus
+
+      // Tavern Brawler feat: use 1d4+STR instead of 1+STR
+      if (hasTavernBrawler(attacker)) {
+        damageExpression = getTavernBrawlerDamage(attacker)
+      } else {
+        damageExpression = `1+${strMod}`
+      }
+      damageType = 'bludgeoning'
     }
-    damageType = 'bludgeoning'
   }
 
   // Determine if this is a ranged attack for advantage calculations

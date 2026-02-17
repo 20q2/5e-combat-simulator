@@ -99,6 +99,7 @@ function createCharacterCombatant(
     usedSavageAttackerThisTurn: false,
     usedTavernBrawlerPushThisTurn: false,
     heroicInspiration: false,
+    hitDiceRemaining: 0,
   } as Combatant
 }
 

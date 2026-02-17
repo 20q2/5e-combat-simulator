@@ -278,6 +278,7 @@ interface CombatStore extends CombatState {
   performAttackReplacement: (attackerId: string, replacementId: string, targetPosition: Position) => boolean
   performOpportunityAttack: (attackerId: string, targetId: string, attackReplacementId?: string) => AttackResult | null
   checkGreaseZoneSave: (combatantId: string, position: Position) => void
+  checkCloudOfDaggersDamage: (combatantId: string, position: Position) => void
   useDash: () => void
   useDodge: () => void
   getValidTargets: (attackerId: string, weapon?: Weapon, monsterAction?: MonsterAction, rangedWeapon?: Weapon) => Combatant[]
@@ -355,6 +356,12 @@ interface CombatStore extends CombatState {
   // Chromatic Orb bounce target selection
   resolveBounceTarget: (targetId: string) => void
   skipBounceTarget: () => void
+
+  // Alter Self mode selection
+  resolveAlterSelfMode: (mode: 'natural_weapons' | 'aquatic') => void
+
+  // Blindness/Deafness mode selection
+  resolveBlindnessDeafnessMode: (mode: 'blinded' | 'deafened') => void
 
   // Reset
   resetCombat: () => void
@@ -690,6 +697,24 @@ function getGreaseCells(zones: PersistentZone[]): Set<string> {
   return cells
 }
 
+function getCloudOfDaggersZones(zones: PersistentZone[]): PersistentZone[] {
+  return zones.filter(z => z.zoneType === ZoneType.CloudOfDaggers)
+}
+
+function getCloudOfDaggersDice(zone: PersistentZone): string {
+  const baseDice = '4d4'
+  const spell = getSpellById('cloud-of-daggers')
+  if (zone.castAtLevel && spell && zone.castAtLevel > spell.level && spell.upcastDice) {
+    const levelsAbove = zone.castAtLevel - spell.level
+    const match = spell.upcastDice.dicePerLevel.match(/^(\d+)d(\d+)$/)
+    if (match) {
+      const extraCount = parseInt(match[1]) * levelsAbove
+      return `${baseDice}+${extraCount}d${match[2]}`
+    }
+  }
+  return baseDice
+}
+
 // Module-level map for deferred projectile callbacks (not stored in Zustand state)
 const projectileCallbacks = new Map<string, () => void>()
 const PROJECTILE_FLIGHT_DURATION = 400 // ms
@@ -768,6 +793,8 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
       usedSavageAttackerThisTurn: false,
       usedTavernBrawlerPushThisTurn: false,
       heroicInspiration: false,
+      // Hit Dice tracking
+      hitDiceRemaining: 0,
     }
 
     // Initialize racial and class ability uses for characters
@@ -776,6 +803,8 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
       combatant.classFeatureUses = initializeClassFeatureUses(combatant)
       // Initialize superiority dice for Battle Masters
       combatant.superiorityDiceRemaining = initializeSuperiorityDice(combatant)
+      // Initialize hit dice (equal to character level)
+      combatant.hitDiceRemaining = (input.data as Character).level
       // Initialize Magic Initiate free spell uses (one free cast per level 1 spell per long rest)
       const character = input.data as Character
       if (character.magicInitiateChoices) {
@@ -997,6 +1026,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
     const endingCombatant = combatants.find(c => c.id === currentId)
     if (endingCombatant && endingCombatant.currentHp > 0) {
       get().checkGreaseZoneSave(currentId, endingCombatant.position)
+      get().checkCloudOfDaggersDamage(currentId, endingCombatant.position)
     }
 
     // End-of-turn: repeat saves for conditions like Tasha's Hideous Laughter
@@ -1099,6 +1129,16 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
         }
       }
     }
+
+    // Clear once-per-turn zone damage tracking for the next combatant
+    const nextIdForZoneReset = turnOrder[nextIndex]
+    set((state) => ({
+      persistentZones: state.persistentZones.map(z =>
+        z.zoneDamagedIds?.length
+          ? { ...z, zoneDamagedIds: z.zoneDamagedIds.filter(id => id !== nextIdForZoneReset) }
+          : z
+      ),
+    }))
 
     // Get the next combatant and expire their conditions
     const nextCombatantId = turnOrder[nextIndex]
@@ -2559,6 +2599,9 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
 
     // Check for grease zone entry — DEX save or fall prone
     get().checkGreaseZoneSave(id, to)
+
+    // Check for Cloud of Daggers zone entry — automatic damage
+    get().checkCloudOfDaggersDamage(id, to)
   },
 
   isAnimating: () => {
@@ -3948,6 +3991,47 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
     }
   },
 
+  checkCloudOfDaggersDamage: (combatantId, position) => {
+    const { persistentZones, combatants } = get()
+    const posKey = `${position.x},${position.y}`
+
+    const combatant = combatants.find(c => c.id === combatantId)
+    if (!combatant || combatant.currentHp <= 0) return
+
+    for (const zone of getCloudOfDaggersZones(persistentZones)) {
+      if (!zone.affectedCells.includes(posKey)) continue
+
+      // Once per turn per creature
+      if (zone.zoneDamagedIds?.includes(combatantId)) continue
+
+      const damageDice = getCloudOfDaggersDice(zone)
+      const damageRoll = rollDamage(damageDice)
+
+      const caster = combatants.find(c => c.id === zone.casterId)
+
+      get().addLogEntry({
+        type: 'damage',
+        actorId: zone.casterId,
+        actorName: caster?.name ?? 'Cloud of Daggers',
+        targetId: combatantId,
+        targetName: combatant.name,
+        message: `${combatant.name} takes ${damageRoll.total} slashing damage from Cloud of Daggers!`,
+        details: damageRoll.breakdown,
+      })
+
+      get().dealDamage(combatantId, damageRoll.total, 'Cloud of Daggers')
+
+      // Mark as damaged this turn
+      set((state) => ({
+        persistentZones: state.persistentZones.map(z =>
+          z.id === zone.id
+            ? { ...z, zoneDamagedIds: [...(z.zoneDamagedIds ?? []), combatantId] }
+            : z
+        ),
+      }))
+    }
+  },
+
   performOpportunityAttack: (attackerId, targetId, attackReplacementId) => {
     const { combatants } = get()
     const attacker = combatants.find((c) => c.id === attackerId)
@@ -4248,6 +4332,26 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
       actorName: caster.name,
       message: `${caster.name} casts ${spell.name}${upcastLabel}!`,
     })
+
+    // Intercept Alter Self: show mode selection prompt
+    if (spell.id === 'alter-self') {
+      if (isBonusActionSpell) { get().useBonusAction() } else { get().useAction() }
+      set({
+        pendingAlterSelfMode: { casterId, spell, castAtLevel },
+        selectedAction: undefined,
+      })
+      return true
+    }
+
+    // Intercept Blindness/Deafness: show mode selection prompt (Blinded or Deafened)
+    if (spell.id === 'blindness-deafness' && targetId) {
+      if (isBonusActionSpell) { get().useBonusAction() } else { get().useAction() }
+      set({
+        pendingBlindnessDeafnessMode: { casterId, spell, targetId, castAtLevel },
+        selectedAction: undefined,
+      })
+      return true
+    }
 
     // Calculate scaled damage dice (with upcast bonus)
     const scaledDamageDice = getEffectiveDamageDice(spell, character.level, castAtLevel)
@@ -4859,6 +4963,16 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
           ),
         }))
       }
+      // Remove Alter Self conditions from previous concentration
+      if (currentConc?.id === 'alter-self') {
+        set((state) => ({
+          combatants: state.combatants.map((c) =>
+            c.id === casterId
+              ? { ...c, conditions: c.conditions.filter(ac => ac.condition !== 'alter_self_natural_weapons' && ac.condition !== 'alter_self_aquatic') }
+              : c
+          ),
+        }))
+      }
       // Clear Witch Bolt target link if previous spell was Witch Bolt
       if (currentConc?.id === 'witch-bolt') {
         set((state) => ({
@@ -4978,6 +5092,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
         affectedCells: Array.from(affectedCells),
         durationRounds,
         createdRound: get().round,
+        castAtLevel,
       }
 
       set((state) => ({
@@ -4988,6 +5103,8 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
         ? `A ${effectiveRadius}-foot radius sphere of fog appears.`
         : spell.createsZone === ZoneType.Grease
         ? `A ${effectiveRadius}-foot square of slippery grease appears.`
+        : spell.createsZone === ZoneType.CloudOfDaggers
+        ? 'A cloud of spinning daggers appears!'
         : `A ${effectiveRadius}-foot zone appears.`
 
       get().addLogEntry({
@@ -4996,6 +5113,36 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
         actorName: caster.name,
         message: `${caster.name} casts ${spell.name}! ${zoneDesc}`,
       })
+
+      // Cloud of Daggers: deal immediate damage to all creatures in the zone on cast
+      if (spell.createsZone === ZoneType.CloudOfDaggers) {
+        const creaturesInZone = combatants.filter(c => {
+          if (c.currentHp <= 0) return false
+          return affectedCells.has(`${c.position.x},${c.position.y}`)
+        })
+        const damageDice = getCloudOfDaggersDice(zone)
+        for (const target of creaturesInZone) {
+          const damageRoll = rollDamage(damageDice)
+          get().addLogEntry({
+            type: 'damage',
+            actorId: casterId,
+            actorName: caster.name,
+            targetId: target.id,
+            targetName: target.name,
+            message: `${target.name} takes ${damageRoll.total} slashing damage from Cloud of Daggers!`,
+            details: damageRoll.breakdown,
+          })
+          get().dealDamage(target.id, damageRoll.total, 'Cloud of Daggers')
+          // Mark as damaged this turn
+          set((state) => ({
+            persistentZones: state.persistentZones.map(z =>
+              z.id === zone.id
+                ? { ...z, zoneDamagedIds: [...(z.zoneDamagedIds ?? []), target.id] }
+                : z
+            ),
+          }))
+        }
+      }
 
       // Zone save on creation: creatures in the zone must save or gain condition
       if (spell.zoneSave) {
@@ -5053,6 +5200,55 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
         actorName: caster.name,
         message: `${caster.name} dashes with ${spell.name} (+${speed} ft movement)!`,
       })
+    }
+
+    // Handle Arcane Vigor: roll unexpended Hit Dice + spellcasting ability mod to heal self
+    if (spell.id === 'arcane-vigor' && caster.type === 'character') {
+      const character = caster.data as Character
+      const hitDie = character.class.hitDie
+      // Max dice: 2 at base level 2, +1 per slot level above 2nd
+      const maxDice = 2 + ((castAtLevel ?? spell.level) - spell.level)
+      // Can't roll more dice than remaining
+      const diceToRoll = Math.min(maxDice, caster.hitDiceRemaining)
+
+      if (diceToRoll <= 0) {
+        get().addLogEntry({
+          type: 'spell',
+          actorId: casterId,
+          actorName: caster.name,
+          message: `${caster.name} casts ${spell.name} but has no Hit Dice remaining!`,
+        })
+      } else {
+        // Roll hit dice
+        const rolls: number[] = []
+        for (let i = 0; i < diceToRoll; i++) {
+          rolls.push(rollDie(hitDie))
+        }
+        const rollTotal = rolls.reduce((sum, r) => sum + r, 0)
+        const spellcastingAbility = character.class.spellcasting?.ability ?? 'intelligence'
+        const abilityMod = getAbilityModifier(character.abilityScores[spellcastingAbility])
+        const healAmount = Math.max(0, rollTotal + abilityMod)
+
+        // Apply healing and expend hit dice
+        get().healDamage(casterId, healAmount, caster.name)
+
+        set((state) => ({
+          combatants: state.combatants.map((c) =>
+            c.id === casterId
+              ? { ...c, hitDiceRemaining: c.hitDiceRemaining - diceToRoll }
+              : c
+          ),
+        }))
+
+        const rollBreakdown = rolls.map(r => `${r}`).join(' + ')
+        const modStr = abilityMod >= 0 ? `+ ${abilityMod}` : `- ${Math.abs(abilityMod)}`
+        get().addLogEntry({
+          type: 'spell',
+          actorId: casterId,
+          actorName: caster.name,
+          message: `${caster.name} casts ${spell.name}: ${diceToRoll}d${hitDie} (${rollBreakdown}) ${modStr} = ${healAmount} HP healed (${caster.hitDiceRemaining - diceToRoll} Hit Dice remaining)`,
+        })
+      }
     }
 
     // Handle grantsTempHp spells (False Life): roll dice and grant temp HP to caster
@@ -5537,6 +5733,17 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
         combatants: state.combatants.map((c) =>
           c.id === combatantId
             ? { ...c, conditions: c.conditions.filter(ac => ac.condition !== condToRemove) }
+            : c
+        ),
+      }))
+    }
+
+    // Remove Alter Self conditions (manually managed, not via conditionOnSelf)
+    if (spell.id === 'alter-self') {
+      set((state) => ({
+        combatants: state.combatants.map((c) =>
+          c.id === combatantId
+            ? { ...c, conditions: c.conditions.filter(ac => ac.condition !== 'alter_self_natural_weapons' && ac.condition !== 'alter_self_aquatic') }
             : c
         ),
       }))
@@ -6353,6 +6560,136 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
     })
 
     set({ pendingBounceTarget: undefined })
+  },
+
+  resolveAlterSelfMode: (mode) => {
+    const { pendingAlterSelfMode, combatants } = get()
+    if (!pendingAlterSelfMode) return
+
+    const { casterId, spell } = pendingAlterSelfMode
+    const caster = combatants.find(c => c.id === casterId)
+    if (!caster) {
+      set({ pendingAlterSelfMode: undefined })
+      return
+    }
+
+    set({ pendingAlterSelfMode: undefined })
+
+    const condition = mode === 'natural_weapons' ? 'alter_self_natural_weapons' as const : 'alter_self_aquatic' as const
+    const modeLabel = mode === 'natural_weapons' ? 'Natural Weapons' : 'Aquatic Adaptation'
+
+    get().addLogEntry({
+      type: 'spell',
+      actorId: casterId,
+      actorName: caster.name,
+      message: `${caster.name} chooses ${modeLabel} for ${spell.name}`,
+    })
+
+    // Handle concentration swap: remove previous concentration effects
+    const currentConc = caster.concentratingOn
+    if (currentConc?.conditionOnSelf) {
+      const condToRemove = currentConc.conditionOnSelf
+      set((state) => ({
+        combatants: state.combatants.map((c) =>
+          c.id === casterId
+            ? { ...c, conditions: c.conditions.filter(ac => ac.condition !== condToRemove) }
+            : c
+        ),
+      }))
+    }
+    // Also clean up any previous alter_self conditions
+    if (currentConc?.id === 'alter-self') {
+      set((state) => ({
+        combatants: state.combatants.map((c) =>
+          c.id === casterId
+            ? { ...c, conditions: c.conditions.filter(ac => ac.condition !== 'alter_self_natural_weapons' && ac.condition !== 'alter_self_aquatic') }
+            : c
+        ),
+      }))
+    }
+
+    // Set concentration and apply condition
+    set((state) => ({
+      combatants: state.combatants.map((c) =>
+        c.id === casterId
+          ? {
+              ...c,
+              concentratingOn: spell,
+              conditions: mergeConditions(c.conditions, [{
+                condition,
+                source: spell.name,
+              }]),
+            }
+          : c
+      ),
+    }))
+  },
+
+  resolveBlindnessDeafnessMode: (mode) => {
+    const { pendingBlindnessDeafnessMode, combatants } = get()
+    if (!pendingBlindnessDeafnessMode) return
+
+    const { casterId, spell, targetId } = pendingBlindnessDeafnessMode
+    const caster = combatants.find(c => c.id === casterId)
+    const target = combatants.find(c => c.id === targetId)
+    if (!caster || !target) {
+      set({ pendingBlindnessDeafnessMode: undefined })
+      return
+    }
+
+    set({ pendingBlindnessDeafnessMode: undefined })
+
+    const modeLabel = mode === 'blinded' ? 'Blinded' : 'Deafened'
+
+    get().addLogEntry({
+      type: 'spell',
+      actorId: casterId,
+      actorName: caster.name,
+      message: `${caster.name} chooses ${modeLabel} for ${spell.name}`,
+    })
+
+    // Roll Constitution saving throw
+    const character = caster.data as Character
+    const dc = getSpellSaveDC(character)
+    const saveResult = rollCombatantSavingThrow(target, 'constitution', dc)
+    consumeMindSliver(get, set, targetId, saveResult.mindSliverPenalty)
+
+    if (saveResult.success) {
+      get().addLogEntry({
+        type: 'spell', actorId: casterId, actorName: caster.name,
+        targetId, targetName: target.name,
+        message: `${target.name} saves against ${spell.name} (DC ${dc})`,
+        details: saveResult.roll.breakdown,
+      })
+      get().addCombatPopup(targetId, 'saved')
+    } else {
+      get().addLogEntry({
+        type: 'spell', actorId: casterId, actorName: caster.name,
+        targetId, targetName: target.name,
+        message: `${target.name} fails save against ${spell.name} (DC ${dc})`,
+        details: saveResult.roll.breakdown,
+      })
+      get().addCombatPopup(targetId, 'save_failed')
+
+      const condSource = `${caster.name}'s ${spell.name}`
+      set((state) => ({
+        combatants: state.combatants.map((c) =>
+          c.id === targetId
+            ? { ...c, conditions: mergeConditions(c.conditions, [{
+                condition: mode,
+                source: condSource,
+                casterId,
+                repeatSave: {
+                  ability: 'constitution' as const,
+                  dc,
+                  onEndOfTurn: true,
+                },
+              }]) }
+            : c
+        ),
+      }))
+      get().addCombatPopup(targetId, 'condition', mode)
+    }
   },
 
   resetCombat: () => {

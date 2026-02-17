@@ -133,6 +133,7 @@ function createBattleMasterCombatant(
     usedSavageAttackerThisTurn: false,
     usedTavernBrawlerPushThisTurn: false,
     heroicInspiration: false,
+    hitDiceRemaining: 0,
   } as Combatant
 }
 
@@ -198,6 +199,7 @@ function createNonBattleMasterCombatant(): Combatant {
     usedSavageAttackerThisTurn: false,
     usedTavernBrawlerPushThisTurn: false,
     heroicInspiration: false,
+    hitDiceRemaining: 0,
   } as Combatant
 }
 

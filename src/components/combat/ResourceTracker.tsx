@@ -1,6 +1,6 @@
 import { cn } from '@/lib/utils'
-import { Dices, Clover, Star } from 'lucide-react'
-import type { Combatant } from '@/types'
+import { Dices, Clover, Star, Heart } from 'lucide-react'
+import type { Combatant, Character } from '@/types'
 import {
   hasCombatSuperiority,
   getMaxSuperiorityDice,
@@ -37,8 +37,15 @@ export function ResourceTracker({ combatant, compact = false }: ResourceTrackerP
   const hasHeroicInspirationSource = startsWithHeroicInspiration(combatant)
   const hasInspirationAvailable = combatant.heroicInspiration
 
+  // Check for Hit Dice (shown when character knows Arcane Vigor)
+  const character = combatant.data as Character
+  const knowsArcaneVigor = (character.knownSpells ?? []).some(s => s.id === 'arcane-vigor')
+  const hitDiceMax = knowsArcaneVigor ? character.level : 0
+  const hitDiceRemaining = combatant.hitDiceRemaining
+  const hitDie = character.class.hitDie
+
   // If no resources to show, return null
-  if (!hasSupDice && !hasLucky && !hasHeroicInspirationSource) return null
+  if (!hasSupDice && !hasLucky && !hasHeroicInspirationSource && !knowsArcaneVigor) return null
 
   // Build superiority dice indicators
   const supDiceIndicators: React.ReactNode[] = []
@@ -188,6 +195,55 @@ export function ResourceTracker({ combatant, compact = false }: ResourceTrackerP
           />
         </div>
       )}
+
+      {/* Hit Dice (Arcane Vigor) */}
+      {knowsArcaneVigor && (() => {
+        const hasHitDice = hitDiceRemaining > 0
+        const hitDiceIndicators: React.ReactNode[] = []
+        for (let i = 0; i < hitDiceMax; i++) {
+          const isAvailable = i < hitDiceRemaining
+          hitDiceIndicators.push(
+            <div
+              key={i}
+              className={cn(
+                'rounded-full transition-colors',
+                compact ? 'w-2 h-2' : 'w-2.5 h-2.5',
+                isAvailable
+                  ? 'bg-red-500 border border-red-400'
+                  : 'bg-slate-700 border border-slate-600'
+              )}
+              title={isAvailable ? 'Available' : 'Expended'}
+            />
+          )
+        }
+        return (
+          <div
+            className={cn(
+              'flex items-center gap-1.5',
+              !hasHitDice && 'opacity-50'
+            )}
+            title={`Hit Dice: ${hitDiceRemaining}/${hitDiceMax} (d${hitDie})`}
+          >
+            <div className="flex items-center gap-1">
+              <Heart className={cn(
+                'transition-colors',
+                compact ? 'w-3 h-3' : 'w-3.5 h-3.5',
+                hasHitDice ? 'text-red-400' : 'text-slate-500'
+              )} />
+              <span className={cn(
+                'font-bold uppercase transition-colors',
+                compact ? 'text-[9px]' : 'text-[10px]',
+                hasHitDice ? 'text-red-300' : 'text-slate-500'
+              )}>
+                d{hitDie}
+              </span>
+            </div>
+            <div className={cn('flex gap-0.5', compact && 'gap-px')}>
+              {hitDiceIndicators}
+            </div>
+          </div>
+        )
+      })()}
     </div>
   )
 }

@@ -15,6 +15,8 @@ import { IndomitablePrompt } from '@/components/combat/IndomitablePrompt'
 import { HeroicInspirationPrompt } from '@/components/combat/HeroicInspirationPrompt'
 import { DamageTypePrompt } from '@/components/combat/DamageTypePrompt'
 import { BounceTargetPrompt } from '@/components/combat/BounceTargetPrompt'
+import { AlterSelfModePrompt } from '@/components/combat/AlterSelfModePrompt'
+import { BlindnessDeafnessModePrompt } from '@/components/combat/BlindnessDeafnessModePrompt'
 import { useCombatStore } from '@/stores/combatStore'
 import { useCharacterStore } from '@/stores/characterStore'
 import { getMonsterById } from '@/data'
@@ -309,6 +311,12 @@ export function CombatPage() {
 
       {/* Chromatic Orb bounce target selection */}
       <BounceTargetPrompt />
+
+      {/* Alter Self mode selection */}
+      <AlterSelfModePrompt />
+
+      {/* Blindness/Deafness mode selection */}
+      <BlindnessDeafnessModePrompt />
     </div>
   )
 }

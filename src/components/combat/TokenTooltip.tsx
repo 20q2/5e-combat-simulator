@@ -99,7 +99,7 @@ export function TokenTooltip({ combatant, isCurrentTurn }: TokenTooltipProps) {
         </div>
       </div>
 
-      {/* Movement */}
+      {/* Movement & Reaction */}
       <div className="flex items-center justify-between px-2 py-1.5 bg-slate-900/50 rounded mb-2">
         <div className="flex items-center gap-1.5 text-slate-400">
           <Footprints className="w-3.5 h-3.5" />
@@ -112,6 +112,26 @@ export function TokenTooltip({ combatant, isCurrentTurn }: TokenTooltipProps) {
           {movementRemaining} / {speed} ft
         </span>
       </div>
+      {/* Reaction row - only for monsters (player characters show it in the action economy bar) */}
+      {combatant.type === 'monster' && (
+        <div className="flex items-center justify-between px-2 py-1.5 bg-slate-900/50 rounded mb-2">
+          <div className="flex items-center gap-1.5 text-slate-400">
+            <svg className="w-2.5 h-2.5 shrink-0" viewBox="0 0 12 12">
+              <rect x="1" y="1" width="10" height="10" rx="1"
+                className={combatant.hasReacted ? 'fill-slate-600 stroke-slate-500' : 'fill-violet-500 stroke-violet-400'}
+                strokeWidth="1.5"
+              />
+            </svg>
+            <span className="text-xs">Reaction</span>
+          </div>
+          <span className={cn(
+            'text-xs font-medium',
+            combatant.hasReacted ? 'text-slate-500' : 'text-violet-400'
+          )}>
+            {combatant.hasReacted ? 'Used' : 'Available'}
+          </span>
+        </div>
+      )}
 
       {/* Action Economy - Only show during combat when it's their turn */}
       {isCurrentTurn && (

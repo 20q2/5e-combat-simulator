@@ -68,6 +68,9 @@ export type Condition =
   | 'mage_armor'  // Base AC becomes 13 + DEX mod (only if not wearing armor)
   | 'mind_sliver'  // -1d4 on next saving throw (consumed on use)
   | 'blade_ward'  // Attackers subtract 1d4 from attack rolls against this creature
+  | 'blur'  // Blur spell: attackers have disadvantage on attack rolls against this creature
+  | 'alter_self_natural_weapons'  // Natural weapons: 1d6 + spellcasting ability modifier for unarmed strikes
+  | 'alter_self_aquatic'  // Aquatic adaptation: swim speed, water breathing
 
 // ============================================
 // Character Types
@@ -601,6 +604,7 @@ export interface Position {
 export enum ZoneType {
   Fog = 'fog',
   Grease = 'grease',
+  CloudOfDaggers = 'cloud_of_daggers',
 }
 
 export interface PersistentZone {
@@ -613,6 +617,8 @@ export interface PersistentZone {
   affectedCells: string[]       // Pre-computed cell keys: ["5,3", "5,4", ...]
   durationRounds?: number       // Rounds remaining (undefined = concentration-based)
   createdRound?: number         // Round when zone was created
+  zoneDamagedIds?: string[]     // Combatant IDs that have taken zone damage this turn (for once-per-turn zones)
+  castAtLevel?: number          // Spell slot level used (for upcast damage scaling)
 }
 
 // ============================================
@@ -697,6 +703,8 @@ export interface Combatant {
   usedSavageAttackerThisTurn: boolean  // Track if Savage Attacker was used this turn (once per turn)
   usedTavernBrawlerPushThisTurn: boolean  // Track if Tavern Brawler push was used this turn (once per turn)
   heroicInspiration: boolean  // Musician feat: can reroll a failed attack or save (one use per combat)
+  // Hit Dice tracking (for Arcane Vigor and similar abilities)
+  hitDiceRemaining: number  // Remaining unexpended hit dice (starts at character level)
 }
 
 export interface GridCell {
@@ -907,6 +915,19 @@ export interface CombatState {
     spell: Spell
     targetId: string
     options: DamageType[]
+    castAtLevel?: number
+  }
+  // Alter Self mode selection prompt
+  pendingAlterSelfMode?: {
+    casterId: string
+    spell: Spell
+    castAtLevel?: number
+  }
+  // Blindness/Deafness mode selection prompt
+  pendingBlindnessDeafnessMode?: {
+    casterId: string
+    spell: Spell
+    targetId: string
     castAtLevel?: number
   }
   // Chromatic Orb bounce target selection prompt

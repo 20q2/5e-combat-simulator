@@ -21,6 +21,7 @@ import {
   Target,
   ArrowUp,
   CloudLightning,
+  Sword,
   type LucideIcon,
 } from 'lucide-react'
 import type { Condition } from '@/types'
@@ -234,6 +235,24 @@ export const conditionIcons: Record<ExtendedCondition, ConditionIconInfo> = {
     color: 'text-cyan-300',
     bgColor: 'bg-cyan-900',
     label: 'Blade Ward',
+  },
+  blur: {
+    icon: Eye,
+    color: 'text-indigo-300',
+    bgColor: 'bg-indigo-900',
+    label: 'Blur',
+  },
+  alter_self_natural_weapons: {
+    icon: Sword,
+    color: 'text-emerald-300',
+    bgColor: 'bg-emerald-900',
+    label: 'Alter Self (Natural Weapons)',
+  },
+  alter_self_aquatic: {
+    icon: Droplets,
+    color: 'text-blue-300',
+    bgColor: 'bg-blue-900',
+    label: 'Alter Self (Aquatic)',
   },
 }
 

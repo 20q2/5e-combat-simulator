@@ -6,6 +6,7 @@ import { getCharacterTokenImage, getMonsterTokenImage } from '@/lib/tokenImages'
 import { SpellSlotDisplay } from './SpellSlotDisplay'
 import { ResourceTracker } from './ResourceTracker'
 import type { Character, Monster, Weapon, MonsterAction, Spell } from '@/types'
+import { getAbilityModifier } from '@/types'
 import { getMeleeRange } from '@/engine/combat'
 import { canTargetWithRangedAttack } from '@/lib/lineOfSight'
 import {
@@ -640,6 +641,8 @@ function SpellSelector({
   selectedSlotLevel,
   hasActed,
   hasBonusActed,
+  lastSpellTab,
+  onTabChange,
 }: {
   spells: Spell[]
   onSelect: (spell: Spell, castAtLevel?: number) => void
@@ -649,6 +652,8 @@ function SpellSelector({
   selectedSlotLevel?: number  // If set, only show spells that can be cast at this level
   hasActed: boolean
   hasBonusActed: boolean
+  lastSpellTab?: number
+  onTabChange?: (level: number) => void
 }) {
   // Filter spells based on selected slot level
   const filteredSpells = selectedSlotLevel
@@ -671,20 +676,28 @@ function SpellSelector({
     return groups
   }, [leveledSpells])
   const spellLevels = Object.keys(spellsByLevel).map(Number).sort((a, b) => a - b)
-  const [activeSpellLevel, setActiveSpellLevel] = useState<number>(() => {
+  const [activeSpellLevel, setActiveSpellLevelRaw] = useState<number>(() => {
     if (selectedSlotLevel) {
       // Default to the clicked slot level tab, or the highest available level below it
       if (spellLevels.includes(selectedSlotLevel)) return selectedSlotLevel
       const lower = spellLevels.filter(l => l <= selectedSlotLevel)
       if (lower.length > 0) return lower[lower.length - 1]
     }
+    // Restore last used tab if available and valid
+    if (lastSpellTab && spellLevels.includes(lastSpellTab)) return lastSpellTab
     return spellLevels[0] ?? 1
   })
+
+  // Wrap setter to also notify parent of tab changes
+  const setActiveSpellLevel = (level: number) => {
+    setActiveSpellLevelRaw(level)
+    onTabChange?.(level)
+  }
 
   // Reset active tab if current selection is no longer valid
   useEffect(() => {
     if (spellLevels.length > 0 && !spellLevels.includes(activeSpellLevel)) {
-      setActiveSpellLevel(spellLevels[0])
+      setActiveSpellLevelRaw(spellLevels[0])
     }
   }, [spellLevels, activeSpellLevel])
 
@@ -1358,6 +1371,7 @@ export function ActionBar() {
   const [isSelectingWeapon, setIsSelectingWeapon] = useState(false)
   const [isExecutingAI, setIsExecutingAI] = useState(false)
   const [selectedSlotLevel, setSelectedSlotLevel] = useState<number | undefined>(undefined)
+  const [lastSpellTab, setLastSpellTab] = useState<number | undefined>(undefined)
   const [showDebugMenu, setShowDebugMenu] = useState(false)
   const [isSelectingBattleMedicTarget, setIsSelectingBattleMedicTarget] = useState(false)
   const [showBonusManeuvers, setShowBonusManeuvers] = useState(false)
@@ -1767,15 +1781,30 @@ export function ActionBar() {
         hasMastery: isMastered && !!rangedWeapon.mastery,
       })
     }
-    // Always add unarmed strike option
-    availableWeapons.push({
-      id: 'unarmed',
-      name: 'Unarmed Strike',
-      type: 'unarmed',
-      range: 5,
-      damage: '1+STR',
-      weapon: undefined,
-    })
+    // Add unarmed strike option (replaced by natural weapons if Alter Self is active)
+    const hasNaturalWeapons = currentCombatant?.conditions.some(c => c.condition === 'alter_self_natural_weapons')
+    if (hasNaturalWeapons && character) {
+      const spellAbility = character.class.spellcasting?.ability ?? 'strength'
+      const spellMod = getAbilityModifier(character.abilityScores[spellAbility])
+      const modStr = spellMod >= 0 ? `+${spellMod}` : `${spellMod}`
+      availableWeapons.push({
+        id: 'unarmed',
+        name: 'Natural Weapons',
+        type: 'unarmed',
+        range: 5,
+        damage: `1d6${modStr}`,
+        weapon: undefined,
+      })
+    } else {
+      availableWeapons.push({
+        id: 'unarmed',
+        name: 'Unarmed Strike',
+        type: 'unarmed',
+        range: 5,
+        damage: '1+STR',
+        weapon: undefined,
+      })
+    }
 
     // Add attack replacements (breath weapon, etc.)
     if (currentCombatant) {
@@ -2145,6 +2174,8 @@ export function ActionBar() {
                   selectedSlotLevel={selectedSlotLevel}
                   hasActed={currentCombatant.hasActed}
                   hasBonusActed={currentCombatant.hasBonusActed}
+                  lastSpellTab={lastSpellTab}
+                  onTabChange={setLastSpellTab}
                 />
               )}
 

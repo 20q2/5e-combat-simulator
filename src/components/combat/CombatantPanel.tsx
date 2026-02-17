@@ -410,6 +410,18 @@ function ClassResources({ combatant, character }: ClassResourcesProps) {
     })
   }
 
+  // Check for Hit Dice (shown when character knows Arcane Vigor)
+  const knowsArcaneVigor = (character.knownSpells ?? []).some(s => s.id === 'arcane-vigor')
+  if (knowsArcaneVigor) {
+    resources.push({
+      name: 'Hit Dice',
+      current: combatant.hitDiceRemaining,
+      max: character.level,
+      color: 'bg-red-500',
+      dieSize: character.class.hitDie,
+    })
+  }
+
   if (resources.length === 0) return null
 
   return (
@@ -437,19 +449,27 @@ function ActionEconomyIndicator({ combatant }: { combatant: Combatant }) {
         </span>
       </div>
       <div className="flex items-center gap-1.5">
-        <div className={cn(
-          'w-3 h-3 rounded-full border-2',
-          combatant.hasBonusActed ? 'bg-slate-600 border-slate-500' : 'bg-amber-500 border-amber-400'
-        )} />
+        <svg className="w-3 h-3 shrink-0" viewBox="0 0 12 12">
+          <polygon points="6,1 11,11 1,11"
+            className={cn(
+              combatant.hasBonusActed ? 'fill-slate-600 stroke-slate-500' : 'fill-amber-500 stroke-amber-400'
+            )}
+            strokeWidth="1.5"
+          />
+        </svg>
         <span className={cn('text-xs', combatant.hasBonusActed ? 'text-slate-500' : 'text-amber-400')}>
           Bonus
         </span>
       </div>
       <div className="flex items-center gap-1.5">
-        <div className={cn(
-          'w-3 h-3 rounded-full border-2',
-          combatant.hasReacted ? 'bg-slate-600 border-slate-500' : 'bg-violet-500 border-violet-400'
-        )} />
+        <svg className="w-3 h-3 shrink-0" viewBox="0 0 12 12">
+          <rect x="1" y="1" width="10" height="10" rx="1"
+            className={cn(
+              combatant.hasReacted ? 'fill-slate-600 stroke-slate-500' : 'fill-violet-500 stroke-violet-400'
+            )}
+            strokeWidth="1.5"
+          />
+        </svg>
         <span className={cn('text-xs', combatant.hasReacted ? 'text-slate-500' : 'text-violet-400')}>
           Reaction
         </span>
