@@ -16,6 +16,12 @@ export interface MovementContext {
   isProne?: boolean
 }
 
+/** A zone where movement toward a point costs double (Gust of Wind). */
+export interface DirectionalDifficultZone {
+  cells: Set<string>
+  casterPosition: Position
+}
+
 interface PathNode {
   x: number
   y: number
@@ -224,7 +230,8 @@ export function getMovementCost(
   to: Position,
   diagonalCount: number,
   movementContext?: MovementContext,
-  difficultZoneCells?: Set<string>
+  difficultZoneCells?: Set<string>,
+  directionalDifficultZones?: DirectionalDifficultZone[]
 ): { cost: number; newDiagonalCount: number } {
   const toCell = grid.cells[to.y]?.[to.x]
   const fromCell = grid.cells[from.y]?.[from.x]
@@ -285,6 +292,20 @@ export function getMovementCost(
     return { cost: baseCost * 2 * proneMultiplier, newDiagonalCount }
   }
 
+  // Directional difficult terrain (Gust of Wind: 2x cost when moving toward caster)
+  if (directionalDifficultZones) {
+    for (const zone of directionalDifficultZones) {
+      if (zone.cells.has(`${to.x},${to.y}`)) {
+        // Check if movement is toward the caster (Manhattan distance decreasing)
+        const distBefore = Math.abs(from.x - zone.casterPosition.x) + Math.abs(from.y - zone.casterPosition.y)
+        const distAfter = Math.abs(to.x - zone.casterPosition.x) + Math.abs(to.y - zone.casterPosition.y)
+        if (distAfter < distBefore) {
+          return { cost: baseCost * 2 * proneMultiplier, newDiagonalCount }
+        }
+      }
+    }
+  }
+
   return { cost: baseCost * proneMultiplier, newDiagonalCount }
 }
 
@@ -324,7 +345,8 @@ export function findPath(
   maxCost?: number,
   footprintSize: number = 1,
   movementContext?: MovementContext,
-  difficultZoneCells?: Set<string>
+  difficultZoneCells?: Set<string>,
+  directionalDifficultZones?: DirectionalDifficultZone[]
 ): Position[] | null {
   // Quick check: if end footprint can't fit, no path possible
   const endPassability = checkFootprintPassability(grid, end, footprintSize, occupiedPositions)
@@ -410,7 +432,8 @@ export function findPath(
         neighbor,
         currentDiagonalCount,
         movementContext,
-        difficultZoneCells
+        difficultZoneCells,
+        directionalDifficultZones
       )
 
       // Skip if impassable
@@ -466,14 +489,14 @@ function reconstructPath(endNode: PathNode): Position[] {
 /**
  * Calculate the total movement cost of a path
  */
-export function calculatePathCost(grid: Grid, path: Position[], movementContext?: MovementContext, difficultZoneCells?: Set<string>): number {
+export function calculatePathCost(grid: Grid, path: Position[], movementContext?: MovementContext, difficultZoneCells?: Set<string>, directionalDifficultZones?: DirectionalDifficultZone[]): number {
   if (path.length < 2) return 0
 
   let totalCost = 0
   let diagonalCount = 0
 
   for (let i = 0; i < path.length - 1; i++) {
-    const { cost, newDiagonalCount } = getMovementCost(grid, path[i], path[i + 1], diagonalCount, movementContext, difficultZoneCells)
+    const { cost, newDiagonalCount } = getMovementCost(grid, path[i], path[i + 1], diagonalCount, movementContext, difficultZoneCells, directionalDifficultZones)
     if (cost === Infinity) return Infinity
     totalCost += cost
     diagonalCount = newDiagonalCount
@@ -494,7 +517,8 @@ export function getReachablePositions(
   occupiedPositions: Set<string>,
   footprintSize: number = 1,
   movementContext?: MovementContext,
-  difficultZoneCells?: Set<string>
+  difficultZoneCells?: Set<string>,
+  directionalDifficultZones?: DirectionalDifficultZone[]
 ): Map<string, number> {
   const reachable = new Map<string, number>()
 
@@ -529,7 +553,8 @@ export function getReachablePositions(
         neighbor,
         diagonalCount,
         movementContext,
-        difficultZoneCells
+        difficultZoneCells,
+        directionalDifficultZones
       )
 
       if (baseCost === Infinity) continue

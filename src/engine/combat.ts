@@ -752,6 +752,16 @@ export function rollCombatantSavingThrow(
     }
   }
 
+  // Enlarge/Reduce: advantage on STR saves when enlarged, disadvantage when reduced
+  if (ability === 'strength') {
+    if (combatant.conditions.some(c => c.condition === 'enlarged')) {
+      finalAdvantage = finalAdvantage === 'disadvantage' ? 'normal' : 'advantage'
+    }
+    if (combatant.conditions.some(c => c.condition === 'reduced')) {
+      finalAdvantage = finalAdvantage === 'advantage' ? 'normal' : 'disadvantage'
+    }
+  }
+
   let rollResult = rollD20(modifier, finalAdvantage)
 
   // Check for Halfling Lucky - reroll 1s on saving throws

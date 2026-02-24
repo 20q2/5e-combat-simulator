@@ -20,6 +20,7 @@ import type {
   ActiveCondition,
   WeaponMastery,
   PersistentZone,
+  Size,
 } from '@/types'
 import { ZoneType } from '@/types'
 import { rollInitiative, rollDie, rollD20 } from '@/engine/dice'
@@ -105,8 +106,9 @@ import {
 } from '@/engine/maneuvers'
 import { getManeuverById } from '@/data/maneuvers'
 import type { TriggerOption, PendingTrigger } from '@/types'
-import { getAoEAffectedCells } from '@/lib/aoeShapes'
-import { getCombatantSize, getOccupiedCells, getFootprintSize } from '@/lib/creatureSize'
+import { getAoEAffectedCells, getSnappedDirection, getLineDirection } from '@/lib/aoeShapes'
+import { getLineBetween } from '@/lib/lineOfSight'
+import { getCombatantSize, getOccupiedCells, getFootprintSize, getOccupiedCellKeys } from '@/lib/creatureSize'
 import {
   initializeFeatUses,
   getAlertInitiativeBonus,
@@ -350,6 +352,16 @@ interface CombatStore extends CombatState {
   // Witch Bolt bonus action zap
   useWitchBoltZap: () => void
 
+  // Gust of Wind
+  checkGustOfWindPush: (combatantId: string, position: Position) => void
+  startGustOfWindRedirect: () => void
+  useGustOfWindRedirect: (targetPosition: Position) => void
+  cancelGustOfWindRedirect: () => void
+
+  // Flaming Sphere
+  checkFlamingSphereDamage: (combatantId: string, position: Position) => void
+  moveFlamingSphere: (targetPosition: Position) => void
+
   // Chromatic Orb damage type choice
   resolveDamageTypeChoice: (damageType: DamageType) => void
   skipDamageTypeChoice: () => void
@@ -362,6 +374,21 @@ interface CombatStore extends CombatState {
 
   // Blindness/Deafness mode selection
   resolveBlindnessDeafnessMode: (mode: 'blinded' | 'deafened') => void
+
+  // Dragon's Breath damage type selection and exhale
+  resolveDragonsBreathDamageType: (damageType: DamageType) => void
+  startDragonsBreathExhale: () => void
+  useDragonsBreathExhale: (targetPosition: Position) => void
+
+  // Enlarge/Reduce mode selection
+  resolveEnlargeReduceMode: (mode: 'enlarged' | 'reduced') => void
+
+  // Footprint update when size changes (Enlarge/Reduce)
+  updateCombatantFootprint: (combatantId: string, oldSize: Size, newSize: Size) => void
+
+  // Crown of Madness forced attack
+  resolveCrownOfMadness: (targetId: string) => void
+  skipCrownOfMadness: () => void
 
   // Reset
   resetCombat: () => void
@@ -715,6 +742,122 @@ function getCloudOfDaggersDice(zone: PersistentZone): string {
   return baseDice
 }
 
+function getFlamingSphereZones(zones: PersistentZone[]): PersistentZone[] {
+  return zones.filter(z => z.zoneType === ZoneType.FlamingSphere)
+}
+
+function getFlamingSphereDice(zone: PersistentZone): string {
+  const baseDice = '2d6'
+  const spell = getSpellById('flaming-sphere')
+  if (zone.castAtLevel && spell && zone.castAtLevel > spell.level && spell.upcastDice) {
+    const levelsAbove = zone.castAtLevel - spell.level
+    const match = spell.upcastDice.dicePerLevel.match(/^(\d+)d(\d+)$/)
+    if (match) {
+      const extraCount = parseInt(match[1]) * levelsAbove
+      return `${baseDice}+${extraCount}d${match[2]}`
+    }
+  }
+  return baseDice
+}
+
+function getFlamingSphereAdjacentCells(center: Position): string[] {
+  const cells: string[] = []
+  for (let dx = -1; dx <= 1; dx++) {
+    for (let dy = -1; dy <= 1; dy++) {
+      if (dx === 0 && dy === 0) continue // skip center
+      cells.push(`${center.x + dx},${center.y + dy}`)
+    }
+  }
+  return cells
+}
+
+/**
+ * Calculate push position along a direction for multi-cell pushes (e.g., 15ft = 3 cells).
+ * Returns the furthest valid position, stopping early if blocked.
+ */
+function calculateLinePushPosition(
+  targetPos: Position,
+  direction: Position,
+  distanceFeet: number,
+  grid: Grid,
+  targetId: string,
+): Position {
+  const steps = Math.floor(distanceFeet / 5)
+  // Snap direction to 8-dir for integer grid steps (direction may be a normalized float vector)
+  const pushDir = getSnappedDirection({ x: 0, y: 0 }, direction)
+  let pos = targetPos
+  for (let i = 0; i < steps; i++) {
+    const next = { x: pos.x + pushDir.x, y: pos.y + pushDir.y }
+    // Check bounds
+    if (next.x < 0 || next.x >= grid.width || next.y < 0 || next.y >= grid.height) break
+    // Check cell validity and obstacles
+    const cell = grid.cells[next.y]?.[next.x]
+    if (!cell || cell.obstacle?.blocksMovement) break
+    // Check occupancy (skip self)
+    if (cell.occupiedBy && cell.occupiedBy !== targetId) break
+    pos = next
+  }
+  return pos
+}
+
+/**
+ * Apply Gust of Wind STR save and push to a single target.
+ * Used on initial cast and end-of-turn.
+ */
+function applyGustOfWindSaveAndPush(
+  target: Combatant,
+  dc: number,
+  direction: Position,
+  casterId: string,
+  casterName: string,
+  grid: Grid,
+  get: () => CombatState & CombatStore,
+  set: (partial: Partial<CombatState> | ((state: CombatState) => Partial<CombatState>)) => void,
+) {
+  const saveResult = rollCombatantSavingThrow(target, 'strength', dc)
+  consumeMindSliver(get, set, target.id, saveResult.mindSliverPenalty)
+
+  if (saveResult.success) {
+    get().addLogEntry({
+      type: 'spell', actorId: casterId, actorName: casterName,
+      targetId: target.id, targetName: target.name,
+      message: `${target.name} resists the gust of wind (STR save DC ${dc})`,
+      details: saveResult.roll.breakdown,
+    })
+    get().addCombatPopup(target.id, 'saved')
+  } else {
+    // Calculate push position (15ft = 3 cells along direction)
+    const pushPos = calculateLinePushPosition(target.position, direction, 15, grid, target.id)
+    const pushed = pushPos.x !== target.position.x || pushPos.y !== target.position.y
+
+    if (pushed) {
+      // Update grid occupancy and combatant position
+      const gridUpdates = [
+        { x: target.position.x, y: target.position.y, occupiedBy: undefined },
+        { x: pushPos.x, y: pushPos.y, occupiedBy: target.id },
+      ]
+      set((state) => ({
+        combatants: state.combatants.map((c) =>
+          c.id === target.id ? { ...c, position: pushPos } : c
+        ),
+        grid: updateGridOccupancy(state.grid, gridUpdates),
+      }))
+    }
+
+    const pushText = pushed
+      ? ` and is pushed ${Math.max(Math.abs(pushPos.x - target.position.x), Math.abs(pushPos.y - target.position.y)) * 5}ft`
+      : ''
+
+    get().addLogEntry({
+      type: 'spell', actorId: casterId, actorName: casterName,
+      targetId: target.id, targetName: target.name,
+      message: `${target.name} fails STR save against Gust of Wind (DC ${dc})${pushText}!`,
+      details: saveResult.roll.breakdown,
+    })
+    get().addCombatPopup(target.id, 'save_failed')
+  }
+}
+
 // Module-level map for deferred projectile callbacks (not stored in Zustand state)
 const projectileCallbacks = new Map<string, () => void>()
 const PROJECTILE_FLIGHT_DURATION = 400 // ms
@@ -788,6 +931,11 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
       studiedTargetId: undefined,
       // Witch Bolt tracking
       witchBoltTargetId: undefined,
+      // Dragon's Breath tracking
+      dragonsBreathDamageType: undefined,
+      dragonsBreathDice: undefined,
+      dragonsBreathDC: undefined,
+      dragonsBreathCasterId: undefined,
       // Origin Feat tracking
       featUses: {},
       usedSavageAttackerThisTurn: false,
@@ -1027,6 +1175,8 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
     if (endingCombatant && endingCombatant.currentHp > 0) {
       get().checkGreaseZoneSave(currentId, endingCombatant.position)
       get().checkCloudOfDaggersDamage(currentId, endingCombatant.position)
+      get().checkFlamingSphereDamage(currentId, endingCombatant.position)
+      get().checkGustOfWindPush(currentId, endingCombatant.position)
     }
 
     // End-of-turn: repeat saves for conditions like Tasha's Hideous Laughter
@@ -1201,8 +1351,62 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
       targetingMode: undefined,
     })
 
-    // Auto-skip dead combatants
+    // Crown of Madness: check if the next combatant is charmed by this spell
     const nextCombatant = finalCombatants.find((c) => c.id === turnOrder[nextIndex])
+    if (nextCombatant && nextCombatant.currentHp > 0) {
+      const crownCondition = nextCombatant.conditions.find(
+        ac => ac.condition === 'charmed' && ac.source?.includes('Crown of Madness')
+      )
+      if (crownCondition?.casterId) {
+        const caster = finalCombatants.find(c => c.id === crownCondition.casterId)
+        if (caster && caster.currentHp > 0) {
+          // Find valid melee targets: adjacent, alive, not self, not the caster (charmed can't attack charmer)
+          const charmedSize = getCombatantSize(nextCombatant)
+          const charmedCells = getOccupiedCells(nextCombatant.position, charmedSize)
+          const validTargets = finalCombatants.filter(c => {
+            if (c.id === nextCombatant.id) return false
+            if (c.id === crownCondition.casterId) return false
+            if (c.currentHp <= 0) return false
+            const targetSize = getCombatantSize(c)
+            const targetCells = getOccupiedCells(c.position, targetSize)
+            for (const cc of charmedCells) {
+              for (const tc of targetCells) {
+                const dx = Math.abs(cc.x - tc.x)
+                const dy = Math.abs(cc.y - tc.y)
+                if (dx <= 1 && dy <= 1 && !(dx === 0 && dy === 0)) return true
+              }
+            }
+            return false
+          })
+
+          if (validTargets.length > 0) {
+            if (caster.type === 'character') {
+              // Player caster: show prompt to choose target
+              set({ pendingCrownOfMadness: {
+                charmedId: nextCombatant.id,
+                casterId: caster.id,
+                validTargets: validTargets.map(t => t.id),
+              }})
+              return // Block turn until resolved
+            } else {
+              // AI caster: auto-pick target (lowest HP)
+              const bestTarget = validTargets.sort((a, b) => a.currentHp - b.currentHp)[0]
+              get().resolveCrownOfMadness(bestTarget.id)
+              return // resolveCrownOfMadness handles the rest
+            }
+          } else {
+            get().addLogEntry({
+              type: 'spell',
+              actorId: nextCombatant.id,
+              actorName: nextCombatant.name,
+              message: `Crown of Madness: no valid targets within melee range of ${nextCombatant.name}`,
+            })
+          }
+        }
+      }
+    }
+
+    // Auto-skip dead combatants
     if (nextCombatant && shouldSkipTurn(nextCombatant)) {
       get().nextTurn()
     }
@@ -2394,11 +2598,14 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
     // Find path using A* pathfinding with footprint awareness
     const footprint = getFootprintSize(size)
     const greaseCells = getGreaseCells(get().persistentZones)
-    const path = findPath(grid, combatant.position, to, pathablePositions, undefined, footprint, movementContext, greaseCells)
+    const gustDirectionalZones = get().persistentZones
+      .filter(z => z.zoneType === ZoneType.GustOfWind)
+      .map(z => ({ cells: new Set(z.affectedCells), casterPosition: z.center }))
+    const path = findPath(grid, combatant.position, to, pathablePositions, undefined, footprint, movementContext, greaseCells, gustDirectionalZones)
     if (!path) return
 
-    // Calculate actual path cost (accounts for terrain + grease difficult terrain)
-    const pathCost = calculatePathCost(grid, path, movementContext, greaseCells)
+    // Calculate actual path cost (accounts for terrain + grease difficult terrain + gust of wind)
+    const pathCost = calculatePathCost(grid, path, movementContext, greaseCells, gustDirectionalZones)
 
     const remainingMovement = walkSpeed - combatant.movementUsed
 
@@ -2602,6 +2809,30 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
 
     // Check for Cloud of Daggers zone entry — automatic damage
     get().checkCloudOfDaggersDamage(id, to)
+
+    // Update Gust of Wind zone if the moving combatant is its caster
+    const gustZoneAfterMove = get().persistentZones.find(
+      z => z.zoneType === ZoneType.GustOfWind && z.casterId === id
+    )
+    if (gustZoneAfterMove && gustZoneAfterMove.direction) {
+      // Scale direction by 20 to ensure the synthetic target is far enough for accurate angle computation
+      // (direction is a normalized float vector, so * 1 would be too close)
+      const newTarget = { x: to.x + gustZoneAfterMove.direction.x * 20, y: to.y + gustZoneAfterMove.direction.y * 20 }
+      const newGustCells = getAoEAffectedCells({
+        type: 'line',
+        size: 60,
+        origin: to,
+        target: newTarget,
+        widthCells: gustZoneAfterMove.lineWidth ?? 2,
+      })
+      set((state) => ({
+        persistentZones: state.persistentZones.map(z =>
+          z.id === gustZoneAfterMove.id
+            ? { ...z, center: to, affectedCells: Array.from(newGustCells) }
+            : z
+        ),
+      }))
+    }
   },
 
   isAnimating: () => {
@@ -2671,11 +2902,14 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
 
     // Find path using A* pathfinding with footprint awareness
     const greaseCellsForPath = getGreaseCells(get().persistentZones)
-    const path = findPath(grid, combatant.position, to, pathablePositions, undefined, footprint, movementContext, greaseCellsForPath)
+    const gustDirZonesForPath = get().persistentZones
+      .filter(z => z.zoneType === ZoneType.GustOfWind)
+      .map(z => ({ cells: new Set(z.affectedCells), casterPosition: z.center }))
+    const path = findPath(grid, combatant.position, to, pathablePositions, undefined, footprint, movementContext, greaseCellsForPath, gustDirZonesForPath)
     if (!path) return false
 
     // Calculate actual path cost
-    const pathCost = calculatePathCost(grid, path, movementContext, greaseCellsForPath)
+    const pathCost = calculatePathCost(grid, path, movementContext, greaseCellsForPath, gustDirZonesForPath)
 
     const remainingMovement = walkSpeed - combatant.movementUsed
 
@@ -2730,6 +2964,9 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
     // Use pathfinding-based reachability with footprint awareness
     // Pass pathablePositions so we can path through larger creatures with Nimbleness
     const greaseCellsForReach = getGreaseCells(get().persistentZones)
+    const gustDirZonesForReach = get().persistentZones
+      .filter(z => z.zoneType === ZoneType.GustOfWind)
+      .map(z => ({ cells: new Set(z.affectedCells), casterPosition: z.center }))
     const reachableMap = getReachableFromPathfinding(
       grid,
       combatant.position,
@@ -2737,7 +2974,8 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
       pathablePositions,
       footprint,
       movementContext,
-      greaseCellsForReach
+      greaseCellsForReach,
+      gustDirZonesForReach
     )
 
     // Convert map to array of positions, filtering out cells we can't end in
@@ -3306,6 +3544,20 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
             c.id === attackerId ? { ...c, lungingAttackBonus: undefined } : c
           ),
         }))
+      }
+
+      // Enlarge/Reduce damage modifier (weapon attacks only)
+      if (attacker.conditions.some(c => c.condition === 'enlarged')) {
+        const dice = result.critical ? 2 : 1
+        let enlargeBonus = 0
+        for (let i = 0; i < dice; i++) enlargeBonus += rollDie(4)
+        totalDamage += enlargeBonus
+        bonusDamageDetails.push(`Enlarge +${enlargeBonus}`)
+      }
+      if (attacker.conditions.some(c => c.condition === 'reduced')) {
+        const reducePenalty = rollDie(4)
+        totalDamage = Math.max(1, totalDamage - reducePenalty)
+        bonusDamageDetails.push(`Reduce -${reducePenalty}`)
       }
 
       // Check for on-hit maneuvers (Battle Master maneuvers like Trip Attack, Menacing Attack)
@@ -4032,6 +4284,64 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
     }
   },
 
+  checkFlamingSphereDamage: (combatantId, position) => {
+    const { persistentZones, combatants } = get()
+    const posKey = `${position.x},${position.y}`
+
+    const combatant = combatants.find(c => c.id === combatantId)
+    if (!combatant || combatant.currentHp <= 0) return
+
+    for (const zone of getFlamingSphereZones(persistentZones)) {
+      // Skip if caster (sphere doesn't hurt its caster)
+      if (zone.casterId === combatantId) continue
+
+      // Check if combatant is in adjacent cells (within 5 feet of sphere)
+      if (!zone.affectedCells.includes(posKey)) continue
+
+      // Once per turn per creature
+      if (zone.zoneDamagedIds?.includes(combatantId)) continue
+
+      const damageDice = getFlamingSphereDice(zone)
+      const caster = combatants.find(c => c.id === zone.casterId)
+      const casterData = caster?.type === 'character' ? caster.data as Character : null
+      const dc = casterData ? getSpellSaveDC(casterData) : 13
+
+      const saveResult = rollCombatantSavingThrow(combatant, 'dexterity', dc)
+      consumeMindSliver(get, set, combatantId, saveResult.mindSliverPenalty)
+
+      const damageRoll = rollDamage(damageDice)
+      const finalDamage = saveResult.success ? Math.floor(damageRoll.total / 2) : damageRoll.total
+
+      const saveText = saveResult.success
+        ? `${combatant.name} saves (${saveResult.roll} vs DC ${dc}) and takes ${finalDamage} fire damage (half) from Flaming Sphere!`
+        : `${combatant.name} fails the save (${saveResult.roll} vs DC ${dc}) and takes ${finalDamage} fire damage from Flaming Sphere!`
+
+      get().addLogEntry({
+        type: 'damage',
+        actorId: zone.casterId,
+        actorName: caster?.name ?? 'Flaming Sphere',
+        targetId: combatantId,
+        targetName: combatant.name,
+        message: saveText,
+        details: damageRoll.breakdown,
+      })
+
+      if (finalDamage > 0) {
+        get().dealDamage(combatantId, finalDamage, 'Flaming Sphere')
+        get().addDamagePopup(combatantId, finalDamage, 'fire', false)
+      }
+
+      // Mark as damaged this turn
+      set((state) => ({
+        persistentZones: state.persistentZones.map(z =>
+          z.id === zone.id
+            ? { ...z, zoneDamagedIds: [...(z.zoneDamagedIds ?? []), combatantId] }
+            : z
+        ),
+      }))
+    }
+  },
+
   performOpportunityAttack: (attackerId, targetId, attackReplacementId) => {
     const { combatants } = get()
     const attacker = combatants.find((c) => c.id === attackerId)
@@ -4333,6 +4643,16 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
       message: `${caster.name} casts ${spell.name}${upcastLabel}!`,
     })
 
+    // Drop old concentration EARLY — before new spell effects are applied.
+    // This prevents re-casting the same conditionOnFailedSave spell from having
+    // its cleanup remove the newly applied condition (same source string).
+    if (spell.concentration) {
+      const oldConc = get().combatants.find(c => c.id === casterId)?.concentratingOn
+      if (oldConc) {
+        get().dropConcentration(casterId)
+      }
+    }
+
     // Intercept Alter Self: show mode selection prompt
     if (spell.id === 'alter-self') {
       if (isBonusActionSpell) { get().useBonusAction() } else { get().useAction() }
@@ -4348,6 +4668,26 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
       if (isBonusActionSpell) { get().useBonusAction() } else { get().useAction() }
       set({
         pendingBlindnessDeafnessMode: { casterId, spell, targetId, castAtLevel },
+        selectedAction: undefined,
+      })
+      return true
+    }
+
+    // Intercept Dragon's Breath: show damage type selection prompt
+    if (spell.id === 'dragons-breath' && selectedTargetIds && selectedTargetIds.length > 0) {
+      if (isBonusActionSpell) { get().useBonusAction() } else { get().useAction() }
+      set({
+        pendingDragonsBreathDamageType: { casterId, spell, targetId: selectedTargetIds[0], castAtLevel },
+        selectedAction: undefined,
+      })
+      return true
+    }
+
+    // Intercept Enlarge/Reduce: show mode selection prompt (Enlarge or Reduce)
+    if (spell.id === 'enlarge-reduce' && targetId) {
+      if (isBonusActionSpell) { get().useBonusAction() } else { get().useAction() }
+      set({
+        pendingEnlargeReduceMode: { casterId, spell, targetId, castAtLevel },
         selectedAction: undefined,
       })
       return true
@@ -4423,8 +4763,8 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
       if (target) targets = [target]
     }
 
-    // Handle damage spells
-    if (spell.damage && targets.length > 0) {
+    // Handle damage spells (skip for zone spells that handle their own damage timing)
+    if (spell.damage && targets.length > 0 && !spell.createsZone) {
       for (const target of targets) {
         const currentTargetId = target.id
 
@@ -4973,12 +5313,52 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
           ),
         }))
       }
+      // Remove Enlarge/Reduce conditions and revert size when concentration shifts
+      if (currentConc?.id === 'enlarge-reduce') {
+        const sourceMatch = `${caster.name}'s ${currentConc.name}`
+        const affectedCombatants = get().combatants.filter(c =>
+          c.conditions.some(ac => ac.source === sourceMatch && (ac.condition === 'enlarged' || ac.condition === 'reduced'))
+        )
+        for (const affected of affectedCombatants) {
+          const oldSize = getCombatantSize(affected)
+          set((state) => ({
+            combatants: state.combatants.map(c =>
+              c.id === affected.id
+                ? { ...c, conditions: c.conditions.filter(ac => !(ac.source === sourceMatch && (ac.condition === 'enlarged' || ac.condition === 'reduced'))) }
+                : c
+            ),
+          }))
+          const updatedAffected = get().combatants.find(c => c.id === affected.id)
+          if (updatedAffected) {
+            const newSize = getCombatantSize(updatedAffected)
+            if (oldSize !== newSize) {
+              get().updateCombatantFootprint(affected.id, oldSize, newSize)
+            }
+          }
+        }
+        get().addLogEntry({
+          type: 'other',
+          actorId: casterId,
+          actorName: caster.name,
+          message: `${caster.name}'s ${currentConc.name} ends as concentration shifts.`,
+        })
+      }
       // Clear Witch Bolt target link if previous spell was Witch Bolt
       if (currentConc?.id === 'witch-bolt') {
         set((state) => ({
           combatants: state.combatants.map((c) =>
             c.id === casterId
               ? { ...c, witchBoltTargetId: undefined }
+              : c
+          ),
+        }))
+      }
+      // Clear Dragon's Breath condition + fields from buffed creature
+      if (currentConc?.id === 'dragons-breath') {
+        set((state) => ({
+          combatants: state.combatants.map((c) =>
+            c.dragonsBreathCasterId === casterId
+              ? { ...c, conditions: c.conditions.filter(ac => ac.condition !== 'dragons_breath'), dragonsBreathDamageType: undefined, dragonsBreathDice: undefined, dragonsBreathDC: undefined, dragonsBreathCasterId: undefined }
               : c
           ),
         }))
@@ -5068,6 +5448,53 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
 
     // Handle createsZone spells: create persistent zone on the battlefield
     if (spell.createsZone && targetPosition && spell.areaOfEffect) {
+      // Gust of Wind: line zone with direction, width=2, initial STR save + push
+      if (spell.createsZone === ZoneType.GustOfWind) {
+        const direction = getLineDirection(caster.position, targetPosition)
+        const affectedCells = getAoEAffectedCells({
+          type: 'line',
+          size: 60,
+          origin: caster.position,
+          target: targetPosition,
+          widthCells: 2,
+        })
+
+        const zone: PersistentZone = {
+          id: `${spell.id}-${casterId}-${Date.now()}`,
+          spellId: spell.id,
+          zoneType: ZoneType.GustOfWind,
+          casterId,
+          center: caster.position,
+          radius: 60,
+          affectedCells: Array.from(affectedCells),
+          durationRounds: undefined, // Concentration-based
+          createdRound: get().round,
+          castAtLevel,
+          direction,
+          lineWidth: 2,
+        }
+
+        set((state) => ({
+          persistentZones: [...state.persistentZones, zone],
+        }))
+
+        get().addLogEntry({
+          type: 'spell',
+          actorId: casterId,
+          actorName: caster.name,
+          message: `${caster.name} casts Gust of Wind! A 60-foot line of wind blasts outward.`,
+        })
+
+        // Initial STR save + push for all creatures in the line (excluding caster)
+        const dc = getSpellSaveDC(character)
+        const creaturesInLine = get().combatants.filter(c =>
+          c.currentHp > 0 && c.id !== casterId && affectedCells.has(`${c.position.x},${c.position.y}`)
+        )
+        for (const target of creaturesInLine) {
+          applyGustOfWindSaveAndPush(target, dc, direction, casterId, caster.name, get().grid, get, set)
+        }
+      } else {
+      // All other zone spells: original logic
       const effectiveRadius = spell.areaOfEffect.size +
         (castAtLevel && castAtLevel > spell.level && spell.areaScalingPerSlotLevel
           ? (castAtLevel - spell.level) * spell.areaScalingPerSlotLevel : 0)
@@ -5079,6 +5506,11 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
         target: targetPosition,
       })
 
+      // Flaming Sphere: affected cells are the 8 adjacent cells (within 5 feet), not the center
+      const finalAffectedCells = spell.createsZone === ZoneType.FlamingSphere
+        ? getFlamingSphereAdjacentCells(targetPosition)
+        : Array.from(affectedCells)
+
       // Duration in rounds: 1 minute = 10 rounds. Non-concentration zones expire by duration.
       const durationRounds = !spell.concentration ? 10 : undefined
 
@@ -5089,7 +5521,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
         casterId,
         center: targetPosition,
         radius: effectiveRadius,
-        affectedCells: Array.from(affectedCells),
+        affectedCells: finalAffectedCells,
         durationRounds,
         createdRound: get().round,
         castAtLevel,
@@ -5105,6 +5537,8 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
         ? `A ${effectiveRadius}-foot square of slippery grease appears.`
         : spell.createsZone === ZoneType.CloudOfDaggers
         ? 'A cloud of spinning daggers appears!'
+        : spell.createsZone === ZoneType.FlamingSphere
+        ? 'A 5-foot sphere of fire appears!'
         : `A ${effectiveRadius}-foot zone appears.`
 
       get().addLogEntry({
@@ -5182,6 +5616,7 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
           }
         }
       }
+      } // end else (non-Gust zone spells)
     }
 
     // Handle grantsDash spells (Expeditious Retreat): immediately grant Dash movement
@@ -5749,12 +6184,48 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
       }))
     }
 
+    // Remove Enlarge/Reduce conditions and revert size
+    if (spell.id === 'enlarge-reduce') {
+      const sourceMatch = `${combatant.name}'s ${spell.name}`
+      const affectedCombatants = get().combatants.filter(c =>
+        c.conditions.some(ac => ac.source === sourceMatch && (ac.condition === 'enlarged' || ac.condition === 'reduced'))
+      )
+      for (const affected of affectedCombatants) {
+        const oldSize = getCombatantSize(affected)
+        set((state) => ({
+          combatants: state.combatants.map(c =>
+            c.id === affected.id
+              ? { ...c, conditions: c.conditions.filter(ac => !(ac.source === sourceMatch && (ac.condition === 'enlarged' || ac.condition === 'reduced'))) }
+              : c
+          ),
+        }))
+        const updatedAffected = get().combatants.find(c => c.id === affected.id)
+        if (updatedAffected) {
+          const newSize = getCombatantSize(updatedAffected)
+          if (oldSize !== newSize) {
+            get().updateCombatantFootprint(affected.id, oldSize, newSize)
+          }
+        }
+      }
+    }
+
     // Clear Witch Bolt target link
     if (spell.id === 'witch-bolt') {
       set((state) => ({
         combatants: state.combatants.map((c) =>
           c.id === combatantId
             ? { ...c, witchBoltTargetId: undefined }
+            : c
+        ),
+      }))
+    }
+
+    // Clear Dragon's Breath condition + fields from buffed creature
+    if (spell.id === 'dragons-breath') {
+      set((state) => ({
+        combatants: state.combatants.map((c) =>
+          c.dragonsBreathCasterId === combatantId
+            ? { ...c, conditions: c.conditions.filter(ac => ac.condition !== 'dragons_breath'), dragonsBreathDamageType: undefined, dragonsBreathDice: undefined, dragonsBreathDC: undefined, dragonsBreathCasterId: undefined }
             : c
         ),
       }))
@@ -5838,6 +6309,359 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
     get().dealDamage(target.id, damage.total, combatant.name)
     get().addDamagePopup(target.id, damage.total, 'lightning', false)
 
+    set((state) => ({
+      combatants: state.combatants.map((c) =>
+        c.id === currentId
+          ? { ...c, hasBonusActed: true }
+          : c
+      ),
+      selectedAction: undefined,
+    }))
+  },
+
+  // Gust of Wind: end-of-turn STR save + push for creatures in the wind line
+  checkGustOfWindPush: (combatantId, position) => {
+    const { persistentZones, combatants, grid } = get()
+    const posKey = `${position.x},${position.y}`
+
+    const gustZones = persistentZones.filter(z => z.zoneType === ZoneType.GustOfWind)
+    for (const zone of gustZones) {
+      if (!zone.affectedCells.includes(posKey)) continue
+      if (zone.casterId === combatantId) continue // Caster is immune to own wind
+
+      const combatant = combatants.find(c => c.id === combatantId)
+      if (!combatant || combatant.currentHp <= 0) continue
+
+      const caster = combatants.find(c => c.id === zone.casterId)
+      if (!caster) continue
+
+      const casterCharacter = caster.type === 'character' ? caster.data as Character : undefined
+      const dc = casterCharacter ? getSpellSaveDC(casterCharacter) : 13
+
+      applyGustOfWindSaveAndPush(combatant, dc, zone.direction!, zone.casterId, caster.name, grid, get, set)
+    }
+  },
+
+  // Gust of Wind: bonus action to change wind direction
+  startGustOfWindRedirect: () => {
+    const { turnOrder, currentTurnIndex, combatants } = get()
+    const currentId = turnOrder[currentTurnIndex]
+    const combatant = combatants.find((c) => c.id === currentId)
+    if (!combatant) return
+
+    set({
+      gustOfWindRedirecting: true,
+      aoePreview: {
+        type: 'line',
+        size: 60,
+        origin: combatant.position,
+        originType: 'self',
+        widthCells: 2,
+      },
+    })
+  },
+
+  cancelGustOfWindRedirect: () => {
+    set({
+      gustOfWindRedirecting: undefined,
+      aoePreview: undefined,
+    })
+  },
+
+  useGustOfWindRedirect: (targetPosition) => {
+    const { turnOrder, currentTurnIndex, combatants, persistentZones } = get()
+    const currentId = turnOrder[currentTurnIndex]
+    const combatant = combatants.find((c) => c.id === currentId)
+
+    if (!combatant || combatant.hasBonusActed) return
+
+    // Find the Gust of Wind zone owned by this caster
+    const gustZone = persistentZones.find(
+      z => z.zoneType === ZoneType.GustOfWind && z.casterId === currentId
+    )
+    if (!gustZone) return
+
+    // Calculate new direction and cells
+    const newDirection = getLineDirection(combatant.position, targetPosition)
+    const newCells = getAoEAffectedCells({
+      type: 'line',
+      size: 60,
+      origin: combatant.position,
+      target: targetPosition,
+      widthCells: 2,
+    })
+
+    // Update zone direction and cells
+    set((state) => ({
+      persistentZones: state.persistentZones.map(z =>
+        z.id === gustZone.id
+          ? { ...z, direction: newDirection, affectedCells: Array.from(newCells), center: combatant.position }
+          : z
+      ),
+      combatants: state.combatants.map(c =>
+        c.id === currentId ? { ...c, hasBonusActed: true } : c
+      ),
+      selectedAction: undefined,
+      gustOfWindRedirecting: undefined,
+      aoePreview: undefined,
+    }))
+
+    get().addLogEntry({
+      type: 'spell',
+      actorId: currentId,
+      actorName: combatant.name,
+      message: `${combatant.name} redirects Gust of Wind!`,
+    })
+  },
+
+  startDragonsBreathExhale: () => {
+    const { turnOrder, currentTurnIndex, combatants } = get()
+    const currentId = turnOrder[currentTurnIndex]
+    const combatant = combatants.find((c) => c.id === currentId)
+
+    if (!combatant || combatant.hasActed) return
+    if (!combatant.conditions.some(c => c.condition === 'dragons_breath')) return
+    if (!combatant.dragonsBreathDamageType) return
+
+    set({
+      aoePreview: {
+        type: 'cone',
+        size: 15,
+        origin: combatant.position,
+        originType: 'self',
+      },
+      dragonsBreathTargeting: { combatantId: currentId },
+      selectedAction: undefined,
+    })
+  },
+
+  useDragonsBreathExhale: (targetPosition) => {
+    const { turnOrder, currentTurnIndex, combatants, dragonsBreathTargeting } = get()
+    if (!dragonsBreathTargeting) return
+
+    const currentId = turnOrder[currentTurnIndex]
+    const combatant = combatants.find((c) => c.id === currentId)
+    if (!combatant || combatant.id !== dragonsBreathTargeting.combatantId) return
+    if (!combatant.dragonsBreathDamageType || !combatant.dragonsBreathDice || !combatant.dragonsBreathDC) return
+
+    const damageType = combatant.dragonsBreathDamageType
+    const damageDice = combatant.dragonsBreathDice
+    const dc = combatant.dragonsBreathDC
+    const damageTypeLabel = damageType.charAt(0).toUpperCase() + damageType.slice(1)
+
+    // Get cone cells
+    const affectedCells = getAoEAffectedCells({
+      type: 'cone',
+      size: 15,
+      origin: combatant.position,
+      target: targetPosition,
+      originType: 'self',
+    })
+
+    // Find enemies in cone (exclude self, dead, allies)
+    const affectedCombatants = combatants.filter((c) => {
+      if (c.id === currentId) return false
+      if (c.currentHp <= 0) return false
+      if (c.type === combatant.type) return false
+      const cellKey = `${c.position.x},${c.position.y}`
+      return affectedCells.has(cellKey)
+    })
+
+    // Roll damage once for all targets
+    const damageResult = rollDamage(damageDice)
+    const damageRolled = damageResult.total
+
+    get().addLogEntry({
+      type: 'spell',
+      actorId: currentId,
+      actorName: combatant.name,
+      message: `${combatant.name} exhales Dragon's Breath (${damageTypeLabel}) for ${damageRolled} damage! (${damageResult.breakdown})`,
+    })
+
+    // Process each target
+    for (const target of affectedCombatants) {
+      const saveResult = rollCombatantSavingThrow(target, 'dexterity', dc)
+      consumeMindSliver(get, set, target.id, saveResult.mindSliverPenalty)
+      const saved = saveResult.success
+
+      let damage = saved ? Math.floor(damageRolled / 2) : damageRolled
+
+      // Apply resistance
+      const resistanceResult = applyDamageResistance(
+        target,
+        damage,
+        damageType,
+        target.racialAbilityUses
+      )
+      damage = resistanceResult.damage
+      const resistanceApplied = resistanceResult.applied !== null
+
+      const saveLabel = saved ? 'saves' : 'fails'
+      const resistLabel = resistanceApplied ? ` (${resistanceResult.applied})` : ''
+
+      get().addLogEntry({
+        type: 'spell',
+        actorId: currentId,
+        actorName: combatant.name,
+        targetId: target.id,
+        targetName: target.name,
+        message: `${target.name} ${saveLabel} DEX save vs DC ${dc} — ${damage} ${damageType} damage${resistLabel}`,
+        details: saveResult.roll.breakdown,
+      })
+
+      if (damage > 0) {
+        get().dealDamage(target.id, damage, combatant.name)
+        get().addDamagePopup(target.id, damage, damageType, false)
+      }
+      if (saved) {
+        get().addCombatPopup(target.id, 'saved')
+      } else {
+        get().addCombatPopup(target.id, 'save_failed')
+      }
+    }
+
+    if (affectedCombatants.length === 0) {
+      get().addLogEntry({
+        type: 'spell',
+        actorId: currentId,
+        actorName: combatant.name,
+        message: `${combatant.name}'s Dragon's Breath hits no targets.`,
+      })
+    }
+
+    // Use action (exhale uses the creature's action, not bonus action)
+    get().useAction()
+
+    // Clear targeting state
+    set({
+      dragonsBreathTargeting: undefined,
+      aoePreview: undefined,
+    })
+  },
+
+  moveFlamingSphere: (targetPosition) => {
+    const { turnOrder, currentTurnIndex, combatants, persistentZones, grid } = get()
+    const currentId = turnOrder[currentTurnIndex]
+    const combatant = combatants.find((c) => c.id === currentId)
+
+    if (!combatant || combatant.hasBonusActed) return
+    if (!combatant.conditions.some(c => c.condition === 'flaming_sphere')) return
+
+    // Find the caster's flaming sphere zone
+    const sphereZone = getFlamingSphereZones(persistentZones).find(z => z.casterId === currentId)
+    if (!sphereZone) return
+
+    // Check distance from sphere to target (max 30 feet)
+    const distance = getDistanceBetweenPositions(sphereZone.center, targetPosition)
+    if (distance > 30) return
+
+    // Build occupied cell lookup
+    const occupiedCellMap = new Map<string, string>() // cellKey -> combatantId
+    for (const c of combatants) {
+      if (c.currentHp <= 0) continue
+      const size = getCombatantSize(c)
+      const cellKeys = getOccupiedCellKeys(c.position, size)
+      for (const key of cellKeys) {
+        occupiedCellMap.set(key, c.id)
+      }
+    }
+
+    // Get line from sphere center to target (Bresenham, excludes endpoints)
+    const lineCells = getLineBetween(sphereZone.center, targetPosition)
+    // Build full path: start → intermediate → end
+    const fullPath = [sphereZone.center, ...lineCells, targetPosition]
+
+    // Walk the path, checking for obstacles and creature collisions
+    let finalPosition = sphereZone.center
+    let rammedCreatureId: string | null = null
+
+    for (let i = 1; i < fullPath.length; i++) {
+      const pos = fullPath[i]
+      const cellKey = `${pos.x},${pos.y}`
+
+      // Check for obstacle
+      const cell = grid.cells[pos.y]?.[pos.x]
+      if (!cell || blocksMovement(cell)) break
+
+      // Check for creature collision
+      const occupantId = occupiedCellMap.get(cellKey)
+      if (occupantId && occupantId !== currentId) {
+        // Sphere stops in previous cell, rams the creature
+        rammedCreatureId = occupantId
+        break
+      }
+
+      finalPosition = pos
+    }
+
+    // Update zone position and affected cells
+    const newAffectedCells = getFlamingSphereAdjacentCells(finalPosition)
+
+    set((state) => ({
+      persistentZones: state.persistentZones.map(z =>
+        z.id === sphereZone.id
+          ? { ...z, center: finalPosition, affectedCells: newAffectedCells }
+          : z
+      ),
+    }))
+
+    get().addLogEntry({
+      type: 'spell',
+      actorId: currentId,
+      actorName: combatant.name,
+      message: `${combatant.name} moves the Flaming Sphere to (${finalPosition.x}, ${finalPosition.y}).`,
+    })
+
+    // If rammed a creature, force DEX save
+    if (rammedCreatureId) {
+      const target = combatants.find(c => c.id === rammedCreatureId)
+      if (target && target.currentHp > 0) {
+        // Check once-per-turn
+        const updatedZones = get().persistentZones
+        const updatedZone = updatedZones.find(z => z.id === sphereZone.id)
+        if (!updatedZone?.zoneDamagedIds?.includes(rammedCreatureId)) {
+          const damageDice = getFlamingSphereDice(sphereZone)
+          const casterData = combatant.type === 'character' ? combatant.data as Character : null
+          const dc = casterData ? getSpellSaveDC(casterData) : 13
+
+          const saveResult = rollCombatantSavingThrow(target, 'dexterity', dc)
+          consumeMindSliver(get, set, rammedCreatureId, saveResult.mindSliverPenalty)
+
+          const damageRoll = rollDamage(damageDice)
+          const finalDamage = saveResult.success ? Math.floor(damageRoll.total / 2) : damageRoll.total
+
+          const saveText = saveResult.success
+            ? `${target.name} saves (${saveResult.roll} vs DC ${dc}) and takes ${finalDamage} fire damage (half) from Flaming Sphere!`
+            : `${target.name} fails the save (${saveResult.roll} vs DC ${dc}) and takes ${finalDamage} fire damage from Flaming Sphere!`
+
+          get().addLogEntry({
+            type: 'damage',
+            actorId: currentId,
+            actorName: combatant.name,
+            targetId: rammedCreatureId,
+            targetName: target.name,
+            message: saveText,
+            details: damageRoll.breakdown,
+          })
+
+          if (finalDamage > 0) {
+            get().dealDamage(rammedCreatureId, finalDamage, 'Flaming Sphere')
+            get().addDamagePopup(rammedCreatureId, finalDamage, 'fire', false)
+          }
+
+          // Mark as damaged this turn
+          set((state) => ({
+            persistentZones: state.persistentZones.map(z =>
+              z.id === sphereZone.id
+                ? { ...z, zoneDamagedIds: [...(z.zoneDamagedIds ?? []), rammedCreatureId!] }
+                : z
+            ),
+          }))
+        }
+      }
+    }
+
+    // Consume bonus action
     set((state) => ({
       combatants: state.combatants.map((c) =>
         c.id === currentId
@@ -6039,13 +6863,42 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
 
       console.warn(`[AI] Processing turn for ${current.name} (id=${current.id}, hp=${current.currentHp}/${current.maxHp}, pos=${current.position.x},${current.position.y}, conditions=[${current.conditions.map(c => c.condition).join(',')}])`)
 
+      // Wait for Crown of Madness forced attack prompt to resolve before AI acts
+      let crownWaitTicks = 0
+      while (get().pendingCrownOfMadness !== undefined) {
+        await new Promise((resolve) => setTimeout(resolve, 50))
+        crownWaitTicks++
+        if (crownWaitTicks > 600) { // 30 seconds — player needs to respond
+          console.warn(`[AI] WARNING: Crown of Madness wait exceeded 30s for ${current.name}, breaking out`)
+          break
+        }
+      }
+
       // Add small delay for visual feedback
       await new Promise((resolve) => setTimeout(resolve, 500))
+
+      // Re-fetch current after Crown of Madness wait (action may have been consumed)
+      const refreshedCurrent = get().combatants.find((c) => c.id === currentId)
+      if (!refreshedCurrent || refreshedCurrent.currentHp <= 0) {
+        console.warn(`[AI] ${current.name} died or removed during Crown of Madness wait`)
+        return
+      }
+
+      // If action already consumed (e.g., Crown of Madness forced attack), skip to end turn
+      if (refreshedCurrent.hasActed) {
+        console.warn(`[AI] ${current.name} action already used (Crown of Madness), ending turn`)
+        await new Promise((resolve) => setTimeout(resolve, 500))
+        get().endTurn()
+        continue
+      }
 
       // Get AI action
       const aiFogCells = getFogCells(get().persistentZones)
       const aiGreaseCells = getGreaseCells(get().persistentZones)
-      const action = getNextAIAction(current, combatants, grid, aiFogCells, aiGreaseCells)
+      const aiGustZones = get().persistentZones
+        .filter(z => z.zoneType === ZoneType.GustOfWind)
+        .map(z => ({ cells: new Set(z.affectedCells), casterPosition: z.center }))
+      const action = getNextAIAction(current, combatants, grid, aiFogCells, aiGreaseCells, aiGustZones)
       console.warn(`[AI] ${current.name} decided: ${action.type}`, action.type === 'move' ? `to (${action.targetPosition?.x},${action.targetPosition?.y})` : action.type === 'attack' ? `target=${action.targetId} action=${action.action?.name}` : '')
 
       if (action.type === 'move' && action.targetPosition) {
@@ -6076,7 +6929,10 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
           console.warn(`[AI] ${current.name} move failed (position unchanged at ${preMovePosX},${preMovePosY}), ending turn`)
         } else {
           const updatedGrid = get().grid
-          const nextAction = getNextAIAction(updatedCurrent, updatedCombatants, updatedGrid, getFogCells(get().persistentZones), getGreaseCells(get().persistentZones))
+          const postMoveGustZones = get().persistentZones
+            .filter(z => z.zoneType === ZoneType.GustOfWind)
+            .map(z => ({ cells: new Set(z.affectedCells), casterPosition: z.center }))
+          const nextAction = getNextAIAction(updatedCurrent, updatedCombatants, updatedGrid, getFogCells(get().persistentZones), getGreaseCells(get().persistentZones), postMoveGustZones)
           console.warn(`[AI] ${current.name} post-move decided: ${nextAction.type}`, nextAction.type === 'attack' ? `target=${nextAction.targetId} action=${nextAction.action?.name}` : '')
           if (nextAction.type === 'attack' && nextAction.targetId && nextAction.action) {
             get().performAttack(updatedCurrent.id, nextAction.targetId, undefined, nextAction.action)
@@ -6690,6 +7546,464 @@ export const useCombatStore = create<CombatStore>((set, get) => ({
       }))
       get().addCombatPopup(targetId, 'condition', mode)
     }
+  },
+
+  resolveEnlargeReduceMode: (mode) => {
+    const { pendingEnlargeReduceMode, combatants } = get()
+    if (!pendingEnlargeReduceMode) return
+
+    const { casterId, spell, targetId } = pendingEnlargeReduceMode
+    const caster = combatants.find(c => c.id === casterId)
+    const target = combatants.find(c => c.id === targetId)
+    if (!caster || !target) {
+      set({ pendingEnlargeReduceMode: undefined })
+      return
+    }
+
+    set({ pendingEnlargeReduceMode: undefined })
+
+    const modeLabel = mode === 'enlarged' ? 'Enlarge' : 'Reduce'
+
+    get().addLogEntry({
+      type: 'spell',
+      actorId: casterId,
+      actorName: caster.name,
+      message: `${caster.name} chooses ${modeLabel} for ${spell.name}`,
+    })
+
+    // Determine if target is an enemy (unwilling) — requires CON save
+    const isEnemy = target.type !== caster.type
+    let spellLands = true
+
+    if (isEnemy) {
+      const character = caster.data as Character
+      const dc = getSpellSaveDC(character)
+      const saveResult = rollCombatantSavingThrow(target, 'constitution', dc)
+      consumeMindSliver(get, set, targetId, saveResult.mindSliverPenalty)
+
+      if (saveResult.success) {
+        get().addLogEntry({
+          type: 'spell', actorId: casterId, actorName: caster.name,
+          targetId, targetName: target.name,
+          message: `${target.name} saves against ${spell.name} (DC ${dc})`,
+          details: saveResult.roll.breakdown,
+        })
+        get().addCombatPopup(targetId, 'saved')
+        spellLands = false
+      } else {
+        get().addLogEntry({
+          type: 'spell', actorId: casterId, actorName: caster.name,
+          targetId, targetName: target.name,
+          message: `${target.name} fails save against ${spell.name} (DC ${dc})`,
+          details: saveResult.roll.breakdown,
+        })
+        get().addCombatPopup(targetId, 'save_failed')
+      }
+    }
+
+    if (spellLands) {
+      // Record old size before applying condition
+      const oldSize = getCombatantSize(target)
+
+      // Drop any previous concentration spell (handles all spell types generically)
+      const currentCaster = get().combatants.find(c => c.id === casterId)
+      if (currentCaster?.concentratingOn) {
+        get().dropConcentration(casterId)
+      }
+
+      // Apply condition and set concentration
+      const condSource = `${caster.name}'s ${spell.name}`
+      set((state) => ({
+        combatants: state.combatants.map((c) => {
+          if (c.id === targetId) {
+            return { ...c, conditions: mergeConditions(c.conditions, [{
+              condition: mode,
+              source: condSource,
+              casterId,
+            }]) }
+          }
+          if (c.id === casterId) {
+            return { ...c, concentratingOn: spell }
+          }
+          return c
+        }),
+      }))
+      get().addCombatPopup(targetId, 'condition', mode)
+
+      // Update grid footprint if size changed
+      const updatedTarget = get().combatants.find(c => c.id === targetId)
+      if (updatedTarget) {
+        const newSize = getCombatantSize(updatedTarget)
+        if (oldSize !== newSize) {
+          get().updateCombatantFootprint(targetId, oldSize, newSize)
+          get().addLogEntry({
+            type: 'condition',
+            actorId: casterId,
+            actorName: caster.name,
+            targetId,
+            targetName: target.name,
+            message: `${target.name} is ${mode === 'enlarged' ? 'enlarged' : 'reduced'} (${oldSize} → ${newSize})`,
+          })
+        } else {
+          get().addLogEntry({
+            type: 'condition',
+            actorId: casterId,
+            actorName: caster.name,
+            targetId,
+            targetName: target.name,
+            message: `${target.name} is ${mode === 'enlarged' ? 'enlarged' : 'reduced'} by ${spell.name}`,
+          })
+        }
+      }
+    }
+  },
+
+  resolveDragonsBreathDamageType: (damageType) => {
+    const { pendingDragonsBreathDamageType, combatants } = get()
+    if (!pendingDragonsBreathDamageType) return
+
+    const { casterId, spell, targetId, castAtLevel } = pendingDragonsBreathDamageType
+    const caster = combatants.find(c => c.id === casterId)
+    const target = combatants.find(c => c.id === targetId)
+    if (!caster || !target) {
+      set({ pendingDragonsBreathDamageType: undefined })
+      return
+    }
+
+    set({ pendingDragonsBreathDamageType: undefined })
+
+    const damageTypeLabel = damageType.charAt(0).toUpperCase() + damageType.slice(1)
+
+    get().addLogEntry({
+      type: 'spell',
+      actorId: casterId,
+      actorName: caster.name,
+      message: `${caster.name} chooses ${damageTypeLabel} for ${spell.name}`,
+    })
+
+    // Handle concentration swap: remove previous concentration effects
+    const currentConc = caster.concentratingOn
+    if (currentConc) {
+      // Clean up self-buff conditions
+      if (currentConc.conditionOnSelf) {
+        const condToRemove = currentConc.conditionOnSelf
+        set((state) => ({
+          combatants: state.combatants.map((c) =>
+            c.id === casterId
+              ? { ...c, conditions: c.conditions.filter(ac => ac.condition !== condToRemove) }
+              : c
+          ),
+        }))
+      }
+      // Clean up Alter Self conditions
+      if (currentConc.id === 'alter-self') {
+        set((state) => ({
+          combatants: state.combatants.map((c) =>
+            c.id === casterId
+              ? { ...c, conditions: c.conditions.filter(ac => ac.condition !== 'alter_self_natural_weapons' && ac.condition !== 'alter_self_aquatic') }
+              : c
+          ),
+        }))
+      }
+      // Clean up Witch Bolt
+      if (currentConc.id === 'witch-bolt') {
+        set((state) => ({
+          combatants: state.combatants.map((c) =>
+            c.id === casterId
+              ? { ...c, witchBoltTargetId: undefined }
+              : c
+          ),
+        }))
+      }
+      // Clean up previous Dragon's Breath
+      if (currentConc.id === 'dragons-breath') {
+        set((state) => ({
+          combatants: state.combatants.map((c) =>
+            c.dragonsBreathCasterId === casterId
+              ? { ...c, conditions: c.conditions.filter(ac => ac.condition !== 'dragons_breath'), dragonsBreathDamageType: undefined, dragonsBreathDice: undefined, dragonsBreathDC: undefined, dragonsBreathCasterId: undefined }
+              : c
+          ),
+        }))
+      }
+      // Clean up target-buff conditions
+      if (currentConc.conditionOnTarget) {
+        const condToRemove = currentConc.conditionOnTarget
+        const sourceMatch = `${caster.name}'s ${currentConc.name}`
+        set((state) => ({
+          combatants: state.combatants.map((c) => ({
+            ...c,
+            conditions: c.conditions.filter(ac => !(ac.condition === condToRemove && ac.source === sourceMatch)),
+          })),
+        }))
+      }
+      // Clean up zone effects
+      if (currentConc.createsZone) {
+        set((state) => ({
+          persistentZones: state.persistentZones.filter(z => z.casterId !== casterId),
+        }))
+      }
+      get().addLogEntry({
+        type: 'other',
+        actorId: casterId,
+        actorName: caster.name,
+        message: `${caster.name}'s ${currentConc.name} ends as concentration shifts.`,
+      })
+    }
+
+    // Calculate dice: 3d6 base + 1d6 per slot level above 2
+    const diceCount = 3 + Math.max(0, (castAtLevel ?? 2) - 2)
+    const dice = `${diceCount}d6`
+    const character = caster.data as Character
+    const dc = getSpellSaveDC(character)
+
+    // Apply Dragon's Breath condition and data on TARGET, concentration on CASTER
+    const condSource = `${caster.name}'s ${spell.name}`
+    const isSelfCast = casterId === targetId
+    set((state) => ({
+      combatants: state.combatants.map((c) => {
+        if (c.id === targetId) {
+          return {
+            ...c,
+            conditions: mergeConditions(c.conditions, [{
+              condition: 'dragons_breath' as const,
+              source: condSource,
+              casterId,
+            }]),
+            dragonsBreathDamageType: damageType,
+            dragonsBreathDice: dice,
+            dragonsBreathDC: dc,
+            dragonsBreathCasterId: casterId,
+            ...(isSelfCast && { concentratingOn: spell }),
+          }
+        }
+        if (c.id === casterId) {
+          return { ...c, concentratingOn: spell }
+        }
+        return c
+      }),
+    }))
+
+    const targetLabel = casterId === targetId ? 'themselves' : target.name
+    get().addLogEntry({
+      type: 'spell',
+      actorId: casterId,
+      actorName: caster.name,
+      targetId: casterId !== targetId ? targetId : undefined,
+      targetName: casterId !== targetId ? target.name : undefined,
+      message: `${caster.name} imbues ${targetLabel} with Dragon's Breath (${damageTypeLabel}, ${dice})`,
+    })
+    get().addCombatPopup(targetId, 'condition', 'dragons_breath')
+  },
+
+  updateCombatantFootprint: (combatantId, oldSize, newSize) => {
+    const { combatants, grid } = get()
+    const combatant = combatants.find(c => c.id === combatantId)
+    if (!combatant || !grid) return
+
+    const pos = combatant.position
+    const oldFootprint = getFootprintSize(oldSize)
+    const newFootprint = getFootprintSize(newSize)
+
+    if (oldFootprint === newFootprint) return
+
+    // Build occupied positions set (excluding this combatant)
+    const otherOccupied = new Set<string>()
+    for (const c of combatants) {
+      if (c.id === combatantId || c.currentHp <= 0) continue
+      const cSize = getCombatantSize(c)
+      const keys = getOccupiedCellKeys(c.position, cSize)
+      keys.forEach(k => otherOccupied.add(k))
+    }
+
+    // Check if new footprint fits at current position
+    const fitsAtCurrent = (() => {
+      for (let dy = 0; dy < newFootprint; dy++) {
+        for (let dx = 0; dx < newFootprint; dx++) {
+          const x = pos.x + dx
+          const y = pos.y + dy
+          if (x < 0 || x >= grid.width || y < 0 || y >= grid.height) return false
+          const cell = grid.cells[y]?.[x]
+          if (cell?.obstacle?.blocksMovement) return false
+          if (otherOccupied.has(`${x},${y}`)) return false
+        }
+      }
+      return true
+    })()
+
+    if (fitsAtCurrent) {
+      // Fits at current anchor — no position change needed
+      return
+    }
+
+    // Enlarging: search nearby positions for a valid placement
+    if (newFootprint > oldFootprint) {
+      // Try offsets that keep the creature overlapping its original position
+      const searchOffsets: Position[] = []
+      for (let dy = -(newFootprint - 1); dy <= 0; dy++) {
+        for (let dx = -(newFootprint - 1); dx <= 0; dx++) {
+          if (dx === 0 && dy === 0) continue // Already checked
+          searchOffsets.push({ x: pos.x + dx, y: pos.y + dy })
+        }
+      }
+      // Then expand to adjacent positions
+      for (let r = 1; r <= 3; r++) {
+        for (let dy = -r; dy <= r; dy++) {
+          for (let dx = -r; dx <= r; dx++) {
+            if (Math.abs(dx) !== r && Math.abs(dy) !== r) continue
+            searchOffsets.push({ x: pos.x + dx, y: pos.y + dy })
+          }
+        }
+      }
+
+      for (const candidate of searchOffsets) {
+        let valid = true
+        for (let dy = 0; dy < newFootprint && valid; dy++) {
+          for (let dx = 0; dx < newFootprint && valid; dx++) {
+            const x = candidate.x + dx
+            const y = candidate.y + dy
+            if (x < 0 || x >= grid.width || y < 0 || y >= grid.height) { valid = false; break }
+            const cell = grid.cells[y]?.[x]
+            if (cell?.obstacle?.blocksMovement) { valid = false; break }
+            if (otherOccupied.has(`${x},${y}`)) { valid = false; break }
+          }
+        }
+        if (valid) {
+          // Move combatant to valid position
+          set((state) => ({
+            combatants: state.combatants.map(c =>
+              c.id === combatantId ? { ...c, position: candidate } : c
+            ),
+          }))
+          return
+        }
+      }
+
+      // No valid position found — log warning and keep at current position
+      get().addLogEntry({
+        type: 'other',
+        actorId: combatantId,
+        actorName: combatant.name,
+        message: `${combatant.name} cannot fit at new size — not enough space on the grid.`,
+      })
+    }
+    // Shrinking: always valid at current anchor, no repositioning needed
+  },
+
+  resolveCrownOfMadness: (targetId) => {
+    const { pendingCrownOfMadness, combatants } = get()
+    if (!pendingCrownOfMadness) return
+
+    const { charmedId, casterId } = pendingCrownOfMadness
+    const charmed = combatants.find(c => c.id === charmedId)
+    const target = combatants.find(c => c.id === targetId)
+    const caster = combatants.find(c => c.id === casterId)
+
+    if (!charmed || !target || !caster) {
+      set({ pendingCrownOfMadness: undefined })
+      return
+    }
+
+    set({ pendingCrownOfMadness: undefined })
+
+    // Select weapon/action for the forced melee attack (same as opportunity attack pattern)
+    let weapon: Weapon | undefined
+    let monsterAction: MonsterAction | undefined
+
+    if (charmed.type === 'character') {
+      const character = charmed.data as Character
+      weapon = character.equipment?.meleeWeapon
+    } else {
+      const monster = charmed.data as Monster
+      monsterAction = monster.actions.find((a) => a.reach !== undefined || (a.attackBonus !== undefined && !a.range))
+    }
+
+    // Resolve the attack
+    const result = resolveAttack({
+      attacker: charmed,
+      target,
+      weapon,
+      monsterAction,
+    })
+
+    // Log the forced attack
+    get().addLogEntry({
+      type: 'spell',
+      actorId: charmedId,
+      actorName: charmed.name,
+      message: `Crown of Madness compels ${charmed.name} to attack ${target.name}!`,
+    })
+
+    if (result.hit) {
+      get().addLogEntry({
+        type: 'attack',
+        actorId: charmedId,
+        actorName: charmed.name,
+        targetId,
+        targetName: target.name,
+        message: result.critical
+          ? `${charmed.name} CRITICALLY HITS ${target.name} (forced attack)!`
+          : `${charmed.name} hits ${target.name} (forced attack)`,
+        details: `${result.attackRoll.breakdown} vs AC ${result.targetAC}`,
+      })
+
+      if (result.damage) {
+        const totalDamage = result.damage.total
+        get().dealDamage(targetId, totalDamage, charmed.name)
+        get().addDamagePopup(targetId, totalDamage, (result.damageType ?? 'bludgeoning') as DamageType, result.critical)
+        get().addLogEntry({
+          type: 'damage',
+          actorId: charmedId,
+          actorName: charmed.name,
+          targetId,
+          targetName: target.name,
+          message: `${totalDamage} ${result.damageType ?? ''} damage`,
+          details: result.damage.breakdown,
+        })
+      }
+    } else {
+      get().addLogEntry({
+        type: 'attack',
+        actorId: charmedId,
+        actorName: charmed.name,
+        targetId,
+        targetName: target.name,
+        message: result.criticalMiss
+          ? `${charmed.name} critically misses ${target.name} (forced attack)!`
+          : `${charmed.name} misses ${target.name} (forced attack)`,
+        details: `${result.attackRoll.breakdown} vs AC ${result.targetAC}`,
+      })
+      get().addCombatPopup(charmedId, 'miss')
+    }
+
+    // Mark action as used (spell says "must use its action")
+    set((state) => ({
+      combatants: state.combatants.map((c) =>
+        c.id === charmedId ? { ...c, hasActed: true } : c
+      ),
+    }))
+
+    // Auto-skip if the charmed creature is dead (shouldn't happen but safety)
+    const updatedCharmed = get().combatants.find(c => c.id === charmedId)
+    if (updatedCharmed && shouldSkipTurn(updatedCharmed)) {
+      get().nextTurn()
+    }
+  },
+
+  skipCrownOfMadness: () => {
+    const { pendingCrownOfMadness, combatants } = get()
+    if (!pendingCrownOfMadness) return
+
+    const caster = combatants.find(c => c.id === pendingCrownOfMadness.casterId)
+    const charmed = combatants.find(c => c.id === pendingCrownOfMadness.charmedId)
+
+    set({ pendingCrownOfMadness: undefined })
+
+    get().addLogEntry({
+      type: 'spell',
+      actorId: pendingCrownOfMadness.casterId,
+      actorName: caster?.name ?? 'Unknown',
+      message: `${caster?.name ?? 'Caster'} does not designate a target for ${charmed?.name ?? 'the charmed creature'}`,
+    })
   },
 
   resetCombat: () => {

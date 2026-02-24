@@ -58,7 +58,9 @@
       "Bash(ls -la \"a:\\\\Coding\\\\5e-combat-simulator\\\\src\\\\components\\\\combat\"\" | grep -E \"Selector)",
       "Bash(Prompt)",
       "Bash(Popup \")",
-      "Bash(node_modules.bintsc.cmd:*)"
+      "Bash(node_modules.bintsc.cmd:*)",
+      "Bash(node_modules/.bin/tsc.cmd:*)",
+      "Bash(NODE_OPTIONS=\"\" node:*)"
     ]
   }
 }

@@ -9,6 +9,7 @@ export interface AoEConfig {
   origin: Position // caster position for cones/lines, or ignored for sphere/cube
   target: Position // cursor/target position
   originType?: 'self' | 'point' // 'self' means AoE must touch caster (Thunder Wave), 'point' means freely placeable
+  widthCells?: number // Width in cells for line AoEs (default 1; Gust of Wind = 2)
 }
 
 /**
@@ -280,15 +281,58 @@ function getSelfOriginCubeAffectedCells(
 }
 
 
+// Direction vectors for 8 cardinal/diagonal directions
+const lineDirVectors: Record<Direction, { dx: number; dy: number }> = {
+  N: { dx: 0, dy: -1 },
+  NE: { dx: 1, dy: -1 },
+  E: { dx: 1, dy: 0 },
+  SE: { dx: 1, dy: 1 },
+  S: { dx: 0, dy: 1 },
+  SW: { dx: -1, dy: 1 },
+  W: { dx: -1, dy: 0 },
+  NW: { dx: -1, dy: -1 },
+}
+
+
+/**
+ * Get the snapped direction vector from origin toward target
+ * Returns a unit direction vector snapped to one of 8 cardinal/diagonal directions
+ */
+export function getSnappedDirection(origin: Position, target: Position): Position {
+  if (target.x === origin.x && target.y === origin.y) {
+    return { x: 0, y: -1 } // Default to North if same position
+  }
+  const angle = getAngle(origin, target)
+  const direction = snapToDirection(angle)
+  const dir = lineDirVectors[direction]
+  return { x: dir.dx, y: dir.dy }
+}
+
+/**
+ * Get the raw normalized direction vector from origin toward target (not snapped)
+ * Returns a float direction vector for free-form line targeting
+ */
+export function getLineDirection(origin: Position, target: Position): Position {
+  if (target.x === origin.x && target.y === origin.y) {
+    return { x: 0, y: -1 } // Default to North if same position
+  }
+  const dx = target.x - origin.x
+  const dy = target.y - origin.y
+  const dist = Math.sqrt(dx * dx + dy * dy)
+  return { x: dx / dist, y: dy / dist }
+}
+
 /**
  * Calculate cells affected by a line AoE
- * Line from origin toward target, 5 feet wide (1 cell)
- * Snaps to 8 directions like cones
+ * Line from origin toward target, using free-form direction (not snapped to 8 directions)
+ * Uses sampling-based rasterization: steps along the line at fine intervals
+ * @param widthCells Width in cells (default 1 = 5ft wide, 2 = 10ft wide)
  */
 function getLineAffectedCells(
   origin: Position,
   target: Position,
-  lengthFeet: number
+  lengthFeet: number,
+  widthCells: number = 1
 ): Set<string> {
   const cells = new Set<string>()
 
@@ -297,30 +341,36 @@ function getLineAffectedCells(
     return cells
   }
 
-  // Snap to one of 8 directions
-  const angle = getAngle(origin, target)
-  const direction = snapToDirection(angle)
+  // Normalized direction
+  const dx = target.x - origin.x
+  const dy = target.y - origin.y
+  const dist = Math.sqrt(dx * dx + dy * dy)
+  const ndx = dx / dist
+  const ndy = dy / dist
 
-  // Calculate number of cells based on length
-  const numCells = Math.floor(lengthFeet / 5)
+  // Perpendicular (90° rotation)
+  const perpX = -ndy
+  const perpY = ndx
 
-  // Direction vectors
-  const dirVectors: Record<Direction, { dx: number; dy: number }> = {
-    N: { dx: 0, dy: -1 },
-    NE: { dx: 1, dy: -1 },
-    E: { dx: 1, dy: 0 },
-    SE: { dx: 1, dy: 1 },
-    S: { dx: 0, dy: 1 },
-    SW: { dx: -1, dy: 1 },
-    W: { dx: -1, dy: 0 },
-    NW: { dx: -1, dy: -1 },
+  // Width offsets: widthCells=1 → [0], widthCells=2 → [-0.5, 0.5]
+  const offsets: number[] = []
+  for (let w = 0; w < widthCells; w++) {
+    offsets.push(w - (widthCells - 1) / 2)
   }
 
-  const dir = dirVectors[direction]
-
-  // Add cells in a straight line
-  for (let i = 1; i <= numCells; i++) {
-    cells.add(`${origin.x + dir.dx * i},${origin.y + dir.dy * i}`)
+  // Sample along the line at fine intervals
+  const maxT = lengthFeet / 5
+  const step = 0.2
+  for (let t = step; t <= maxT + 0.01; t += step) {
+    const cx = origin.x + ndx * t
+    const cy = origin.y + ndy * t
+    for (const offset of offsets) {
+      const cellX = Math.round(cx + perpX * offset)
+      const cellY = Math.round(cy + perpY * offset)
+      // Exclude the caster's own cell
+      if (cellX === origin.x && cellY === origin.y) continue
+      cells.add(`${cellX},${cellY}`)
+    }
   }
 
   return cells
@@ -330,7 +380,7 @@ function getLineAffectedCells(
  * Main function to get affected cells for any AoE type
  */
 export function getAoEAffectedCells(config: AoEConfig): Set<string> {
-  const { type, size, origin, target, originType } = config
+  const { type, size, origin, target, originType, widthCells } = config
 
   switch (type) {
     case 'cone':
@@ -349,7 +399,7 @@ export function getAoEAffectedCells(config: AoEConfig): Set<string> {
       }
       return getCubeAffectedCells(target, size)
     case 'line':
-      return getLineAffectedCells(origin, target, size)
+      return getLineAffectedCells(origin, target, size, widthCells)
     default:
       return new Set()
   }

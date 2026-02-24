@@ -22,6 +22,9 @@ import {
   ArrowUp,
   CloudLightning,
   Sword,
+  Maximize2,
+  Minimize2,
+  Flame,
   type LucideIcon,
 } from 'lucide-react'
 import type { Condition } from '@/types'
@@ -253,6 +256,30 @@ export const conditionIcons: Record<ExtendedCondition, ConditionIconInfo> = {
     color: 'text-blue-300',
     bgColor: 'bg-blue-900',
     label: 'Alter Self (Aquatic)',
+  },
+  enlarged: {
+    icon: Maximize2,
+    color: 'text-green-300',
+    bgColor: 'bg-green-900',
+    label: 'Enlarged',
+  },
+  reduced: {
+    icon: Minimize2,
+    color: 'text-amber-300',
+    bgColor: 'bg-amber-900',
+    label: 'Reduced',
+  },
+  dragons_breath: {
+    icon: Flame,
+    color: 'text-orange-300',
+    bgColor: 'bg-orange-900',
+    label: "Dragon's Breath",
+  },
+  flaming_sphere: {
+    icon: Flame,
+    color: 'text-red-300',
+    bgColor: 'bg-red-900',
+    label: 'Flaming Sphere',
   },
 }
 

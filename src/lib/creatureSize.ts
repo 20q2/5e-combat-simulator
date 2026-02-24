@@ -1,5 +1,8 @@
 import type { Size, Position, Combatant, Character, Monster } from '@/types'
 
+// Ordered size categories for Enlarge/Reduce shifting
+const SIZE_ORDER: Size[] = ['tiny', 'small', 'medium', 'large', 'huge', 'gargantuan']
+
 // Size to grid squares (footprint dimension)
 const SIZE_TO_SQUARES: Record<Size, number> = {
   tiny: 1,
@@ -35,13 +38,34 @@ export function getVisualScale(size: Size): number {
 }
 
 /**
- * Get the size of a combatant from their character race or monster data
+ * Get the size of a combatant from their character race or monster data,
+ * adjusted by Enlarge/Reduce conditions
  */
 export function getCombatantSize(combatant: Combatant): Size {
+  let baseSize: Size
   if (combatant.type === 'character') {
-    return (combatant.data as Character).race.size
+    baseSize = (combatant.data as Character).race.size
+  } else {
+    baseSize = (combatant.data as Monster).size
   }
-  return (combatant.data as Monster).size
+
+  // Check for Enlarge/Reduce conditions
+  const isEnlarged = combatant.conditions.some(c => c.condition === 'enlarged')
+  const isReduced = combatant.conditions.some(c => c.condition === 'reduced')
+
+  if (isEnlarged && !isReduced) {
+    const idx = SIZE_ORDER.indexOf(baseSize)
+    if (idx < SIZE_ORDER.length - 1) {
+      return SIZE_ORDER[idx + 1]
+    }
+  } else if (isReduced && !isEnlarged) {
+    const idx = SIZE_ORDER.indexOf(baseSize)
+    if (idx > 0) {
+      return SIZE_ORDER[idx - 1]
+    }
+  }
+
+  return baseSize
 }
 
 /**

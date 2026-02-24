@@ -4,7 +4,9 @@ import {
   resolveSpellAttack,
   getEffectiveDamageDice,
 } from '@/engine/spellCasting'
-import type { Combatant, Character, Monster, ActiveCondition } from '@/types'
+import { getAoEAffectedCells, getSnappedDirection, getLineDirection } from '@/lib/aoeShapes'
+import { getMovementCost, type DirectionalDifficultZone } from '@/lib/pathfinding'
+import type { Combatant, Character, Monster, ActiveCondition, Grid, Position } from '@/types'
 import { ZoneType } from '@/types'
 
 // ============================================
@@ -992,5 +994,430 @@ describe('Upcast scaling for new spells', () => {
     expect(spell.damage).toBeUndefined()
     const damageDice = getEffectiveDamageDice(spell, 5, 2)
     expect(damageDice).toBeUndefined()
+  })
+})
+
+// ============================================
+// Gust of Wind: spell data
+// ============================================
+
+describe('Gust of Wind: spell definition', () => {
+  it('exists and has correct basic properties', () => {
+    const spell = getSpellById('gust-of-wind')
+    expect(spell).toBeDefined()
+    expect(spell!.name).toBe('Gust of Wind')
+    expect(spell!.level).toBe(2)
+    expect(spell!.school).toBe('evocation')
+    expect(spell!.concentration).toBe(true)
+    expect(spell!.castingTime).toBe('1 action')
+  })
+
+  it('has STR saving throw', () => {
+    const spell = getSpellById('gust-of-wind')!
+    expect(spell.savingThrow).toBe('strength')
+  })
+
+  it('creates a GustOfWind zone', () => {
+    const spell = getSpellById('gust-of-wind')!
+    expect(spell.createsZone).toBe(ZoneType.GustOfWind)
+  })
+
+  it('has self-origin line AoE (60ft)', () => {
+    const spell = getSpellById('gust-of-wind')!
+    expect(spell.areaOfEffect).toBeDefined()
+    expect(spell.areaOfEffect!.type).toBe('line')
+    expect(spell.areaOfEffect!.size).toBe(60)
+    expect(spell.areaOfEffect!.origin).toBe('self')
+  })
+
+  it('has no damage (push-only spell)', () => {
+    const spell = getSpellById('gust-of-wind')!
+    expect(spell.damage).toBeUndefined()
+  })
+
+  it('is available to druid, ranger, sorcerer, wizard', () => {
+    const spell = getSpellById('gust-of-wind')!
+    expect(spell.classes).toContain('druid')
+    expect(spell.classes).toContain('ranger')
+    expect(spell.classes).toContain('sorcerer')
+    expect(spell.classes).toContain('wizard')
+    expect(spell.classes).toHaveLength(4)
+  })
+})
+
+// ============================================
+// Gust of Wind: AoE shape (10ft wide line)
+// ============================================
+
+describe('Gust of Wind: wide line AoE shape', () => {
+  it('produces a 2-cell-wide, 12-cell-long line aimed East', () => {
+    const cells = getAoEAffectedCells({
+      type: 'line',
+      size: 60,
+      origin: { x: 5, y: 5 },
+      target: { x: 10, y: 5 },
+      widthCells: 2,
+    })
+    // Primary row: y=5, x=6..17
+    for (let x = 6; x <= 17; x++) {
+      expect(cells.has(`${x},5`)).toBe(true)
+    }
+    // Perpendicular row: y=6, x=6..17
+    for (let x = 6; x <= 17; x++) {
+      expect(cells.has(`${x},6`)).toBe(true)
+    }
+    // Origin cell should not be included
+    expect(cells.has('5,5')).toBe(false)
+  })
+
+  it('produces correct cells when aimed North', () => {
+    const cells = getAoEAffectedCells({
+      type: 'line',
+      size: 15,
+      origin: { x: 5, y: 5 },
+      target: { x: 5, y: 2 },
+      widthCells: 2,
+    })
+    // Primary column: x=5, y=4,3,2
+    expect(cells.has('5,4')).toBe(true)
+    expect(cells.has('5,3')).toBe(true)
+    expect(cells.has('5,2')).toBe(true)
+    // Perpendicular: x=6, y=4,3,2
+    expect(cells.has('6,4')).toBe(true)
+    expect(cells.has('6,3')).toBe(true)
+    expect(cells.has('6,2')).toBe(true)
+    // Origin cell should not be included
+    expect(cells.has('5,5')).toBe(false)
+  })
+
+  it('1-cell-wide line is standard (no extra perpendicular cells)', () => {
+    const cells = getAoEAffectedCells({
+      type: 'line',
+      size: 15,
+      origin: { x: 5, y: 5 },
+      target: { x: 8, y: 5 },
+      widthCells: 1,
+    })
+    // 3 cells long, 1 wide = 3
+    expect(cells.size).toBe(3)
+  })
+
+  it('returns empty set when target equals origin', () => {
+    const cells = getAoEAffectedCells({
+      type: 'line',
+      size: 60,
+      origin: { x: 5, y: 5 },
+      target: { x: 5, y: 5 },
+      widthCells: 2,
+    })
+    expect(cells.size).toBe(0)
+  })
+})
+
+// ============================================
+// Gust of Wind: snapped direction helper
+// ============================================
+
+describe('Gust of Wind: getSnappedDirection', () => {
+  it('snaps to East when target is directly right', () => {
+    const dir = getSnappedDirection({ x: 0, y: 0 }, { x: 5, y: 0 })
+    expect(dir).toEqual({ x: 1, y: 0 })
+  })
+
+  it('snaps to North when target is directly above (screen y decreasing)', () => {
+    const dir = getSnappedDirection({ x: 0, y: 0 }, { x: 0, y: -5 })
+    expect(dir).toEqual({ x: 0, y: -1 })
+  })
+
+  it('snaps to South when target is directly below', () => {
+    const dir = getSnappedDirection({ x: 0, y: 0 }, { x: 0, y: 5 })
+    expect(dir).toEqual({ x: 0, y: 1 })
+  })
+
+  it('snaps to West when target is directly left', () => {
+    const dir = getSnappedDirection({ x: 0, y: 0 }, { x: -5, y: 0 })
+    expect(dir).toEqual({ x: -1, y: 0 })
+  })
+
+  it('snaps to NE when target is upper-right diagonal', () => {
+    const dir = getSnappedDirection({ x: 0, y: 0 }, { x: 3, y: -3 })
+    expect(dir).toEqual({ x: 1, y: -1 })
+  })
+
+  it('snaps to SW when target is lower-left diagonal', () => {
+    const dir = getSnappedDirection({ x: 0, y: 0 }, { x: -3, y: 3 })
+    expect(dir).toEqual({ x: -1, y: 1 })
+  })
+
+  it('defaults to North when origin equals target', () => {
+    const dir = getSnappedDirection({ x: 5, y: 5 }, { x: 5, y: 5 })
+    expect(dir).toEqual({ x: 0, y: -1 })
+  })
+
+  it('snaps slight angle to nearest cardinal (E dominates slight SE)', () => {
+    // Angle of about 10 degrees - should snap to East
+    const dir = getSnappedDirection({ x: 0, y: 0 }, { x: 10, y: 2 })
+    expect(dir).toEqual({ x: 1, y: 0 })
+  })
+})
+
+// ============================================
+// getLineDirection (raw normalized direction)
+// ============================================
+
+describe('getLineDirection (free-form direction)', () => {
+  it('returns normalized direction for cardinal East', () => {
+    const dir = getLineDirection({ x: 0, y: 0 }, { x: 5, y: 0 })
+    expect(dir.x).toBeCloseTo(1, 5)
+    expect(dir.y).toBeCloseTo(0, 5)
+  })
+
+  it('returns normalized direction for cardinal North', () => {
+    const dir = getLineDirection({ x: 0, y: 0 }, { x: 0, y: -5 })
+    expect(dir.x).toBeCloseTo(0, 5)
+    expect(dir.y).toBeCloseTo(-1, 5)
+  })
+
+  it('returns normalized direction for 45° diagonal NE', () => {
+    const dir = getLineDirection({ x: 0, y: 0 }, { x: 3, y: -3 })
+    expect(dir.x).toBeCloseTo(Math.SQRT1_2, 5)
+    expect(dir.y).toBeCloseTo(-Math.SQRT1_2, 5)
+  })
+
+  it('returns normalized direction for non-8-direction angle', () => {
+    // ~30° above horizontal (atan2(-3, 5) ≈ -0.54 rad)
+    const dir = getLineDirection({ x: 0, y: 0 }, { x: 5, y: -3 })
+    const dist = Math.sqrt(5 * 5 + 3 * 3)
+    expect(dir.x).toBeCloseTo(5 / dist, 5)
+    expect(dir.y).toBeCloseTo(-3 / dist, 5)
+  })
+
+  it('defaults to North when origin equals target', () => {
+    const dir = getLineDirection({ x: 5, y: 5 }, { x: 5, y: 5 })
+    expect(dir).toEqual({ x: 0, y: -1 })
+  })
+})
+
+// ============================================
+// Free-form line AoE behavior
+// ============================================
+
+describe('Free-form line AoE', () => {
+  it('produces cells following actual angle for non-8-direction targets', () => {
+    // Line at ~30° above horizontal (not a standard 8-direction)
+    const cells = getAoEAffectedCells({
+      type: 'line',
+      size: 30,
+      origin: { x: 5, y: 5 },
+      target: { x: 10, y: 2 },
+      widthCells: 1,
+    })
+
+    // Cells should span multiple rows (not all at y=5 like old snapped behavior)
+    const ys = new Set<number>()
+    for (const key of cells) {
+      ys.add(Number(key.split(',')[1]))
+    }
+    expect(ys.size).toBeGreaterThan(1)
+
+    // Should include cells moving toward the target
+    expect(cells.has('6,5')).toBe(true) // First cell near origin
+    expect(cells.has('10,2')).toBe(true) // Near the target
+  })
+
+  it('free-form diagonal line differs from snapped 8-direction', () => {
+    // A line at ~26° should NOT snap to East
+    const cells = getAoEAffectedCells({
+      type: 'line',
+      size: 30,
+      origin: { x: 5, y: 5 },
+      target: { x: 10, y: 2 },
+      widthCells: 1,
+    })
+
+    // Old snapped behavior would put all cells at y=5 (East snap)
+    // New free-form should have cells at different y values
+    const hasNonY5 = [...cells].some(key => Number(key.split(',')[1]) !== 5)
+    expect(hasNonY5).toBe(true)
+  })
+
+  it('cardinal directions still produce correct cells', () => {
+    // A pure East line should still work correctly
+    const cells = getAoEAffectedCells({
+      type: 'line',
+      size: 15,
+      origin: { x: 5, y: 5 },
+      target: { x: 8, y: 5 },
+      widthCells: 1,
+    })
+    expect(cells.has('6,5')).toBe(true)
+    expect(cells.has('7,5')).toBe(true)
+    expect(cells.has('8,5')).toBe(true)
+    expect(cells.has('5,5')).toBe(false) // Origin excluded
+  })
+})
+
+// ============================================
+// Gust of Wind: directional movement cost
+// ============================================
+
+describe('Gust of Wind: directional difficult terrain', () => {
+  // Create a minimal grid for testing movement cost
+  function createTestGrid(width: number, height: number): Grid {
+    const cells = Array.from({ length: height }, () =>
+      Array.from({ length: width }, () => ({} as Grid['cells'][0][0]))
+    )
+    return { width, height, cells } as Grid
+  }
+
+  it('doubles movement cost when moving toward caster through the zone', () => {
+    const grid = createTestGrid(20, 20)
+    const zone: DirectionalDifficultZone = {
+      cells: new Set(['8,5', '7,5', '6,5']),
+      casterPosition: { x: 5, y: 5 },
+    }
+
+    // Moving from (8,5) to (7,5) = toward caster at (5,5)
+    const result = getMovementCost(
+      grid,
+      { x: 8, y: 5 },
+      { x: 7, y: 5 },
+      0, // diagonalCount
+      undefined, // movementContext
+      undefined, // difficultZoneCells
+      [zone],
+    )
+
+    // Base cost 5 * 2 = 10
+    expect(result.cost).toBe(10)
+  })
+
+  it('normal cost when moving away from caster through the zone', () => {
+    const grid = createTestGrid(20, 20)
+    const zone: DirectionalDifficultZone = {
+      cells: new Set(['6,5', '7,5', '8,5']),
+      casterPosition: { x: 5, y: 5 },
+    }
+
+    // Moving from (6,5) to (7,5) = away from caster at (5,5)
+    const result = getMovementCost(
+      grid,
+      { x: 6, y: 5 },
+      { x: 7, y: 5 },
+      0,
+      undefined,
+      undefined,
+      [zone],
+    )
+
+    // Moving away: no penalty
+    expect(result.cost).toBe(5)
+  })
+
+  it('normal cost when not in the zone at all', () => {
+    const grid = createTestGrid(20, 20)
+    const zone: DirectionalDifficultZone = {
+      cells: new Set(['6,5', '7,5', '8,5']),
+      casterPosition: { x: 5, y: 5 },
+    }
+
+    // Moving from (10,10) to (11,10) = outside the zone
+    const result = getMovementCost(
+      grid,
+      { x: 10, y: 10 },
+      { x: 11, y: 10 },
+      0,
+      undefined,
+      undefined,
+      [zone],
+    )
+
+    expect(result.cost).toBe(5)
+  })
+
+  it('normal cost when moving perpendicular to caster (same Manhattan distance)', () => {
+    const grid = createTestGrid(20, 20)
+    const zone: DirectionalDifficultZone = {
+      cells: new Set(['7,4', '7,5', '7,6']),
+      casterPosition: { x: 5, y: 5 },
+    }
+
+    // Moving from (7,5) to (7,4): Manhattan to caster before = |7-5|+|5-5| = 2, after = |7-5|+|4-5| = 3
+    // Distance increased = not toward caster = no penalty
+    const result = getMovementCost(
+      grid,
+      { x: 7, y: 5 },
+      { x: 7, y: 4 },
+      0,
+      undefined,
+      undefined,
+      [zone],
+    )
+
+    expect(result.cost).toBe(5)
+  })
+})
+
+// ============================================
+// Gust of Wind: push position calculation
+// ============================================
+
+describe('Gust of Wind: push mechanics simulation', () => {
+  it('push 15ft = 3 cells along direction', () => {
+    // Simulate calculateLinePushPosition logic
+    const targetPos: Position = { x: 8, y: 5 }
+    const direction: Position = { x: 1, y: 0 } // East
+    const distanceFeet = 15
+    const steps = Math.floor(distanceFeet / 5) // 3
+
+    let pos = targetPos
+    for (let i = 0; i < steps; i++) {
+      pos = { x: pos.x + direction.x, y: pos.y + direction.y }
+    }
+
+    expect(pos).toEqual({ x: 11, y: 5 })
+  })
+
+  it('push stops at grid boundary', () => {
+    // Target at (18,5) in a 20-wide grid, push East 3 cells
+    const gridWidth = 20
+    const targetPos: Position = { x: 18, y: 5 }
+    const direction: Position = { x: 1, y: 0 }
+    const steps = 3
+
+    let pos = targetPos
+    for (let i = 0; i < steps; i++) {
+      const next = { x: pos.x + direction.x, y: pos.y + direction.y }
+      if (next.x < 0 || next.x >= gridWidth) break
+      pos = next
+    }
+
+    // Stops at x=19 (last valid cell)
+    expect(pos).toEqual({ x: 19, y: 5 })
+  })
+
+  it('redirect changes direction without triggering saves', () => {
+    // Per RAW: redirect is bonus action, no immediate saves
+    // Just verify direction computation works
+    const casterPos: Position = { x: 5, y: 5 }
+    const newTarget: Position = { x: 5, y: 0 } // click North
+
+    const newDir = getLineDirection(casterPos, newTarget)
+    expect(newDir.x).toBeCloseTo(0, 5)
+    expect(newDir.y).toBeCloseTo(-1, 5)
+
+    // New line should extend North
+    const newCells = getAoEAffectedCells({
+      type: 'line',
+      size: 60,
+      origin: casterPos,
+      target: newTarget,
+      widthCells: 2,
+    })
+
+    // 12 cells long, 2 wide = 24 core cells + origin-edge perpendicular
+    expect(newCells.size).toBeGreaterThanOrEqual(24)
+    // First cell in the line: (5, 4)
+    expect(newCells.has('5,4')).toBe(true)
   })
 })

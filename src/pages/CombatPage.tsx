@@ -17,6 +17,9 @@ import { DamageTypePrompt } from '@/components/combat/DamageTypePrompt'
 import { BounceTargetPrompt } from '@/components/combat/BounceTargetPrompt'
 import { AlterSelfModePrompt } from '@/components/combat/AlterSelfModePrompt'
 import { BlindnessDeafnessModePrompt } from '@/components/combat/BlindnessDeafnessModePrompt'
+import { DragonsBreathDamageTypePrompt } from '@/components/combat/DragonsBreathDamageTypePrompt'
+import { EnlargeReduceModePrompt } from '@/components/combat/EnlargeReduceModePrompt'
+import { CrownOfMadnessPrompt } from '@/components/combat/CrownOfMadnessPrompt'
 import { useCombatStore } from '@/stores/combatStore'
 import { useCharacterStore } from '@/stores/characterStore'
 import { getMonsterById } from '@/data'
@@ -317,6 +320,15 @@ export function CombatPage() {
 
       {/* Blindness/Deafness mode selection */}
       <BlindnessDeafnessModePrompt />
+
+      {/* Dragon's Breath damage type selection */}
+      <DragonsBreathDamageTypePrompt />
+
+      {/* Enlarge/Reduce mode selection */}
+      <EnlargeReduceModePrompt />
+
+      {/* Crown of Madness forced attack target selection */}
+      <CrownOfMadnessPrompt />
     </div>
   )
 }

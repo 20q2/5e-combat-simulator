@@ -1,6 +1,6 @@
 import type { Combatant, Monster, Position, MonsterAction, Grid, Character } from '@/types'
 import { getDistance, canAttackTarget, canTakeActions } from './combat'
-import { findPath, getReachablePositions, calculatePathCost, type MovementContext } from '@/lib/pathfinding'
+import { findPath, getReachablePositions, calculatePathCost, type MovementContext, type DirectionalDifficultZone } from '@/lib/pathfinding'
 import { hasLineOfSight } from '@/lib/lineOfSight'
 import { getCombatantSpeed } from '@/stores/combatStore'
 import {
@@ -234,12 +234,13 @@ function getPositionTowardTarget(
   pathBlocked: Set<string>,
   endBlocked: Set<string>,
   movementContext?: MovementContext,
-  difficultZoneCells?: Set<string>
+  difficultZoneCells?: Set<string>,
+  directionalDifficultZones?: DirectionalDifficultZone[]
 ): Position | null {
   if (maxMovement <= 0) return null
 
   // Use A* to find path to target (or adjacent to target)
-  const path = findPath(grid, current, target, pathBlocked, undefined, 1, movementContext, difficultZoneCells)
+  const path = findPath(grid, current, target, pathBlocked, undefined, 1, movementContext, difficultZoneCells, directionalDifficultZones)
 
   if (path && path.length > 1) {
     // Find how far along the path we can go with our movement budget
@@ -247,7 +248,7 @@ function getPositionTowardTarget(
     let lastValidIndex = 0
 
     for (let i = 1; i < path.length; i++) {
-      const segmentCost = calculatePathCost(grid, [path[i - 1], path[i]], movementContext, difficultZoneCells)
+      const segmentCost = calculatePathCost(grid, [path[i - 1], path[i]], movementContext, difficultZoneCells, directionalDifficultZones)
       if (movementUsed + segmentCost <= maxMovement) {
         movementUsed += segmentCost
         lastValidIndex = i
@@ -271,7 +272,7 @@ function getPositionTowardTarget(
 
   // If no path found, try to find reachable positions that get us closer
   // Use pathBlocked for BFS so we can traverse through ally spaces
-  const reachable = getReachablePositions(grid, current, maxMovement, pathBlocked, 1, movementContext, difficultZoneCells)
+  const reachable = getReachablePositions(grid, current, maxMovement, pathBlocked, 1, movementContext, difficultZoneCells, directionalDifficultZones)
 
   let bestPosition: Position | null = null
   let bestDistance = Infinity
@@ -344,7 +345,8 @@ export function decideMonsterAction(
   combatants: Combatant[],
   grid: Grid,
   fogCells?: Set<string>,
-  greaseCells?: Set<string>
+  greaseCells?: Set<string>,
+  directionalDifficultZones?: DirectionalDifficultZone[]
 ): AIDecision {
   const actions: AIAction[] = []
 
@@ -439,7 +441,8 @@ export function decideMonsterAction(
         pathBlocked,
         endBlocked,
         movementContext,
-        greaseCells
+        greaseCells,
+        directionalDifficultZones
       )
 
       if (moveTarget) {
@@ -492,8 +495,9 @@ export function getNextAIAction(
   combatants: Combatant[],
   grid: Grid,
   fogCells?: Set<string>,
-  greaseCells?: Set<string>
+  greaseCells?: Set<string>,
+  directionalDifficultZones?: DirectionalDifficultZone[]
 ): AIAction {
-  const decision = decideMonsterAction(monster, combatants, grid, fogCells, greaseCells)
+  const decision = decideMonsterAction(monster, combatants, grid, fogCells, greaseCells, directionalDifficultZones)
   return decision.actions[0] ?? { type: 'end' }
 }

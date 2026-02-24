@@ -245,6 +245,7 @@ Before writing data, determine which category the spell falls into. This determi
 | **Healing spell** | No `damage`, no `attackType`, no `savingThrow` | Cure Wounds |
 | **Buff/debuff** | No `damage` (or optional) | Bless, Bane |
 | **Self-origin AoE** | `areaOfEffect` with `origin: 'self'` | Thunder Wave |
+| **Mode-selection** | Intercepted in `castSpell()`, resolved via pending state + UI prompt | Alter Self, Blindness/Deafness, Enlarge/Reduce |
 
 ### Step 2: Add Spell Data (`src/data/spells.ts`)
 
@@ -325,6 +326,17 @@ reaction: {
 higherLevels: 'When you cast this spell using a spell slot of 2nd level or higher, the damage increases by 1d6 for each slot level above 1st.',
 ```
 
+**Target type** (who the spell can target):
+```typescript
+targetType: 'enemy',  // Default if omitted. Options:
+// 'enemy'  — only enemies (opposite team)
+// 'ally'   — only allies (same team), excludes self
+// 'self'   — caster only
+// 'any'    — all living combatants (both allies AND enemies, e.g. Enlarge/Reduce)
+```
+- `'any'` is for spells that can target either side (the resolve function handles conditional saves for enemies vs no-save for allies)
+- Targeting logic is in `ActionBar.tsx` (~line 1663) and `CombatGrid.tsx` (~line 625)
+
 ### Step 3: Assign to Class Spell Lists
 
 The `classes` array determines which classes can learn/prepare the spell. Use lowercase class IDs:
@@ -375,6 +387,50 @@ Examples of existing special effects:
 3. The UI shows a reaction prompt; player chooses to cast or skip
 4. Resolution is in `resolveReaction()` (~line 977) — handles AC bonus check and damage application
 
+**Adding mode-selection spells** (spells where the caster chooses an effect after targeting, e.g. Enlarge/Reduce, Alter Self, Blindness/Deafness):
+
+This uses a "pending mode" pattern with 4 parts:
+
+1. **Intercept in `castSpell()`** (~line 4337, after slot consumption + cast log): detect `spell.id`, consume the action, set pending state, `return true` to exit early:
+```typescript
+if (spell.id === 'your-spell' && targetId) {
+  if (isBonusActionSpell) { get().useBonusAction() } else { get().useAction() }
+  set({ pendingYourSpellMode: { casterId, spell, targetId, castAtLevel }, selectedAction: undefined })
+  return true
+}
+```
+
+2. **Add pending state** to `CombatState` in `types/index.ts` (~line 928, near other pending states):
+```typescript
+pendingYourSpellMode?: { casterId: string; spell: Spell; targetId: string; castAtLevel?: number }
+```
+
+3. **Create a UI prompt component** in `components/combat/YourSpellModePrompt.tsx` — follow `BlindnessDeafnessModePrompt.tsx` pattern (draggable dialog with mode buttons). Register it in `CombatPage.tsx`.
+
+4. **Implement resolve function** in `combatStore.ts`:
+```typescript
+resolveYourSpellMode: (mode) => { /* clear pending, log, apply effects */ }
+```
+
+**CRITICAL: Concentration handling in resolve functions.** Since the `return true` intercept skips the generic concentration cleanup code in `castSpell()`, the resolve function **must call `dropConcentration(casterId)` itself** if the caster was previously concentrating. Without this, previous concentration effects (zones, conditions, Witch Bolt links, etc.) will NOT be cleaned up:
+```typescript
+const currentCaster = get().combatants.find(c => c.id === casterId)
+if (currentCaster?.concentratingOn) {
+  get().dropConcentration(casterId)
+}
+```
+
+Existing mode-selection spells:
+- `alter-self` → `resolveAlterSelfMode()` / `AlterSelfModePrompt.tsx` (self-buff, no target)
+- `blindness-deafness` → `resolveBlindnessDeafnessMode()` / `BlindnessDeafnessModePrompt.tsx` (enemy, CON save)
+- `enlarge-reduce` → `resolveEnlargeReduceMode()` / `EnlargeReduceModePrompt.tsx` (any target, conditional CON save for enemies)
+
+**Adding condition-based combat modifiers** — For spells that apply conditions which modify damage or saves (like Enlarge/Reduce's +1d4/-1d4 damage and STR save advantage):
+
+- **Damage modifiers**: Add to the damage totalization section in `performAttack()` (~line 3318, after Lunging Attack bonus), checking `attacker.conditions`. This only affects weapon attacks; spell damage is a separate code path.
+- **Save modifiers**: Add to `rollCombatantSavingThrow()` in `engine/combat.ts` (~line 755), after racial save advantage and before the d20 roll.
+- **Size-changing effects**: Modify `getCombatantSize()` in `lib/creatureSize.ts` to check conditions. This automatically propagates to token rendering, pathfinding, grid occupancy, and melee range. Call `updateCombatantFootprint()` in `combatStore.ts` when the footprint changes (e.g., Medium→Large = 1x1→2x2) to validate the new position fits.
+
 ### Step 5: Helper Functions (`src/engine/combat.ts`)
 
 Three key helper functions for spell mechanics:
@@ -414,6 +470,7 @@ Both `getSpellSaveDC` and `getSpellAttackBonus` read the spellcasting ability fr
 | **Reaction** | Shield (ac_bonus on_hit), Counterspell (negate_spell) |
 | **Healing** | Cure Wounds, Healing Word, Mass Healing Word, Mass Cure Wounds |
 | **Buff/utility** | Blade Ward, Bless, Mage Armor, Spiritual Weapon, Spirit Guardians |
+| **Mode-selection** | Alter Self, Blindness/Deafness, Enlarge/Reduce |
 
 ### Key Helper Functions in `data/spells.ts`
 

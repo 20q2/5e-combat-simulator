@@ -6,7 +6,7 @@ import { getCharacterTokenImage, getMonsterTokenImage } from '@/lib/tokenImages'
 import { SpellSlotDisplay } from './SpellSlotDisplay'
 import { ResourceTracker } from './ResourceTracker'
 import type { Character, Monster, Weapon, MonsterAction, Spell } from '@/types'
-import { getAbilityModifier } from '@/types'
+import { getAbilityModifier, ZoneType } from '@/types'
 import { getMeleeRange } from '@/engine/combat'
 import { canTargetWithRangedAttack } from '@/lib/lineOfSight'
 import {
@@ -1347,6 +1347,7 @@ export function ActionBar() {
     useCunningHide,
     useExpeditiousRetreatDash,
     useWitchBoltZap,
+    startDragonsBreathExhale,
     projectileTargeting,
     startProjectileTargeting,
     cancelProjectileTargeting,
@@ -1362,6 +1363,7 @@ export function ActionBar() {
     useBonusActionManeuver,
     preselectedWeaponId,
     preselectedSpellId,
+    startGustOfWindRedirect,
   } = state
 
   const navigate = useNavigate()
@@ -1661,16 +1663,19 @@ export function ActionBar() {
   const hasSpells = availableSpells.length > 0
   const spellTargets = (() => {
     const targetType = selectedSpell?.targetType || 'enemy'
-    const isAllySpell = targetType === 'ally' || targetType === 'self' || targetType === 'any'
+    const isAllySpell = targetType === 'ally' || targetType === 'self'
 
     // For ally/self spells, include allies (same type as caster) + optionally self
+    // For 'any' spells, include all living combatants (Enlarge/Reduce can target allies or enemies)
     // For enemy spells, include enemies (opposite type)
     const candidates = combatants.filter((c) => {
       if (c.currentHp <= 0 || c.position.x < 0) return false
+      if (targetType === 'any') {
+        return true // All living combatants
+      }
       if (isAllySpell) {
         // Allies = same type as caster (character targets character allies, monster targets monster allies)
-        // Include self for targetType 'self' or 'any'
-        if (targetType === 'ally' || targetType === 'any') {
+        if (targetType === 'ally') {
           return c.type === currentCombatant.type
         }
         return c.id === currentCombatant.id // 'self' only
@@ -1735,6 +1740,17 @@ export function ActionBar() {
   // Check for Witch Bolt bonus action zap
   const canWitchBoltZap = isCharacter && !currentCombatant.hasBonusActed && currentCombatant.conditions.some(c => c.condition === 'witch_bolt') && !!currentCombatant.witchBoltTargetId
   const witchBoltTarget = canWitchBoltZap ? combatants.find(c => c.id === currentCombatant.witchBoltTargetId) : undefined
+
+  // Check for Flaming Sphere bonus action move
+  const canMoveFlamingSphere = isCharacter && !currentCombatant.hasBonusActed && currentCombatant.conditions.some(c => c.condition === 'flaming_sphere')
+
+  // Check for Gust of Wind bonus action redirect
+  const canGustRedirect = isCharacter && !currentCombatant.hasBonusActed && state.persistentZones.some(
+    z => z.zoneType === ZoneType.GustOfWind && z.casterId === currentCombatant.id
+  )
+
+  // Check for Dragon's Breath exhale action
+  const canDragonsBreathExhale = !currentCombatant.hasActed && currentCombatant.conditions.some(c => c.condition === 'dragons_breath') && !!currentCombatant.dragonsBreathDamageType
 
   // Check for Battle Medic (Healer origin feat)
   const hasBattleMedicFeat = isCharacter && canUseBattleMedic(currentCombatant)
@@ -2396,6 +2412,19 @@ export function ActionBar() {
                     tooltip={currentCombatant.attacksMadeThisTurn > 0 ? "Can't change action mid-Attack" : (isThreatened ? `Escape ${threateningEnemies.length} threatening enemies` : 'Move without opportunity attacks')}
                   />
 
+                  {/* Dragon's Breath Exhale (action while buffed) */}
+                  {canDragonsBreathExhale && (
+                    <ActionButton
+                      icon={<Flame className="w-5 h-5" />}
+                      label="Exhale"
+                      onClick={() => startDragonsBreathExhale()}
+                      disabled={currentCombatant.hasActed}
+                      variant="spell"
+                      actionType="action"
+                      tooltip={`Exhale 15-ft cone of ${currentCombatant.dragonsBreathDamageType} (${currentCombatant.dragonsBreathDice}, DC ${currentCombatant.dragonsBreathDC} DEX save)`}
+                    />
+                  )}
+
                   {/* Stand Up (only when prone) */}
                   {currentCombatant.conditions.some(c => c.condition === 'prone') && (() => {
                     const proneSpeed = getCombatantSpeed(currentCombatant)
@@ -2416,7 +2445,7 @@ export function ActionBar() {
                 </div>
 
                 {/* Row 2: Class Features (only if any exist) */}
-                {(hasSecondWind || hasActionSurge || hasBattleMedicFeat || hasCunningActionFeature || bonusActionManeuvers.length > 0 || canWitchBoltZap) && (
+                {(hasSecondWind || hasActionSurge || hasBattleMedicFeat || hasCunningActionFeature || bonusActionManeuvers.length > 0 || canWitchBoltZap || canMoveFlamingSphere || canGustRedirect) && (
                 <div className="flex items-center justify-center gap-2">
                   {/* Second Wind (Fighter bonus action) */}
                   {hasSecondWind && (() => {
@@ -2623,6 +2652,32 @@ export function ActionBar() {
                       actionType="bonus"
                     />
                   )}
+
+                  {/* Flaming Sphere (bonus action move while concentrating) */}
+                  {canMoveFlamingSphere && (
+                    <ActionButton
+                      icon={<Flame className="w-5 h-5" />}
+                      label="Move Sphere"
+                      onClick={() => setSelectedAction('move_flaming_sphere')}
+                      disabled={currentCombatant.hasBonusActed}
+                      variant="spell"
+                      tooltip="Move the Flaming Sphere up to 30 feet (bonus action)"
+                      actionType="bonus"
+                    />
+                  )}
+
+                  {/* Gust of Wind (bonus action redirect while concentrating) */}
+                  {canGustRedirect && (
+                    <ActionButton
+                      icon={<Wind className="w-5 h-5" />}
+                      label="Redirect Wind"
+                      onClick={() => startGustOfWindRedirect()}
+                      disabled={currentCombatant.hasBonusActed}
+                      variant="spell"
+                      tooltip="Change the direction of Gust of Wind (bonus action)"
+                      actionType="bonus"
+                    />
+                  )}
                 </div>
                 )}
               </div>
@@ -2632,7 +2687,7 @@ export function ActionBar() {
             <div className="pl-4 border-l border-slate-700">
               {(() => {
                 // Check if there are still potential actions available
-                const hasUnusedAction = !currentCombatant.hasActed && (canAttack || hasSpells || remainingMovement > 0)
+                const hasUnusedAction = !currentCombatant.hasActed && (canAttack || hasSpells || remainingMovement > 0 || canDragonsBreathExhale)
                 const hasUnusedBonusAction = !currentCombatant.hasBonusActed && (
                   canUseSecondWindNow ||
                   canCunningDash ||
@@ -2640,7 +2695,9 @@ export function ActionBar() {
                   canCunningHide ||
                   canUseBonusManeuver ||
                   canExpeditiousDash ||
-                  canWitchBoltZap
+                  canWitchBoltZap ||
+                  canMoveFlamingSphere ||
+                  canGustRedirect
                 )
                 const hasActionsRemaining = hasUnusedAction || hasUnusedBonusAction
 

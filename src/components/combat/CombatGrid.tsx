@@ -6,12 +6,14 @@ import { useMovementAnimation } from '@/hooks/useMovementAnimation'
 import { Token } from './Token'
 import { DamagePopup } from './DamagePopup'
 import { Projectile } from './Projectile'
+import { WindParticles } from './WindParticles'
 import { ContextMenu } from './ContextMenu'
 import { calculateMovementDistance } from '@/lib/movement'
 import { findPath, calculatePathCost } from '@/lib/pathfinding'
 import { getAoEAffectedCells, aoeOriginatesFromCaster } from '@/lib/aoeShapes'
-import { hasLineOfSight, canTargetWithRangedAttack } from '@/lib/lineOfSight'
-import { getCombatantSize, getFootprintSize, getVisualScale, getOccupiedCellKeys } from '@/lib/creatureSize'
+import { hasLineOfSight, canTargetWithRangedAttack, getLineBetween } from '@/lib/lineOfSight'
+import { getCombatantSize, getFootprintSize, getVisualScale, getOccupiedCellKeys, getOccupiedCells } from '@/lib/creatureSize'
+import { getDistanceBetweenPositions } from '@/lib/distance'
 import { ZoneType } from '@/types'
 import type { Position, Character, Monster, GridCell as GridCellType } from '@/types'
 
@@ -72,9 +74,11 @@ function getPathArrow(from: Position, to: Position): string {
 function PathSegment({
   position,
   nextPosition,
+  colorClass = 'text-emerald-400/80',
 }: {
   position: Position
   nextPosition?: Position
+  colorClass?: string
 }) {
   // Don't render anything at the destination (no arrow to show)
   if (!nextPosition) return null
@@ -83,7 +87,7 @@ function PathSegment({
 
   return (
     <div
-      className="absolute flex items-center justify-center pointer-events-none z-20 text-emerald-400/80"
+      className={`absolute flex items-center justify-center pointer-events-none z-20 ${colorClass}`}
       style={{
         left: position.x * CELL_SIZE,
         top: position.y * CELL_SIZE,
@@ -116,6 +120,11 @@ interface GridCellProps {
   isInFogZone: boolean
   isInGreaseZone: boolean
   isInCloudOfDaggersZone: boolean
+  isInFlamingSphereCenter: boolean
+  isInFlamingSphereAdjacent: boolean
+  isFlamingSphereMovementTarget: boolean
+  isInGustZone: boolean
+  isFootprintPreview: boolean
   distance?: number
   wallBorderStyle?: React.CSSProperties // For wall outline rendering
   onDragOver: (e: React.DragEvent) => void
@@ -163,6 +172,11 @@ function GridCell({
   isInFogZone,
   isInGreaseZone,
   isInCloudOfDaggersZone,
+  isInFlamingSphereCenter,
+  isInFlamingSphereAdjacent,
+  isFlamingSphereMovementTarget,
+  isInGustZone,
+  isFootprintPreview,
   distance,
   wallBorderStyle,
   onDragOver,
@@ -206,6 +220,13 @@ function GridCell({
         isInGreaseZone && !isInAoEPreview && 'bg-yellow-800/35 border-yellow-700/40',
         // Persistent cloud of daggers zone
         isInCloudOfDaggersZone && !isInAoEPreview && 'bg-slate-400/35 border-slate-300/50',
+        // Flaming Sphere zones
+        isInFlamingSphereCenter && !isInAoEPreview && 'bg-orange-600/50 border-orange-500/60',
+        isInFlamingSphereAdjacent && !isInFlamingSphereCenter && !isInAoEPreview && 'bg-orange-900/25 border-orange-700/30',
+        // Flaming Sphere movement range
+        isFlamingSphereMovementTarget && !isInFlamingSphereCenter && 'bg-orange-900/30 border-orange-700/50',
+        // Gust of Wind zone
+        isInGustZone && !isInAoEPreview && 'bg-sky-200/25 border-sky-300/40',
         // Terrain backgrounds
         hasDifficultTerrain && 'bg-amber-900/40',
         hasHazardTerrain && 'bg-red-900/50 animate-pulse',
@@ -223,6 +244,7 @@ function GridCell({
         hasStairs && 'bg-cyan-900/50 border-cyan-700',
         // Interactive state overrides
         isReachable && !hasObstacle && 'bg-emerald-900/60 hover:bg-emerald-800/70 border-emerald-700',
+        isFootprintPreview && !hasObstacle && 'bg-emerald-600/50 border-emerald-400 border-2',
         isSelected && 'bg-violet-900/60 border-violet-500',
         isDragOver && isValidDrop && 'bg-emerald-700/80 border-emerald-400 border-2',
         isDragOver && !isValidDrop && 'bg-red-900/70 border-red-500 border-2',
@@ -297,6 +319,21 @@ function GridCell({
       {/* Cloud of Daggers zone overlay */}
       {isInCloudOfDaggersZone && (
         <div className="absolute inset-0 bg-gradient-to-br from-slate-300/30 to-slate-500/25 pointer-events-none z-10" />
+      )}
+
+      {/* Flaming Sphere center overlay */}
+      {isInFlamingSphereCenter && (
+        <div className="absolute inset-0 bg-gradient-radial from-orange-500/50 to-red-600/40 pointer-events-none z-10 animate-pulse" />
+      )}
+
+      {/* Flaming Sphere adjacent heat overlay */}
+      {isInFlamingSphereAdjacent && !isInFlamingSphereCenter && (
+        <div className="absolute inset-0 bg-gradient-to-br from-orange-600/15 to-red-700/10 pointer-events-none z-10" />
+      )}
+
+      {/* Gust of Wind zone overlay */}
+      {isInGustZone && (
+        <div className="absolute inset-0 bg-gradient-to-br from-sky-100/15 to-sky-300/20 pointer-events-none z-10" />
       )}
 
       {/* Stairs indicator */}
@@ -396,7 +433,13 @@ export function CombatGrid() {
     breathWeaponTargeting,
     setBreathWeaponTargeting,
     performAttackReplacement,
+    dragonsBreathTargeting,
+    useDragonsBreathExhale,
     persistentZones,
+    moveFlamingSphere,
+    gustOfWindRedirecting,
+    useGustOfWindRedirect,
+    cancelGustOfWindRedirect,
   } = useCombatStore()
 
   // Drive the movement animation
@@ -432,6 +475,42 @@ export function CombatGrid() {
     }
     return cells
   }, [persistentZones])
+
+  const flamingSphereCenterCellSet = useMemo(() => {
+    const cells = new Set<string>()
+    for (const zone of persistentZones) {
+      if (zone.zoneType === ZoneType.FlamingSphere) {
+        cells.add(`${zone.center.x},${zone.center.y}`)
+      }
+    }
+    return cells
+  }, [persistentZones])
+
+  const flamingSphereAdjacentCellSet = useMemo(() => {
+    const cells = new Set<string>()
+    for (const zone of persistentZones) {
+      if (zone.zoneType === ZoneType.FlamingSphere) {
+        for (const cell of zone.affectedCells) cells.add(cell)
+      }
+    }
+    return cells
+  }, [persistentZones])
+
+  const gustOfWindData = useMemo(() => {
+    for (const zone of persistentZones) {
+      if (zone.zoneType === ZoneType.GustOfWind && zone.direction) {
+        return {
+          cells: new Set(zone.affectedCells),
+          direction: zone.direction,
+        }
+      }
+    }
+    return null
+  }, [persistentZones])
+
+  const gustOfWindCellSet = useMemo(() => {
+    return gustOfWindData?.cells ?? new Set<string>()
+  }, [gustOfWindData])
 
   // Get the actual background image URL from the filename
   const backgroundImageUrl = getMapBackgroundImage(mapBackgroundImage)
@@ -563,6 +642,72 @@ export function CombatGrid() {
   const selectedCombatant = combatants.find((c) => c.id === selectedCombatantId)
   const currentCombatant = combatants.find((c) => c.id === currentTurnId)
 
+  const flamingSphereMovementRange = useMemo(() => {
+    if (selectedAction !== 'move_flaming_sphere') return new Set<string>()
+    const cells = new Set<string>()
+    const sphereZone = persistentZones.find(z => z.zoneType === ZoneType.FlamingSphere && z.casterId === currentTurnId)
+    if (!sphereZone) return cells
+    const center = sphereZone.center
+    // 30 feet = 6 squares max in any direction
+    for (let dx = -6; dx <= 6; dx++) {
+      for (let dy = -6; dy <= 6; dy++) {
+        const nx = center.x + dx
+        const ny = center.y + dy
+        if (nx < 0 || ny < 0 || nx >= grid.width || ny >= grid.height) continue
+        const dist = getDistanceBetweenPositions(center, { x: nx, y: ny })
+        if (dist <= 30) cells.add(`${nx},${ny}`)
+      }
+    }
+    return cells
+  }, [selectedAction, persistentZones, currentTurnId, grid.width, grid.height])
+
+  // Compute flaming sphere path preview (Bresenham line from sphere to hovered cell, stopping at obstacles/creatures)
+  const flamingSpherePathPreview = useMemo(() => {
+    if (selectedAction !== 'move_flaming_sphere' || !hoveredCell) return [] as Position[]
+    const sphereZone = persistentZones.find(z => z.zoneType === ZoneType.FlamingSphere && z.casterId === currentTurnId)
+    if (!sphereZone) return [] as Position[]
+
+    const target = hoveredCell
+    const dist = getDistanceBetweenPositions(sphereZone.center, target)
+    if (dist > 30 || dist === 0) return [] as Position[]
+
+    // Build occupied cell set
+    const occupiedCellMap = new Map<string, string>()
+    for (const c of combatants) {
+      if (c.currentHp <= 0) continue
+      const size = getCombatantSize(c)
+      const cellKeys = getOccupiedCellKeys(c.position, size)
+      for (const key of cellKeys) {
+        occupiedCellMap.set(key, c.id)
+      }
+    }
+
+    // Walk the Bresenham line, stopping at obstacles/creatures
+    const lineCells = getLineBetween(sphereZone.center, target)
+    const fullPath = [sphereZone.center, ...lineCells, target]
+    const path: Position[] = []
+
+    for (let i = 1; i < fullPath.length; i++) {
+      const pos = fullPath[i]
+      const cellKey = `${pos.x},${pos.y}`
+
+      // Check obstacle
+      const cell = grid.cells[pos.y]?.[pos.x]
+      if (!cell || cell.obstacle?.blocksMovement) break
+
+      // Check creature collision — include this cell in path as destination, then stop
+      const occupantId = occupiedCellMap.get(cellKey)
+      if (occupantId && occupantId !== currentTurnId) {
+        path.push(pos)
+        break
+      }
+
+      path.push(pos)
+    }
+
+    return path
+  }, [selectedAction, hoveredCell, persistentZones, currentTurnId, combatants, grid])
+
   // Calculate reachable positions for dragging combatant (in combat) or all positions (in setup)
   // Only show green movement area when: dragging, move action selected, or in setup phase
   const reachablePositions = useMemo(() => {
@@ -624,7 +769,10 @@ export function CombatGrid() {
 
       const candidates = combatants.filter(c => {
         if (c.currentHp <= 0 || c.position.x < 0) return false
-        if (targetType === 'ally' || targetType === 'any') {
+        if (targetType === 'any') {
+          return true // All living combatants (Enlarge/Reduce can target allies or enemies)
+        }
+        if (targetType === 'ally') {
           return c.type === attacker.type
         }
         if (targetType === 'self') return c.id === currentTurnId
@@ -762,38 +910,60 @@ export function CombatGrid() {
     const maxRange = longRange ?? range
     const maxRangeInSquares = Math.ceil(maxRange / 5)
 
-    for (let dy = -maxRangeInSquares; dy <= maxRangeInSquares; dy++) {
-      for (let dx = -maxRangeInSquares; dx <= maxRangeInSquares; dx++) {
-        const x = origin.x + dx
-        const y = origin.y + dy
-        if (x < 0 || x >= grid.width || y < 0 || y >= grid.height) continue
+    // Get the combatant's full footprint for multi-cell creatures (Large+)
+    const combatant = currentCombatant
+    const size = combatant ? getCombatantSize(combatant) : 'medium'
+    const footprintCells = getOccupiedCells(origin, size)
+    const footprintKeys = new Set(footprintCells.map(c => `${c.x},${c.y}`))
+    const footprint = getFootprintSize(size)
 
-        // Calculate distance using Chebyshev (D&D 5e diagonal = 5ft)
-        const distance = Math.max(Math.abs(dx), Math.abs(dy)) * 5
+    // Expand search area to cover range from all edges of the footprint
+    const minX = origin.x - maxRangeInSquares
+    const maxX = origin.x + footprint - 1 + maxRangeInSquares
+    const minY = origin.y - maxRangeInSquares
+    const maxY = origin.y + footprint - 1 + maxRangeInSquares
+
+    for (let y = minY; y <= maxY; y++) {
+      for (let x = minX; x <= maxX; x++) {
+        if (x < 0 || x >= grid.width || y < 0 || y >= grid.height) continue
+        const key = `${x},${y}`
+        // Skip cells occupied by the creature itself
+        if (footprintKeys.has(key)) continue
+
+        // Calculate minimum Chebyshev distance to any occupied cell
+        let minDist = Infinity
+        for (const fc of footprintCells) {
+          const dist = Math.max(Math.abs(x - fc.x), Math.abs(y - fc.y))
+          if (dist < minDist) minDist = dist
+        }
+        const distance = minDist * 5
+
         if (distance <= maxRange && distance > 0) {
           const isLongRange = distance > range
-          // For ranged/spell attacks, check line of sight
+          // For ranged/spell attacks, check line of sight from any occupied cell
           if (type === 'ranged' || type === 'spell') {
-            const hasLOS = hasLineOfSight(grid, origin, { x, y }, fogCellSet)
+            const hasLOS = footprintCells.some(fc =>
+              hasLineOfSight(grid, fc, { x, y }, fogCellSet)
+            )
             if (hasLOS) {
               if (isLongRange) {
-                longRangeCells.add(`${x},${y}`)
+                longRangeCells.add(key)
               } else {
-                cellsInRange.add(`${x},${y}`)
+                cellsInRange.add(key)
               }
             } else {
-              blockedCells.add(`${x},${y}`)
+              blockedCells.add(key)
             }
           } else {
             // Melee doesn't need LOS check
-            cellsInRange.add(`${x},${y}`)
+            cellsInRange.add(key)
           }
         }
       }
     }
 
     return { cells: cellsInRange, type, blockedCells, longRangeCells }
-  }, [rangeHighlight, grid, fogCellSet])
+  }, [rangeHighlight, grid, fogCellSet, currentCombatant])
 
   // Calculate AoE preview cells based on hovered position
   const aoeAffectedCells = useMemo(() => {
@@ -854,9 +1024,13 @@ export function CombatGrid() {
     if (fogCellSet.has(`${hoveredCell.x},${hoveredCell.y}`)) parts.push('Fog (Heavily Obscured)')
     if (greaseCellSet.has(`${hoveredCell.x},${hoveredCell.y}`)) parts.push('Grease (Difficult Terrain)')
     if (cloudOfDaggersCellSet.has(`${hoveredCell.x},${hoveredCell.y}`)) parts.push('Cloud of Daggers (4d4 Slashing)')
+    const cellKey = `${hoveredCell.x},${hoveredCell.y}`
+    if (flamingSphereCenterCellSet.has(cellKey)) parts.push('Flaming Sphere')
+    else if (flamingSphereAdjacentCellSet.has(cellKey)) parts.push('Flaming Sphere Heat (2d6 Fire, DEX save)')
+    if (gustOfWindCellSet.has(cellKey)) parts.push('Gust of Wind (STR save or pushed, 2x cost toward caster)')
 
     return parts.length > 0 ? parts.join(' · ') : undefined
-  }, [hoveredCell, grid, fogCellSet, greaseCellSet, cloudOfDaggersCellSet])
+  }, [hoveredCell, grid, fogCellSet, greaseCellSet, cloudOfDaggersCellSet, flamingSphereCenterCellSet, flamingSphereAdjacentCellSet, gustOfWindCellSet])
 
   // Calculate movement path when hovering over a reachable cell in move mode using A* pathfinding
   // This is computed first so getDistanceToCell can use the path cost
@@ -887,6 +1061,21 @@ export function CombatGrid() {
   }, [phase, selectedAction, currentCombatant, hoveredCell, dragOverCell, reachableSet, combatants, grid])
 
   const movementPath = movementPathData.displayPath
+
+  // Compute footprint preview cells for Large+ creatures during movement
+  const footprintPreviewSet = useMemo(() => {
+    if (phase !== 'combat' || selectedAction !== 'move') return new Set<string>()
+    if (!currentCombatant || currentCombatant.position.x < 0) return new Set<string>()
+    const size = getCombatantSize(currentCombatant)
+    const footprint = getFootprintSize(size)
+    if (footprint <= 1) return new Set<string>()
+
+    const targetCell = dragOverCell || hoveredCell
+    if (!targetCell) return new Set<string>()
+    if (!reachableSet.has(`${targetCell.x},${targetCell.y}`)) return new Set<string>()
+
+    return getOccupiedCellKeys(targetCell, size)
+  }, [phase, selectedAction, currentCombatant, hoveredCell, dragOverCell, reachableSet])
 
   // Calculate distance from current combatant to hovered/dragged cell
   // Uses actual path cost in move mode (accounts for difficult terrain), simple distance otherwise
@@ -985,6 +1174,18 @@ export function CombatGrid() {
 
     const position: Position = { x, y }
 
+    // In Flaming Sphere movement mode, clicking moves the sphere
+    if (phase === 'combat' && selectedAction === 'move_flaming_sphere' && flamingSphereMovementRange.has(`${x},${y}`)) {
+      moveFlamingSphere(position)
+      return
+    }
+
+    // In Gust of Wind redirect mode, clicking sets the new direction
+    if (phase === 'combat' && gustOfWindRedirecting) {
+      useGustOfWindRedirect(position)
+      return
+    }
+
     // In AoE spell mode, clicking casts the spell at this location
     if (phase === 'combat' && aoePreview && selectedSpell && currentTurnId) {
       // Find a combatant at this position to use as target, or use undefined for area-only
@@ -1011,6 +1212,12 @@ export function CombatGrid() {
       return
     }
 
+    // In Dragon's Breath exhale targeting mode, clicking fires the cone in that direction
+    if (phase === 'combat' && aoePreview && dragonsBreathTargeting && currentTurnId) {
+      useDragonsBreathExhale(position)
+      return
+    }
+
     // In setup phase, place selected combatant
     if (phase === 'setup' && selectedCombatantId) {
       if (!isCellOccupied(x, y, selectedCombatantId)) {
@@ -1029,6 +1236,15 @@ export function CombatGrid() {
   const handleTokenClick = (combatantId: string) => {
     // Block interactions during movement animation
     if (movementAnimation) return
+
+    // In Flaming Sphere movement mode, clicking a token bumps the sphere into it
+    if (phase === 'combat' && selectedAction === 'move_flaming_sphere') {
+      const targetCombatant = combatants.find(c => c.id === combatantId)
+      if (targetCombatant && targetCombatant.currentHp > 0 && combatantId !== currentTurnId) {
+        moveFlamingSphere(targetCombatant.position)
+      }
+      return
+    }
 
     // In projectile targeting mode, clicking an enemy token assigns a projectile
     if (phase === 'combat' && projectileTargeting && currentTurnId) {
@@ -1074,6 +1290,15 @@ export function CombatGrid() {
         setAoEPreview(undefined)
         setRangeHighlight(undefined)
         setSelectedAction(undefined)
+      }
+      return
+    }
+
+    // In Dragon's Breath exhale targeting mode, clicking a token fires the cone toward that combatant
+    if (phase === 'combat' && aoePreview && dragonsBreathTargeting && currentTurnId) {
+      const targetCombatant = combatants.find(c => c.id === combatantId)
+      if (targetCombatant) {
+        useDragonsBreathExhale(targetCombatant.position)
       }
       return
     }
@@ -1134,10 +1359,11 @@ export function CombatGrid() {
     cancelProjectileTargeting()
     cancelMultiTargetSelection()
     setBreathWeaponTargeting(undefined)
+    cancelGustOfWindRedirect()
   }
 
   // Check if we're in any targeting mode
-  const isInTargetingMode = selectedAction || selectedSpell || projectileTargeting || multiTargetSelection || breathWeaponTargeting
+  const isInTargetingMode = selectedAction || selectedSpell || projectileTargeting || multiTargetSelection || breathWeaponTargeting || dragonsBreathTargeting || gustOfWindRedirecting
 
   // Right-click on grid cancels targeting
   const handleGridContextMenu = (e: React.MouseEvent) => {
@@ -1307,6 +1533,11 @@ export function CombatGrid() {
                 isInFogZone={fogCellSet.has(cellKey)}
                 isInGreaseZone={greaseCellSet.has(cellKey)}
                 isInCloudOfDaggersZone={cloudOfDaggersCellSet.has(cellKey)}
+                isInFlamingSphereCenter={flamingSphereCenterCellSet.has(cellKey)}
+                isInFlamingSphereAdjacent={flamingSphereAdjacentCellSet.has(cellKey)}
+                isFlamingSphereMovementTarget={flamingSphereMovementRange.has(cellKey)}
+                isInGustZone={gustOfWindCellSet.has(cellKey)}
+                isFootprintPreview={footprintPreviewSet.has(cellKey)}
                 distance={distance}
                 wallBorderStyle={isWallCell ? getWallBorderStyle(x, y) : undefined}
                 onDragOver={(e) => handleCellDragOver(e, x, y)}
@@ -1327,6 +1558,16 @@ export function CombatGrid() {
             key={`path-${pos.x}-${pos.y}`}
             position={pos}
             nextPosition={movementPath[index + 1]}
+          />
+        ))}
+
+        {/* Flaming Sphere path preview */}
+        {flamingSpherePathPreview.map((pos, index) => (
+          <PathSegment
+            key={`fs-path-${pos.x}-${pos.y}`}
+            position={pos}
+            nextPosition={flamingSpherePathPreview[index + 1]}
+            colorClass="text-orange-400/80"
           />
         ))}
 
@@ -1397,6 +1638,14 @@ export function CombatGrid() {
             </div>
           )
         })}
+
+        {/* Wind particles overlay */}
+        {gustOfWindData && (
+          <WindParticles
+            affectedCells={gustOfWindData.cells}
+            direction={gustOfWindData.direction}
+          />
+        )}
 
         {/* Projectile animations layer */}
         {activeProjectiles.map((projectile) => (

@@ -71,6 +71,10 @@ export type Condition =
   | 'blur'  // Blur spell: attackers have disadvantage on attack rolls against this creature
   | 'alter_self_natural_weapons'  // Natural weapons: 1d6 + spellcasting ability modifier for unarmed strikes
   | 'alter_self_aquatic'  // Aquatic adaptation: swim speed, water breathing
+  | 'enlarged'  // Enlarge/Reduce: size up one category, advantage on STR saves, +1d4 weapon damage
+  | 'reduced'  // Enlarge/Reduce: size down one category, disadvantage on STR saves, -1d4 weapon damage (min 1)
+  | 'dragons_breath'  // Dragon's Breath: can use action to exhale 15-foot cone of chosen damage type
+  | 'flaming_sphere'  // Flaming Sphere: bonus action to move sphere 30 feet
 
 // ============================================
 // Character Types
@@ -605,6 +609,8 @@ export enum ZoneType {
   Fog = 'fog',
   Grease = 'grease',
   CloudOfDaggers = 'cloud_of_daggers',
+  FlamingSphere = 'flaming_sphere',
+  GustOfWind = 'gust_of_wind',
 }
 
 export interface PersistentZone {
@@ -619,6 +625,8 @@ export interface PersistentZone {
   createdRound?: number         // Round when zone was created
   zoneDamagedIds?: string[]     // Combatant IDs that have taken zone damage this turn (for once-per-turn zones)
   castAtLevel?: number          // Spell slot level used (for upcast damage scaling)
+  direction?: Position          // Direction vector for line zones (e.g., {x:1, y:0} for East)
+  lineWidth?: number            // Width of line in cells (default 1; Gust of Wind = 2)
 }
 
 // ============================================
@@ -698,6 +706,11 @@ export interface Combatant {
   studiedTargetId?: string  // ID of combatant this fighter has advantage against (after missing them)
   // Witch Bolt concentration tracking
   witchBoltTargetId?: string  // ID of the target linked by Witch Bolt
+  // Dragon's Breath tracking
+  dragonsBreathDamageType?: DamageType  // Chosen damage type for exhale
+  dragonsBreathDice?: string  // Damage dice ('3d6', '4d6' for upcast)
+  dragonsBreathDC?: number  // Caster's spell save DC snapshotted at cast time
+  dragonsBreathCasterId?: string  // Caster ID for concentration cleanup
   // Origin Feat tracking
   featUses: Record<string, number>  // feat id -> remaining uses (e.g., { lucky: 2 })
   usedSavageAttackerThisTurn: boolean  // Track if Savage Attacker was used this turn (once per turn)
@@ -751,6 +764,7 @@ export interface AoEPreview {
   size: number
   origin: Position // Caster position
   originType?: 'self' | 'point' // 'self' means AoE must touch caster (Thunder Wave)
+  widthCells?: number // Width in cells for line AoEs (default 1; Gust of Wind = 2)
 }
 
 export type CombatPopupType =
@@ -833,7 +847,7 @@ export interface CombatState {
   log: CombatLogEntry[]
   mapBackgroundImage?: string // Background image path for the map
   selectedCombatantId?: string
-  selectedAction?: 'move' | 'attack' | 'spell' | 'dash' | 'disengage' | 'dodge' | 'help' | 'hide' | 'ready'
+  selectedAction?: 'move' | 'attack' | 'spell' | 'dash' | 'disengage' | 'dodge' | 'help' | 'hide' | 'ready' | 'move_flaming_sphere'
   preselectedWeaponId?: string // Set from CombatantPanel to open attack mode with a specific weapon
   preselectedSpellId?: string // Set from CombatantPanel to shortcut directly to casting a spell
   targetingMode?: {
@@ -930,6 +944,24 @@ export interface CombatState {
     targetId: string
     castAtLevel?: number
   }
+  // Dragon's Breath damage type selection prompt
+  pendingDragonsBreathDamageType?: {
+    casterId: string
+    spell: Spell
+    targetId: string
+    castAtLevel?: number
+  }
+  // Dragon's Breath cone targeting
+  dragonsBreathTargeting?: {
+    combatantId: string
+  }
+  // Enlarge/Reduce mode selection prompt
+  pendingEnlargeReduceMode?: {
+    casterId: string
+    spell: Spell
+    targetId: string
+    castAtLevel?: number
+  }
   // Chromatic Orb bounce target selection prompt
   pendingBounceTarget?: {
     casterId: string
@@ -993,8 +1025,16 @@ export interface CombatState {
     masteryOverride?: WeaponMastery
     overrideNaturalRoll?: number
   }
+  // Crown of Madness forced attack prompt (caster chooses target for charmed creature)
+  pendingCrownOfMadness?: {
+    charmedId: string       // The charmed creature whose turn it is
+    casterId: string        // The caster who designates the target
+    validTargets: string[]  // IDs of creatures within melee range (excluding caster)
+  }
   // Persistent area effects on the battlefield (Fog Cloud, etc.)
   persistentZones: PersistentZone[]
+  // Gust of Wind bonus action redirect targeting
+  gustOfWindRedirecting?: boolean
 }
 
 // ============================================
